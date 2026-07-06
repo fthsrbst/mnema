@@ -21,6 +21,14 @@ Kaynak: `C:\Users\fatih\Desktop\dev\ai-hub\skills\` (git repo) → `hub sync` il
 4. **Dağıt:** `git add skills/ && git commit -m "skill: <ad> — <değişiklik>" && git push`, sonra `hub sync`. Diğer cihazlar bir sonraki `hub sync`'te alır.
 5. **Kullanıcıya tek satır bildir:** "X skill'ine şunu işledim" — onay bekleme, geri alınabilir.
 
+## Güvenlik: "ya daha kötü hale getirirsem?"
+Her skill değişikliği git commit'i olduğu için **hiçbir değişiklik kalıcı hasar değildir**:
+- **Geri alma:** `git log -- skills/<ad>/` ile geçmişi gör, `git revert <commit>` (veya `git checkout <eski-sha> -- skills/<ad>/SKILL.md`) + push + `hub sync` → eski hal tüm cihazlara döner.
+- **Küçük diff kuralı:** Tek commit'te tek skill, tek konu. Toptan yeniden yazma YASAK — kötüleşmeyi fark etmeyi ve geri almayı zorlaştırır.
+- **Silme yerine daraltma:** Var olan bir kuralı silmeden önce neden yanlış olduğunu commit mesajında kanıtla. Emin değilsen kuralı silme, "eskimiş olabilir" notu düş.
+- **Kötüleşme sinyali:** Bir skill güncellemesinden sonra aynı türde iş 2+ kez daha kötü giderse, ilk şüphen son skill değişikliği olsun → `git log`'a bak, revert et, hafızaya ders yaz.
+- Kullanıcı "bu skill eskiden daha iyiydi" derse: tartışma, önce revert, sonra konuş.
+
 ## Kalite çıtaları
 - Skill'ler **kod/yazılım odaklı** kalır; genel amaçlı ofis skill'i ekleme.
 - Her skill'de: ne zaman kullanılacağı (description) + somut akış + hata/istisna bölümü.

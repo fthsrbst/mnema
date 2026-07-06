@@ -54,8 +54,10 @@ function copyDir(src: string, dest: string): void {
 }
 
 interface McpEntry {
-  url: string;
+  url?: string;
   headers?: Record<string, string>;
+  command?: string;
+  args?: string[];
 }
 
 function readJson(file: string): Record<string, any> | null {
@@ -84,6 +86,11 @@ function syncMcpServers(repoPath: string): string[] {
   const resolve = (s: string) => s.replaceAll("$HUB_URL", cfg.url).replaceAll("$HUB_TOKEN", cfg.token);
   const servers = new Map<string, McpEntry>();
   for (const [name, entry] of Object.entries(registry)) {
+    if (entry.command) {
+      servers.set(name, { command: entry.command, args: entry.args ?? [] });
+      continue;
+    }
+    if (!entry.url) continue;
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(entry.headers ?? {})) {
       const rv = resolve(v);
@@ -103,7 +110,9 @@ function syncMcpServers(repoPath: string): string[] {
     let changed = false;
     claude.mcpServers ??= {};
     for (const [name, entry] of servers) {
-      const desired = { type: "http", ...entry };
+      const desired = entry.command
+        ? { type: "stdio", command: entry.command, args: entry.args, env: {} }
+        : { type: "http", ...entry };
       if (JSON.stringify(claude.mcpServers[name]) !== JSON.stringify(desired)) {
         claude.mcpServers[name] = desired;
         changed = true;
@@ -122,8 +131,9 @@ function syncMcpServers(repoPath: string): string[] {
     cursor.mcpServers ??= {};
     let changed = false;
     for (const [name, entry] of servers) {
-      if (JSON.stringify(cursor.mcpServers[name]) !== JSON.stringify(entry)) {
-        cursor.mcpServers[name] = entry;
+      const desired = entry.command ? { command: entry.command, args: entry.args } : entry;
+      if (JSON.stringify(cursor.mcpServers[name]) !== JSON.stringify(desired)) {
+        cursor.mcpServers[name] = desired;
         changed = true;
       }
     }
@@ -140,7 +150,9 @@ function syncMcpServers(repoPath: string): string[] {
     oc.mcp ??= {};
     let changed = false;
     for (const [name, entry] of servers) {
-      const desired = { type: "remote", url: entry.url, enabled: true, ...(entry.headers ? { headers: entry.headers } : {}) };
+      const desired = entry.command
+        ? { type: "local", command: [entry.command, ...(entry.args ?? [])], enabled: true }
+        : { type: "remote", url: entry.url, enabled: true, ...(entry.headers ? { headers: entry.headers } : {}) };
       if (JSON.stringify(oc.mcp[name]) !== JSON.stringify(desired)) {
         oc.mcp[name] = desired;
         changed = true;

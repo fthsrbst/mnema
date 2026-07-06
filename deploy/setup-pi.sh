@@ -24,6 +24,7 @@ cd "$APP_DIR"
 echo "== Bağımlılıklar + build =="
 npm ci
 npm run build
+(cd web && npm ci && npm run build)
 
 echo "== .env =="
 if [[ ! -f .env ]]; then

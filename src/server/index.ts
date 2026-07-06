@@ -17,6 +17,11 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// Statik içerik auth'suz servis edilir (UI kabuğu + üretilen medya);
+// veri her zaman /api üzerinden ve token'lıdır.
+app.use("/outputs", express.static("./data/outputs"));
+app.use("/", express.static("./web/dist"));
+
 // Bearer token auth (health hariç). Token boşsa auth kapalı (lokal dev).
 app.use((req, res, next) => {
   if (!config.token) return next();
@@ -26,7 +31,6 @@ app.use((req, res, next) => {
 });
 
 app.use("/api", buildRestRouter());
-app.use("/outputs", express.static("./data/outputs")); // üretilen görseller
 
 // MCP: stateless Streamable HTTP — her istek için taze server+transport
 app.post("/mcp", async (req, res) => {

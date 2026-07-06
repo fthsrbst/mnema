@@ -1,4 +1,6 @@
 import { Router } from "express";
+import fs from "node:fs";
+import path from "node:path";
 import {
   addDocument,
   addSessionLog,
@@ -124,6 +126,42 @@ export function buildRestRouter(): Router {
   r.get("/workflows", wrap((_req, res) => res.json(listWorkflows())));
   r.post("/image", wrap(async (req, res) => res.json(await generateImage(req.body))));
   r.post("/media", wrap(async (req, res) => res.json(await generateImage(req.body))));
+
+  // --- üretilen medya listesi (galeri için) ---
+  r.get("/outputs", wrap((_req, res) => {
+    const dir = "./data/outputs";
+    if (!fs.existsSync(dir)) return res.json([]);
+    const files = fs.readdirSync(dir)
+      .map((name) => {
+        const stat = fs.statSync(path.join(dir, name));
+        return { name, url: `/outputs/${name}`, size: stat.size, mtime: stat.mtimeMs };
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, 200);
+    res.json(files);
+  }));
+
+  // --- skills (repo'daki skills/ klasörü; düzenleme sonrası git commit + hub sync kullanıcıda) ---
+  r.get("/skills", wrap((_req, res) => {
+    const dir = "./skills";
+    if (!fs.existsSync(dir)) return res.json([]);
+    const out = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => {
+        const file = path.join(dir, e.name, "SKILL.md");
+        const content = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+        const desc = content.match(/^description:\s*(.+)$/m)?.[1] ?? "";
+        return { name: e.name, description: desc, content };
+      });
+    res.json(out);
+  }));
+  r.put("/skills/:name", wrap((req, res) => {
+    const name = req.params.name.replace(/[^a-z0-9-]/gi, "");
+    const file = path.join("./skills", name, "SKILL.md");
+    if (!fs.existsSync(path.dirname(file))) fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, String(req.body.content ?? ""));
+    res.json({ ok: true, note: "Kalıcı olması için: git commit + push + her cihazda hub sync" });
+  }));
 
   // --- sync (cihazlar arası eşitleme) ---
   r.get("/sync/changes", wrap((req, res) => {
