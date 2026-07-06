@@ -1,0 +1,16 @@
+{
+  "//": "~/.claude/settings.json içine 'hooks' bölümünü ekle. 'hub' global kurulu olmalı (npm i -g <repo>) veya command'ı tam yola çevir.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "hub recall --hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

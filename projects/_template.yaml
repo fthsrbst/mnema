@@ -1,0 +1,14 @@
+name: ornek-proje
+status: active          # active | paused | done | idea
+summary: >
+  Tek paragraf: bu proje ne, neden var.
+stack: [typescript, sqlite]
+repo: github.com/fthsrbst/ornek-proje
+paths:
+  pc: C:/Users/fatih/Desktop/dev/ornek-proje
+current_focus: "şu an neye odaklanılıyor"
+decisions:
+  - "2026-07: X seçildi — gerekçe"
+next_steps:
+  - "somut sıradaki adım"
+links: []
