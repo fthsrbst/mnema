@@ -205,6 +205,48 @@ program
   });
 
 program
+  .command("ask <question...>")
+  .description("Hafıza + RAG bağlamıyla yerel LLM'den cevap (tamamen ücretsiz, lokal)")
+  .option("-m, --model <model>")
+  .option("-p, --project <name>")
+  .action(async (words: string[], opts: { model?: string; project?: string }) => {
+    const question = words.join(" ");
+    try {
+      const proj = opts.project ? `&project=${encodeURIComponent(opts.project)}` : "";
+      const ctx = await api<{ memories: ScoredMemory[]; chunks: ScoredChunk[] }>(
+        "GET", `/api/recall?q=${encodeURIComponent(question)}${proj}`
+      );
+      const ctxText = [
+        ...ctx.memories.map((m) => `[hafıza/${m.type}] ${m.title}: ${m.body}`),
+        ...ctx.chunks.map((c) => `[doküman "${c.document_title}"] ${c.text}`),
+      ].join("\n\n");
+      const res = await api<{ machine: string; model: string; content: string }>(
+        "POST", "/api/llm",
+        {
+          model: opts.model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "Fatih'in kişisel bilgi asistanısın. Aşağıdaki bağlam onun ortak hafızasından geliyor; cevabını öncelikle buna dayandır, bağlamda yoksa bunu belirt. Türkçe ve öz cevap ver.\n\nBAĞLAM:\n" +
+                (ctxText || "(ilgili kayıt bulunamadı)"),
+            },
+            { role: "user", content: question },
+          ],
+          max_tokens: 2048,
+        },
+        { timeoutMs: 180000 }
+      );
+      console.log(`[${res.machine} / ${res.model}]\n${res.content}`);
+      if (ctx.memories.length || ctx.chunks.length) {
+        console.log(`\n(bağlam: ${ctx.memories.length} hafıza + ${ctx.chunks.length} doküman parçası)`);
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
   .command("machines")
   .description("Kayıtlı makineler ve yerel AI servislerinin canlı durumu")
   .action(async () => {
