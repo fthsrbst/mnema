@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { getDb, hasVec } from "./db.js";
 import { embedOne, toBuffer } from "./embeddings.js";
 import { hybridSearch } from "./search.js";
+import { recordDeletion } from "./sync.js";
 import type { Memory, MemoryInput, ScoredMemory, SearchFilters } from "./types.js";
 
 function rowToMemory(row: Record<string, unknown>): Memory {
@@ -25,10 +27,11 @@ export async function saveMemory(input: MemoryInput): Promise<Memory> {
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO memories(type, title, body, project, tags, source)
-       VALUES (@type, @title, @body, @project, @tags, @source)`
+      `INSERT INTO memories(uid, type, title, body, project, tags, source)
+       VALUES (@uid, @type, @title, @body, @project, @tags, @source)`
     )
     .run({
+      uid: randomUUID().replaceAll("-", ""),
       type: input.type ?? "fact",
       title: input.title,
       body: input.body,
@@ -73,8 +76,11 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
 
 export function deleteMemory(id: number): boolean {
   const db = getDb();
+  const row = db.prepare("SELECT uid FROM memories WHERE id = ?").get(id) as { uid: string } | undefined;
   if (hasVec()) db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(id));
-  return db.prepare("DELETE FROM memories WHERE id = ?").run(id).changes > 0;
+  const deleted = db.prepare("DELETE FROM memories WHERE id = ?").run(id).changes > 0;
+  if (deleted && row?.uid) recordDeletion("memories", row.uid);
+  return deleted;
 }
 
 export async function searchMemories(query: string, filters: SearchFilters = {}): Promise<ScoredMemory[]> {

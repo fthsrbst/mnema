@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS documents(
   source TEXT,
   uri TEXT,
   project TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS chunks(
@@ -88,7 +89,41 @@ CREATE TABLE IF NOT EXISTS session_logs(
   source TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Cihazlar arası eşitleme: silinen kayıtların izi (LWW için)
+CREATE TABLE IF NOT EXISTS deletions(
+  uid TEXT PRIMARY KEY,
+  tbl TEXT NOT NULL,
+  deleted_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sync_state(
+  peer TEXT PRIMARY KEY,
+  last_pull TEXT,
+  last_push TEXT
+);
 `;
+
+/** Var olan DB'lere eşitleme kolonlarını ekler (uid, updated_at) ve backfill yapar. */
+function migrate(database: Database.Database): void {
+  const addColumn = (tbl: string, col: string, ddl: string) => {
+    const cols = database.prepare(`PRAGMA table_info(${tbl})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === col)) database.exec(`ALTER TABLE ${tbl} ADD COLUMN ${ddl}`);
+  };
+  addColumn("memories", "uid", "uid TEXT");
+  addColumn("documents", "uid", "uid TEXT");
+  addColumn("documents", "updated_at", "updated_at TEXT");
+  addColumn("session_logs", "uid", "uid TEXT");
+  database.exec(`
+    UPDATE memories SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
+    UPDATE documents SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
+    UPDATE documents SET updated_at = created_at WHERE updated_at IS NULL;
+    UPDATE session_logs SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_uid ON memories(uid);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uid ON documents(uid);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_uid ON session_logs(uid);
+  `);
+}
 
 export function getDb(): Database.Database {
   if (db) return db;
@@ -109,6 +144,7 @@ export function getDb(): Database.Database {
   }
 
   db.exec(SCHEMA);
+  migrate(db);
 
   if (vecAvailable) {
     db.exec(`

@@ -9,3 +9,4 @@ export * from "./projects.js";
 export * from "./sessions.js";
 export * from "./recall.js";
 export * from "./compute.js";
+export * from "./sync.js";

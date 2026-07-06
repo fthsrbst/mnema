@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { getDb, hasVec } from "./db.js";
 import { chunkMarkdown } from "./chunker.js";
 import { embed, toBuffer } from "./embeddings.js";
 import { hybridSearch } from "./search.js";
+import { recordDeletion } from "./sync.js";
 import type { DocumentInput, ScoredChunk } from "./types.js";
 
 export interface AddDocumentResult {
@@ -22,8 +24,8 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
   }
 
   const info = db
-    .prepare("INSERT INTO documents(title, source, uri, project) VALUES (?, ?, ?, ?)")
-    .run(input.title, input.source ?? null, input.uri ?? null, input.project ?? null);
+    .prepare("INSERT INTO documents(uid, title, source, uri, project) VALUES (?, ?, ?, ?, ?)")
+    .run(randomUUID().replaceAll("-", ""), input.title, input.source ?? null, input.uri ?? null, input.project ?? null);
   const docId = Number(info.lastInsertRowid);
 
   const chunks = chunkMarkdown(input.text);
@@ -64,13 +66,16 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
 
 export function deleteDocument(id: number): boolean {
   const db = getDb();
+  const row = db.prepare("SELECT uid FROM documents WHERE id = ?").get(id) as { uid: string } | undefined;
   if (hasVec()) {
     db.prepare(
       "DELETE FROM chunks_vec WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)"
     ).run(id);
   }
   db.prepare("DELETE FROM chunks WHERE document_id = ?").run(id);
-  return db.prepare("DELETE FROM documents WHERE id = ?").run(id).changes > 0;
+  const deleted = db.prepare("DELETE FROM documents WHERE id = ?").run(id).changes > 0;
+  if (deleted && row?.uid) recordDeletion("documents", row.uid);
+  return deleted;
 }
 
 export async function searchChunks(

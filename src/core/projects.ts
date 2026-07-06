@@ -1,4 +1,5 @@
 import { getDb } from "./db.js";
+import { recordDeletion } from "./sync.js";
 import type { ProjectMap } from "./types.js";
 
 export function upsertProject(map: ProjectMap): ProjectMap {
@@ -30,7 +31,9 @@ export function listProjects(): ProjectMap[] {
 }
 
 export function deleteProject(name: string): boolean {
-  return getDb().prepare("DELETE FROM projects WHERE name = ?").run(name).changes > 0;
+  const deleted = getDb().prepare("DELETE FROM projects WHERE name = ?").run(name).changes > 0;
+  if (deleted) recordDeletion("projects", name);
+  return deleted;
 }
 
 /** Karar/adım ekleme gibi kısmi güncellemeler için yardımcı. */

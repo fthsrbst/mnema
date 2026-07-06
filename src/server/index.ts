@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { config, embeddingsEnabled, getDb, hasVec } from "../core/index.js";
+import { config, embeddingsEnabled, getDb, hasVec, syncWithPrimary } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
 
@@ -65,4 +65,19 @@ getDb(); // şemayı baştan kur, sorun varsa açılışta patlasın
 app.listen(config.port, config.host, () => {
   console.log(`[hub] http://${config.host}:${config.port}  (MCP: /mcp, REST: /api, health: /health)`);
   console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${config.token ? "açık" : "KAPALI"}`);
+  if (config.primaryUrl) {
+    console.log(`[hub] eşitleme: ${config.primaryUrl} ile her ${config.syncIntervalSec}sn`);
+    const runSync = async () => {
+      const res = await syncWithPrimary(config.primaryUrl, config.primaryToken);
+      if (res.ok) {
+        const p = res.pulled!, q = res.pushed!;
+        const total = p.memories + p.documents + p.projects + p.sessions + p.machines + p.deletions +
+                      q.memories + q.documents + q.projects + q.sessions + q.machines + q.deletions;
+        if (total > 0) console.log(`[hub] sync: alınan ${JSON.stringify(p)}, gönderilen ${JSON.stringify(q)}`);
+      }
+      // Erişilemezse sessiz — local-first, primary dönünce kaldığı yerden devam eder
+    };
+    runSync();
+    setInterval(runSync, config.syncIntervalSec * 1000);
+  }
 });

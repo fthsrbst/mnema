@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getDb } from "./db.js";
+import { recordDeletion } from "./sync.js";
 
 export interface Machine {
   name: string;
@@ -60,7 +61,9 @@ export function listMachines(): Machine[] {
 }
 
 export function deleteMachine(name: string): boolean {
-  return getDb().prepare("DELETE FROM machines WHERE name = ?").run(name).changes > 0;
+  const deleted = getDb().prepare("DELETE FROM machines WHERE name = ?").run(name).changes > 0;
+  if (deleted) recordDeletion("machines", name);
+  return deleted;
 }
 
 /** Tüm makinelerin servis durumunu canlı yoklar. */

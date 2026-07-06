@@ -2,6 +2,10 @@ import { Router } from "express";
 import {
   addDocument,
   addSessionLog,
+  applyChanges,
+  collectChanges,
+  config,
+  syncWithPrimary,
   deleteMachine,
   generateImage,
   listMachines,
@@ -120,6 +124,16 @@ export function buildRestRouter(): Router {
   r.get("/workflows", wrap((_req, res) => res.json(listWorkflows())));
   r.post("/image", wrap(async (req, res) => res.json(await generateImage(req.body))));
   r.post("/media", wrap(async (req, res) => res.json(await generateImage(req.body))));
+
+  // --- sync (cihazlar arası eşitleme) ---
+  r.get("/sync/changes", wrap((req, res) => {
+    res.json(collectChanges(String(req.query.since ?? "1970-01-01 00:00:00")));
+  }));
+  r.post("/sync/apply", wrap((req, res) => res.json(applyChanges(req.body))));
+  r.post("/sync/run", wrap(async (_req, res) => {
+    if (!config.primaryUrl) return res.json({ ok: false, error: "HUB_PRIMARY_URL tanımlı değil" });
+    res.json(await syncWithPrimary(config.primaryUrl, config.primaryToken));
+  }));
 
   // --- recall (hook'ların kullandığı uç) ---
   r.get("/recall", wrap(async (req, res) => {

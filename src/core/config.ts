@@ -31,4 +31,8 @@ export const config = {
   // Alaka eşiği: normalize vektörlerde L2 mesafesi (0.86 ≈ cos 0.63).
   // Ölçüm: gerçek eşleşmeler cos 0.70+, alakasızlar 0.51-0.59 (scripts/debug-dist kalibrasyonu)
   vecMaxDistance: Number(process.env.VEC_MAX_DISTANCE ?? 0.86),
+  // Local-first eşitleme: tanımlıysa bu instance, primary (Pi) ile periyodik eşitlenir
+  primaryUrl: (process.env.HUB_PRIMARY_URL ?? "").replace(/\/$/, ""),
+  primaryToken: process.env.HUB_PRIMARY_TOKEN ?? "",
+  syncIntervalSec: Number(process.env.HUB_SYNC_INTERVAL ?? 60),
 };
