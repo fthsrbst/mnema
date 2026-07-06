@@ -199,6 +199,7 @@ program
       const res = sync();
       console.log(`skiller kopyalandı: ${res.skillsCopied.join(", ") || "(yok)"}`);
       console.log(`CLAUDE.md güncellendi: ${res.claudeMdUpdated}`);
+      console.log(`MCP konfigleri: ${res.mcpUpdated.length ? res.mcpUpdated.join(", ") + " güncellendi" : "değişiklik yok"}`);
     } catch (err) {
       fail(err);
     }

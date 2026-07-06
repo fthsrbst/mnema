@@ -1,11 +1,17 @@
 ---
 name: local-model
-description: İşleri Fatih'in PC'sindeki yerel LLM'lere (LM Studio) yönlendirme politikası — hangi işler local_llm'e uygun, model seçimi nasıl yapılır. Toplu/basit/tekrarlı metin işlerinde API maliyetini sıfırlamak için kullan.
+description: Model yönlendirme politikası — işin zorluğuna göre yerel LLM (LM Studio) mi, mevcut agent mı karar verilir. Toplu/basit/tekrarlı metin işlerinde API maliyetini sıfırlamak için kullan.
 ---
 
-# Yerel Model Yönlendirme
+# Model Yönlendirme: Zorluğa Göre Karar
 
-Hub'daki `local_llm` tool'u LM Studio'daki modelleri çalıştırır — API maliyeti yok, veri dışarı çıkmıyor.
+Temel kural: **işin zorluğuna göre karar ver.** Üç seviye:
+
+1. **Basit/toplu/mekanik** → `local_llm` (LM Studio, ücretsiz, veri lokalde)
+2. **Orta ve zor** → **sen** (mevcut agent) yaparsın — sen zaten güçlü bir bulut modelisin; ekstra API key veya entegrasyon gerekmez. Fatih'in kullandığı agent (Claude Code, opencode go aboneliği vb.) hangisiyse zor işin modeli odur.
+3. **Görsel/video/medya** → `media_generate` (ComfyUI, [[media-gen]] skill'i)
+
+Hub'a ayrıca bulut LLM API'si bağlamıyoruz — bilinçli karar: agent'ın kendisi o katman.
 
 ## local_llm'e uygun işler
 - Toplu/tekrarlı işler: 50 dosyaya özet, commit mesajı üretimi, veri temizleme/dönüştürme, etiketleme

@@ -1,0 +1,202 @@
+{
+  "_meta": {
+    "description": "Flux2 dev text-to-image — kaliteli final görsel. turbo=true: Turbo LoRA + 8 adım (hızlı), false: 20 adım (en iyi kalite)",
+    "defaults": { "width": 1024, "height": 1024, "turbo": true }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "98_8",
+        0
+      ],
+      "filename_prefix": "Flux2_dev"
+    }
+  },
+  "98_22": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "98_102",
+        0
+      ],
+      "conditioning": [
+        "98_26",
+        0
+      ]
+    }
+  },
+  "98_26": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+      "conditioning": [
+        "98_6",
+        0
+      ],
+      "guidance": 4
+    }
+  },
+  "98_16": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "98_10": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "full_encoder_small_decoder.safetensors"
+    }
+  },
+  "98_13": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "98_25",
+        0
+      ],
+      "guider": [
+        "98_22",
+        0
+      ],
+      "sampler": [
+        "98_16",
+        0
+      ],
+      "sigmas": [
+        "98_48",
+        0
+      ],
+      "latent_image": [
+        "98_47",
+        0
+      ]
+    }
+  },
+  "98_8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "98_13",
+        0
+      ],
+      "vae": [
+        "98_10",
+        0
+      ]
+    }
+  },
+  "98_38": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "mistral_3_small_flux2_bf16.safetensors",
+      "type": "flux2",
+      "device": "default"
+    }
+  },
+  "98_48": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+      "steps": [
+        "98_103",
+        0
+      ],
+      "width": "{{width}}",
+      "height": "{{height}}"
+    }
+  },
+  "98_47": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+      "width": "{{width}}",
+      "height": "{{height}}",
+      "batch_size": 1
+    }
+  },
+  "98_25": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "{{seed}}"
+    }
+  },
+  "98_6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{prompt}}",
+      "clip": [
+        "98_38",
+        0
+      ]
+    }
+  },
+  "98_101": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "98_12",
+        0
+      ],
+      "lora_name": "Flux_2-Turbo-LoRA_comfyui.safetensors",
+      "strength_model": 1
+    }
+  },
+  "98_102": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "switch": [
+        "98_104",
+        0
+      ],
+      "on_false": [
+        "98_12",
+        0
+      ],
+      "on_true": [
+        "98_101",
+        0
+      ]
+    }
+  },
+  "98_100": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 20
+    }
+  },
+  "98_99": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 8
+    }
+  },
+  "98_103": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "switch": [
+        "98_104",
+        0
+      ],
+      "on_false": [
+        "98_100",
+        0
+      ],
+      "on_true": [
+        "98_99",
+        0
+      ]
+    }
+  },
+  "98_104": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": {
+      "value": "{{turbo}}"
+    }
+  },
+  "98_12": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "flux2_dev_fp8mixed.safetensors",
+      "weight_dtype": "default"
+    }
+  }
+}

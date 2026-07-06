@@ -166,7 +166,7 @@ export interface ImageResult {
 export async function generateImage(opts: {
   machine?: string;
   workflow: string;
-  inputs?: Record<string, string | number>;
+  inputs?: Record<string, string | number | boolean>;
   timeoutSec?: number;
 }): Promise<ImageResult> {
   const candidates = listMachines().filter((m) => m.comfyui_port);
@@ -179,9 +179,39 @@ export async function generateImage(opts: {
   if (!fs.existsSync(wfPath)) {
     throw new Error(`workflow yok: ${opts.workflow} (mevcut: ${listWorkflows().join(", ") || "yok"})`);
   }
-  let wfText = fs.readFileSync(wfPath, "utf8");
-  // {{seed}} verilmemişse rastgele üret
-  const inputs: Record<string, string | number> = { seed: Math.floor(Math.random() * 1e9), ...opts.inputs };
+  // _meta: workflow açıklaması + placeholder varsayılanları (sunucuya gönderilmez)
+  const parsed = JSON.parse(fs.readFileSync(wfPath, "utf8")) as Record<string, unknown> & {
+    _meta?: { defaults?: Record<string, string | number | boolean> };
+  };
+  const defaults = parsed._meta?.defaults ?? {};
+  delete parsed._meta;
+  let wfText = JSON.stringify(parsed);
+  const inputs: Record<string, string | number | boolean> = {
+    seed: Math.floor(Math.random() * 1e9),
+    ...defaults,
+    ...opts.inputs,
+  };
+
+  // "*_path" girdileri: yerel dosyayı ComfyUI'a yükle, placeholder'a dosya adını koy
+  // (örn. image_path: "C:\foo.png" → {{image}} = yüklenen ad)
+  for (const [key, value] of Object.entries(inputs)) {
+    if (!key.endsWith("_path") || typeof value !== "string") continue;
+    if (!fs.existsSync(value)) throw new Error(`${key}: dosya yok: ${value}`);
+    const form = new FormData();
+    form.append("image", new Blob([fs.readFileSync(value)]), path.basename(value));
+    form.append("overwrite", "true");
+    const up = await fetch(`${base}/upload/image`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!up.ok) throw new Error(`ComfyUI upload hatası ${up.status}: ${(await up.text()).slice(0, 200)}`);
+    const uploaded = (await up.json()) as { name: string; subfolder?: string };
+    delete inputs[key];
+    inputs[key.replace(/_path$/, "")] = uploaded.subfolder
+      ? `${uploaded.subfolder}/${uploaded.name}`
+      : uploaded.name;
+  }
   for (const [key, value] of Object.entries(inputs)) {
     // sayı placeholder'ları tırnaklı da yazılabilsin: "{{seed}}" → 42
     wfText = wfText.replaceAll(`"{{${key}}}"`, JSON.stringify(value));
@@ -216,22 +246,40 @@ export async function generateImage(opts: {
   }
   if (!outputs) throw new Error(`ComfyUI zaman aşımı (${opts.timeoutSec ?? 300}s) — prompt_id ${queued.prompt_id}`);
 
+  // Her tür çıktıyı topla: images, gifs, video, audio, mesh... — filename'i olan her şey
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const files: string[] = [];
   const urls: string[] = [];
+  const seen = new Set<string>();
   for (const node of Object.values(outputs)) {
-    for (const img of node.images ?? []) {
-      const params = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder, type: img.type });
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000);
-      const res = await fetch(`${base}/view?${params}`, { signal: controller.signal });
-      clearTimeout(timer);
-      if (!res.ok) continue;
-      const name = `${Date.now()}-${img.filename}`;
-      const dest = path.join(OUTPUT_DIR, name);
-      fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
-      files.push(path.resolve(dest));
-      urls.push(`/outputs/${name}`);
+    for (const group of Object.values(node as Record<string, unknown>)) {
+      if (!Array.isArray(group)) continue;
+      for (const item of group) {
+        if (typeof item !== "object" || item === null) continue;
+        const f = item as { filename?: string; subfolder?: string; type?: string };
+        if (!f.filename || f.type === "temp") continue;
+        const key = `${f.subfolder}/${f.filename}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const params = new URLSearchParams({
+          filename: f.filename,
+          subfolder: f.subfolder ?? "",
+          type: f.type ?? "output",
+        });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 120000);
+        try {
+          const res = await fetch(`${base}/view?${params}`, { signal: controller.signal });
+          if (!res.ok) continue;
+          const name = `${Date.now()}-${f.filename}`;
+          const dest = path.join(OUTPUT_DIR, name);
+          fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+          files.push(path.resolve(dest));
+          urls.push(`/outputs/${name}`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
     }
   }
   return { machine: machine.name, workflow: opts.workflow, prompt_id: queued.prompt_id, files, urls };

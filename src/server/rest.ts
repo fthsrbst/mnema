@@ -119,6 +119,7 @@ export function buildRestRouter(): Router {
   r.post("/llm", wrap(async (req, res) => res.json(await localLlm(req.body))));
   r.get("/workflows", wrap((_req, res) => res.json(listWorkflows())));
   r.post("/image", wrap(async (req, res) => res.json(await generateImage(req.body))));
+  r.post("/media", wrap(async (req, res) => res.json(await generateImage(req.body))));
 
   // --- recall (hook'ların kullandığı uç) ---
   r.get("/recall", wrap(async (req, res) => {

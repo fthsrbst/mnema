@@ -290,14 +290,14 @@ export function buildMcpServer(): McpServer {
   );
 
   server.registerTool(
-    "image_generate",
+    "media_generate",
     {
-      title: "Görsel üret (ComfyUI)",
+      title: "Medya üret (ComfyUI): görsel/video/ses/3D",
       description:
-        "Fatih'in PC'sindeki ComfyUI ile görsel üretir. workflow: workflows/ klasöründeki isim; inputs: workflow'daki {{placeholder}} değerleri (örn. prompt, negative, width, height, seed). Üretilen dosya yolları ve /outputs URL'leri döner.",
+        "Fatih'in PC'sindeki ComfyUI ile görsel, video, ses veya 3D üretir. workflow: workflows/ klasöründeki isim (workflow_list ile gör; isim türü söyler: *-t2i görsel, *-t2v/*-i2v video, *-audio ses); inputs: workflow'daki {{placeholder}} değerleri (örn. prompt, negative, width, height, seed). Üretilen dosya yolları ve /outputs URL'leri döner. Video/3D dakikalar sürebilir — timeoutSec'i yüksek tut (600+).",
       inputSchema: {
         workflow: z.string(),
-        inputs: z.record(z.union([z.string(), z.number()])).optional(),
+        inputs: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
         machine: z.string().optional(),
         timeoutSec: z.number().int().optional(),
       },
