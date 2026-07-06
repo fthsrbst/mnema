@@ -248,14 +248,17 @@ Docker'da çalışmayacak; bilinçli tercih, kapı açık.
 
 > Uygulama boyunca alt agentlar (Agent tool) **Sonnet 5** modeliyle çalıştırılır.
 
-### Faz 0 — İskelet (yarım gün)
-Monorepo scaffold: `packages/core` (DB şeması, embedding client, chunking,
-hibrit arama), `packages/server` (Fastify: MCP + REST), `packages/cli`,
-`skills/`, `projects/`, `deploy/`. Windows'ta lokal çalışır halde.
+### Faz 0 — İskelet (yarım gün) ✅
+Tek paket (monorepo yerine bilinçli sadeleştirme: tek build, tek deploy):
+`src/core` (DB şeması, embedding client, chunking, hibrit arama),
+`src/server` (Express: MCP + REST), `src/cli`, `skills/`, `projects/`,
+`deploy/`. Windows'ta lokal çalışır halde.
 
-### Faz 1 — Hafıza çekirdeği (1 gün)
+### Faz 1 — Hafıza çekirdeği (1 gün) ✅
 SQLite şema + memory CRUD + Gemini embed + hibrit arama. MCP server ayakta,
-Claude Code'dan `memory_save`/`memory_search` uçtan uca test.
+`memory_save`/`memory_search` uçtan uca test (11/11 smoke; embedding'li yol
+GEMINI_API_KEY beklıyor). RAG pipeline (Faz 2'nin çekirdeği) ve hook'lu
+auto-recall da bu fazda geldi.
 
 ### Faz 2 — RAG pipeline (1 gün)
 Chunker, `rag_add`/`rag_search`, `hub index` ile klasör ingest. Kalite testi:
