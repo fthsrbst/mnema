@@ -26,6 +26,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/api", buildRestRouter());
+app.use("/outputs", express.static("./data/outputs")); // üretilen görseller
 
 // MCP: stateless Streamable HTTP — her istek için taze server+transport
 app.post("/mcp", async (req, res) => {

@@ -3,6 +3,11 @@ import { z } from "zod";
 import {
   addDocument,
   addSessionLog,
+  generateImage,
+  listWorkflows,
+  localLlm,
+  machinesStatus,
+  upsertMachine,
   appendToProject,
   deleteMemory,
   getProject,
@@ -215,6 +220,89 @@ export function buildMcpServer(): McpServer {
       inputSchema: { project: z.string().optional(), limit: z.number().int().min(1).max(30).optional() },
     },
     async ({ project, limit }) => json(recentSessionLogs({ project, limit }))
+  );
+
+  server.registerTool(
+    "machine_status",
+    {
+      title: "Makine/servis durumu",
+      description:
+        "Kayıtlı makinelerdeki yerel AI servislerinin (LM Studio, ComfyUI) canlı durumunu ve yüklü modelleri döner. local_llm veya image_generate çağırmadan önce buradan kontrol et.",
+      inputSchema: {},
+    },
+    async () => json(await machinesStatus())
+  );
+
+  server.registerTool(
+    "machine_register",
+    {
+      title: "Makine kaydet",
+      description: "Yerel AI servisi olan bir makineyi kaydeder/günceller (host: Tailscale IP veya 127.0.0.1).",
+      inputSchema: {
+        name: z.string(),
+        host: z.string().describe("Tailscale IP (100.x.x.x) veya hostname"),
+        lmstudio_port: z.number().int().optional().describe("LM Studio API portu (genelde 1234)"),
+        comfyui_port: z.number().int().optional().describe("ComfyUI portu (genelde 8188)"),
+        notes: z.string().optional(),
+      },
+    },
+    async (args) => json(upsertMachine({
+      name: args.name,
+      host: args.host,
+      lmstudio_port: args.lmstudio_port ?? null,
+      comfyui_port: args.comfyui_port ?? null,
+      notes: args.notes ?? null,
+    }))
+  );
+
+  server.registerTool(
+    "local_llm",
+    {
+      title: "Yerel LLM çalıştır",
+      description:
+        "Fatih'in PC'sindeki LM Studio modeliyle üretim yapar (API maliyeti yok). Basit işler için uygun: özetleme, sınıflandırma, taslak, veri dönüştürme. Model belirtilmezse yüklü ilk model kullanılır.",
+      inputSchema: {
+        prompt: z.string().describe("Kullanıcı mesajı (messages yerine kısayol)"),
+        machine: z.string().optional(),
+        model: z.string().optional(),
+        system: z.string().optional().describe("System prompt"),
+        temperature: z.number().min(0).max(2).optional(),
+        max_tokens: z.number().int().optional(),
+      },
+    },
+    async ({ prompt, system, ...rest }) =>
+      json(await localLlm({
+        ...rest,
+        messages: system
+          ? [{ role: "system", content: system }, { role: "user", content: prompt }]
+          : [{ role: "user", content: prompt }],
+      }))
+  );
+
+  server.registerTool(
+    "workflow_list",
+    {
+      title: "ComfyUI workflow listesi",
+      description: "Kullanılabilir görsel üretim workflowlarını listeler (repo'daki workflows/*.json).",
+      inputSchema: {},
+    },
+    async () => json(listWorkflows())
+  );
+
+  server.registerTool(
+    "image_generate",
+    {
+      title: "Görsel üret (ComfyUI)",
+      description:
+        "Fatih'in PC'sindeki ComfyUI ile görsel üretir. workflow: workflows/ klasöründeki isim; inputs: workflow'daki {{placeholder}} değerleri (örn. prompt, negative, width, height, seed). Üretilen dosya yolları ve /outputs URL'leri döner.",
+      inputSchema: {
+        workflow: z.string(),
+        inputs: z.record(z.union([z.string(), z.number()])).optional(),
+        machine: z.string().optional(),
+        timeoutSec: z.number().int().optional(),
+      },
+    },
+    async (args) => json(await generateImage(args))
   );
 
   return server;

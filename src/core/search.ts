@@ -1,3 +1,4 @@
+import { config } from "./config.js";
 import { getDb, hasVec } from "./db.js";
 import { embedOne, embeddingsEnabled, toBuffer } from "./embeddings.js";
 
@@ -50,9 +51,10 @@ export async function vecSearch(vecTable: string, query: string, limit = CANDIDA
   const vec = await embedOne(query, "RETRIEVAL_QUERY");
   if (!vec) return [];
   const rows = getDb()
-    .prepare(`SELECT rowid FROM ${vecTable} WHERE embedding MATCH ? AND k = ? ORDER BY distance`)
-    .all(toBuffer(vec), limit) as { rowid: number }[];
-  return rows.map((r) => r.rowid);
+    .prepare(`SELECT rowid, distance FROM ${vecTable} WHERE embedding MATCH ? AND k = ? ORDER BY distance`)
+    .all(toBuffer(vec), limit) as { rowid: number; distance: number }[];
+  // KNN her zaman "en yakın" k sonucu döner; alakasızları mesafe eşiğiyle ele
+  return rows.filter((r) => r.distance <= config.vecMaxDistance).map((r) => r.rowid);
 }
 
 /** Hibrit arama: FTS + vektör → RRF. Vektör yoksa FTS-only. */

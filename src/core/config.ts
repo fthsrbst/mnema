@@ -9,7 +9,13 @@ function loadDotEnv(): void {
     if (!m) continue;
     const [, key, raw] = m;
     if (process.env[key] !== undefined) continue;
-    process.env[key] = raw.replace(/^["']|["']$/g, "");
+    let value = raw.trim();
+    if (/^["']/.test(value)) {
+      value = value.replace(/^(["'])(.*?)\1.*$/, "$2");
+    } else {
+      value = value.replace(/(^|\s)#.*$/, "").trim(); // satır içi/başı yorumu at
+    }
+    process.env[key] = value;
   }
 }
 loadDotEnv();
@@ -22,4 +28,7 @@ export const config = {
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   embeddingDim: Number(process.env.EMBEDDING_DIM ?? 768),
   embeddingModel: process.env.EMBEDDING_MODEL ?? "gemini-embedding-001",
+  // Alaka eşiği: normalize vektörlerde L2 mesafesi (0.86 ≈ cos 0.63).
+  // Ölçüm: gerçek eşleşmeler cos 0.70+, alakasızlar 0.51-0.59 (scripts/debug-dist kalibrasyonu)
+  vecMaxDistance: Number(process.env.VEC_MAX_DISTANCE ?? 0.86),
 };

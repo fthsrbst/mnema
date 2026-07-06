@@ -13,8 +13,9 @@ async function upsertVector(id: number, title: string, body: string): Promise<vo
     const vec = await embedOne(`${title}\n${body}`, "RETRIEVAL_DOCUMENT");
     if (!vec) return;
     const db = getDb();
-    db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(id);
-    db.prepare("INSERT INTO memories_vec(rowid, embedding) VALUES (?, ?)").run(id, toBuffer(vec));
+    // sqlite-vec rowid için katı INTEGER ister; number REAL bağlandığından BigInt şart
+    db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(id));
+    db.prepare("INSERT INTO memories_vec(rowid, embedding) VALUES (?, ?)").run(BigInt(id), toBuffer(vec));
   } catch (err) {
     console.error(`[hub] memory #${id} embed edilemedi (FTS'te aranabilir): ${(err as Error).message}`);
   }
@@ -72,7 +73,7 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
 
 export function deleteMemory(id: number): boolean {
   const db = getDb();
-  if (hasVec()) db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(id);
+  if (hasVec()) db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(id));
   return db.prepare("DELETE FROM memories WHERE id = ?").run(id).changes > 0;
 }
 

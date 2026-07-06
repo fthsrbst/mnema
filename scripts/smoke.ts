@@ -2,10 +2,11 @@
  * Uçtan uca smoke test: geçici DB ile core fonksiyonları doğrular.
  * GEMINI_API_KEY yoksa FTS-only yolda çalışır (beklenen davranış).
  */
+// ESM import hoisting'e takılmamak için: önce env, sonra dinamik import
 process.env.HUB_DB_PATH = `./data/smoke-${Date.now()}.db`;
 
 import fs from "node:fs";
-import {
+const {
   addDocument,
   addSessionLog,
   closeDb,
@@ -19,7 +20,7 @@ import {
   searchChunks,
   searchMemories,
   upsertProject,
-} from "../src/core/index.js";
+} = await import("../src/core/index.js");
 
 let failed = 0;
 function check(name: string, cond: boolean, detail?: string) {

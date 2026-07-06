@@ -72,6 +72,15 @@ CREATE TABLE IF NOT EXISTS projects(
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS machines(
+  name TEXT PRIMARY KEY,
+  host TEXT NOT NULL,
+  lmstudio_port INTEGER,
+  comfyui_port INTEGER,
+  notes TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS session_logs(
   id INTEGER PRIMARY KEY,
   project TEXT,

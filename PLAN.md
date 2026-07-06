@@ -299,6 +299,25 @@ cron'ları. Cihaz konfiglerini Pi adresine çevir. Uçtan uca test: telefondan
   otomatik re-index
 - `hub timeline <proje>`: bir projenin karar/oturum geçmişini kronolojik döker
 
+### Faz 6 — Yerel AI Orkestrasyonu (LM Studio + ComfyUI)
+
+> Amaç: agentlar bir iş için görsel gerekince kendileri üretebilsin; basit
+> işleri Fatih'in PC'lerindeki yerel modellere yönlendirebilsin.
+
+- **Machines registry:** hub'da `machines` kaydı — cihaz adı, Tailscale IP,
+  yetenekler (lmstudio/comfyui portları). `machine_status` tool'u ile
+  hangi cihaz/servis ayakta görülür.
+- **LM Studio:** OpenAI-uyumlu API (`:1234/v1`). Hub tool'u `local_llm`
+  (machine, model, messages) → çıktıyı döner. Kullanım: özet, sınıflandırma,
+  taslak gibi basit işler API maliyeti olmadan yerelde.
+  Şart: LM Studio'da "Serve on local network" açık olmalı (Tailscale'den erişim).
+- **ComfyUI:** API (`:8188`). Workflowlar repo'da `workflows/*.json`
+  (API format). Hub tool'u `image_generate(workflow, inputs)` →
+  `POST /prompt` ile kuyruğa atar, `/history` poll'lar, çıktı görseli
+  alıp kaydeder, dosya yolunu döner. Agent görseli doğrudan işinde kullanır.
+- Uzun üretimler için job kaydı (id, durum) — agent sormadan önce
+  `machine_status`/job durumuna bakar.
+
 **Altyapı ekstraları:**
 - Mini web UI (telefonda hafıza/proje görüntüleme + quick capture)
 - ChatGPT web connector (Tailscale Funnel + OAuth)

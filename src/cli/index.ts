@@ -205,6 +205,42 @@ program
   });
 
 program
+  .command("machines")
+  .description("Kayıtlı makineler ve yerel AI servislerinin canlı durumu")
+  .action(async () => {
+    try {
+      const machines = await api<{ name: string; host: string; lmstudio: { online: boolean; models: string[] }; comfyui: { online: boolean } }[]>("GET", "/api/machines/status");
+      if (machines.length === 0) return console.log("kayıtlı makine yok");
+      for (const m of machines) {
+        console.log(`${m.name} (${m.host})`);
+        console.log(`  LM Studio: ${m.lmstudio.online ? `açık — ${m.lmstudio.models.length} model` : "kapalı/tanımsız"}`);
+        if (m.lmstudio.models.length) console.log(`    ${m.lmstudio.models.join("\n    ")}`);
+        console.log(`  ComfyUI:   ${m.comfyui.online ? "açık" : "kapalı/tanımsız"}`);
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("llm <prompt...>")
+  .description("Yerel LM Studio modeliyle üretim (API maliyeti yok)")
+  .option("-m, --model <model>")
+  .option("--machine <name>")
+  .action(async (words: string[], opts: { model?: string; machine?: string }) => {
+    try {
+      const res = await api<{ machine: string; model: string; content: string }>(
+        "POST", "/api/llm",
+        { prompt: words.join(" "), model: opts.model, machine: opts.machine },
+        { timeoutMs: 180000 }
+      );
+      console.log(`[${res.machine} / ${res.model}]\n${res.content}`);
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
   .command("status")
   .description("Sunucu sağlığı")
   .action(async () => {

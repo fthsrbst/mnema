@@ -48,7 +48,8 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
       if (vecs) {
         const insertVec = db.prepare("INSERT INTO chunks_vec(rowid, embedding) VALUES (?, ?)");
         const tx = db.transaction(() => {
-          vecs.forEach((v, i) => insertVec.run(chunkIds[i], toBuffer(v)));
+          // sqlite-vec rowid için BigInt şart (number REAL bağlanır, reddedilir)
+          vecs.forEach((v, i) => insertVec.run(BigInt(chunkIds[i]), toBuffer(v)));
         });
         tx();
         embedded = true;

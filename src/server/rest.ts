@@ -2,6 +2,13 @@ import { Router } from "express";
 import {
   addDocument,
   addSessionLog,
+  deleteMachine,
+  generateImage,
+  listMachines,
+  listWorkflows,
+  localLlm,
+  machinesStatus,
+  upsertMachine,
   appendToProject,
   deleteDocument,
   deleteMemory,
@@ -101,6 +108,17 @@ export function buildRestRouter(): Router {
       limit: limit ? Number(limit) : undefined,
     }));
   }));
+
+  // --- compute (yerel AI orkestrasyonu) ---
+  r.get("/machines", wrap((_req, res) => res.json(listMachines())));
+  r.get("/machines/status", wrap(async (_req, res) => res.json(await machinesStatus())));
+  r.put("/machines/:name", wrap((req, res) =>
+    res.json(upsertMachine({ ...req.body, name: req.params.name }))
+  ));
+  r.delete("/machines/:name", wrap((req, res) => res.json({ deleted: deleteMachine(req.params.name) })));
+  r.post("/llm", wrap(async (req, res) => res.json(await localLlm(req.body))));
+  r.get("/workflows", wrap((_req, res) => res.json(listWorkflows())));
+  r.post("/image", wrap(async (req, res) => res.json(await generateImage(req.body))));
 
   // --- recall (hook'ların kullandığı uç) ---
   r.get("/recall", wrap(async (req, res) => {
