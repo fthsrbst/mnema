@@ -78,6 +78,34 @@ check("recall boş sonuç → boş string", emptyRec === "");
 
 check("memory_delete", deleteMemory(mem.id) && (await searchMemories("qdrant sqlite")).every((m) => m.id !== mem.id));
 
+// importance: aynı içerikli iki kayıttan yüksek önemli olan sırada önde çıkmalı
+const impA = await saveMemory({
+  type: "fact",
+  title: "Onem testi A",
+  body: "zirkonyum desenli anahtar kelime onem testi",
+  tags: ["smoke-importance"],
+  source: "smoke",
+  importance: 2.0,
+});
+const impB = await saveMemory({
+  type: "fact",
+  title: "Onem testi B",
+  body: "zirkonyum desenli anahtar kelime onem testi",
+  tags: ["smoke-importance"],
+  source: "smoke",
+  importance: 0.5,
+});
+const impHits = await searchMemories("zirkonyum desenli anahtar kelime onem");
+const aIdx = impHits.findIndex((m) => m.id === impA.id);
+const bIdx = impHits.findIndex((m) => m.id === impB.id);
+check(
+  "memory importance skor sıralamasını etkiliyor",
+  aIdx !== -1 && bIdx !== -1 && aIdx < bIdx,
+  `A(2.0)#${aIdx} B(0.5)#${bIdx}`
+);
+deleteMemory(impA.id);
+deleteMemory(impB.id);
+
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });
 fs.rmSync(process.env.HUB_DB_PATH! + "-wal", { force: true });

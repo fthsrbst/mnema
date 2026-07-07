@@ -26,10 +26,13 @@ import {
   getDocument,
   getMemory,
   getPromptRaw,
+  growthStats,
   listPrompts,
   listSkills,
   ragStats,
   reindex,
+  runDigest,
+  timeline,
   savePrompt,
   saveSkill,
   setDocumentEnabled,
@@ -103,6 +106,11 @@ export function buildRestRouter(): Router {
   }));
   r.delete("/rag/documents/:id", wrap((req, res) => res.json({ deleted: deleteDocument(Number(req.params.id)) })));
   r.get("/rag/stats", wrap((_req, res) => res.json(ragStats())));
+  r.get("/timeline", wrap((req, res) => {
+    const { limit, before } = req.query;
+    res.json(timeline({ limit: limit ? Number(limit) : undefined, before: before as string | undefined }));
+  }));
+  r.get("/stats/growth", wrap((req, res) => res.json(growthStats(req.query.days ? Number(req.query.days) : undefined))));
   r.post("/rag/reindex", wrap(async (req, res) => res.json(await reindex(Boolean(req.body?.force)))));
   r.get("/rag/search", wrap(async (req, res) => {
     const { q, project, limit } = req.query;
@@ -194,8 +202,14 @@ export function buildRestRouter(): Router {
   }));
   r.post("/sync/apply", wrap((req, res) => res.json(applyChanges(req.body))));
   r.post("/sync/run", wrap(async (_req, res) => {
-    if (!config.primaryUrl) return res.json({ ok: false, error: "HUB_PRIMARY_URL tanımlı değil" });
-    res.json(await syncWithPrimary(config.primaryUrl, config.primaryToken));
+    if (config.primaryUrls.length === 0) return res.json({ ok: false, error: "HUB_PRIMARY_URL tanımlı değil" });
+    res.json(await syncWithPrimary(config.primaryUrls, config.primaryToken));
+  }));
+
+  // --- digest (gece özeti + otomatik hafıza çıkarımı) ---
+  r.post("/digest/run", wrap(async (req, res) => {
+    const period = req.body?.period === "weekly" ? "weekly" : "daily";
+    res.json(await runDigest(period));
   }));
 
   // --- recall (hook'ların kullandığı uç) ---

@@ -8,8 +8,8 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Divider } from "@astryxdesign/core/Divider";
-import { api, type HealthStatus, type RagStats, type SessionLog } from "../api";
-import { useI18n } from "../i18n";
+import { api, type GrowthStats, type HealthStatus, type RagStats, type SessionLog } from "../api";
+import { useI18n, type Lang, type TKey } from "../i18n";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -18,11 +18,216 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+// --- Bilgi büyümesi grafiği (saf SVG — kütüphane yok) ---
+
+const SERIES = [
+  { key: "memories", labelKey: "dashboard.seriesMemories", color: "var(--color-icon-blue)" },
+  { key: "sessions", labelKey: "dashboard.seriesSessions", color: "var(--color-icon-green)" },
+  { key: "documents", labelKey: "dashboard.seriesDocuments", color: "var(--color-icon-orange)" },
+] as const;
+
+type SeriesKey = (typeof SERIES)[number]["key"];
+type CumulativePoint = { day: string } & Record<SeriesKey, number>;
+
+/** Günlük sayıları eksik günleri doldurarak kümülatif seriye çevirir. */
+function buildCumulative(daily: GrowthStats["daily"]): CumulativePoint[] {
+  if (daily.length === 0) return [];
+  const byDay = new Map(daily.map((r) => [r.day, r]));
+  const endDay = new Date().toISOString().slice(0, 10);
+  const startDay = daily[0].day <= endDay ? daily[0].day : endDay;
+  const out: CumulativePoint[] = [];
+  let memories = 0;
+  let sessions = 0;
+  let documents = 0;
+  let cursor = new Date(startDay + "T00:00:00Z").getTime();
+  for (let i = 0; i < 400; i++) {
+    const day = new Date(cursor).toISOString().slice(0, 10);
+    const row = byDay.get(day);
+    if (row) {
+      memories += row.memories;
+      sessions += row.sessions;
+      documents += row.documents;
+    }
+    out.push({ day, memories, sessions, documents });
+    if (day >= endDay) break;
+    cursor += 86400000;
+  }
+  return out;
+}
+
+function formatDay(day: string, lang: Lang): string {
+  const d = new Date(day + "T00:00:00Z");
+  if (Number.isNaN(d.getTime())) return day;
+  return d.toLocaleDateString(lang === "tr" ? "tr-TR" : "en-US", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+function GrowthChart({ growth }: { growth: GrowthStats }) {
+  const { t, lang } = useI18n();
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const points = buildCumulative(growth.daily);
+
+  if (points.length === 0) {
+    return <EmptyState title={t("dashboard.growthEmpty")} description={t("dashboard.growthEmptyDesc")} />;
+  }
+
+  const W = 640;
+  const H = 220;
+  const padL = 36;
+  const padR = 10;
+  const padT = 10;
+  const padB = 22;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const n = points.length;
+  const last = points[n - 1];
+  const yMax = Math.max(last.memories, last.sessions, last.documents, 1);
+  const x = (i: number) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const y = (v: number) => padT + (1 - v / yMax) * plotH;
+  const yBase = padT + plotH;
+
+  const linePoints = (key: SeriesKey) =>
+    n === 1
+      ? `${padL},${y(points[0][key]).toFixed(1)} ${padL + plotW},${y(points[0][key]).toFixed(1)}`
+      : points.map((p, i) => `${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
+
+  const areaPath = (key: SeriesKey) => {
+    const pts =
+      n === 1
+        ? [`${padL},${y(points[0][key]).toFixed(1)}`, `${padL + plotW},${y(points[0][key]).toFixed(1)}`]
+        : points.map((p, i) => `${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`);
+    return `M ${pts[0]} L ${pts.slice(1).join(" L ")} L ${(padL + plotW).toFixed(1)},${yBase} L ${padL},${yBase} Z`;
+  };
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    if (n === 1) {
+      setHoverIdx(0);
+      return;
+    }
+    const idx = Math.round(((relX - padL) / plotW) * (n - 1));
+    setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
+  };
+
+  const hover = hoverIdx === null ? null : points[hoverIdx];
+  const hoverX = hoverIdx === null ? 0 : x(hoverIdx);
+  const tooltipW = 148;
+  const tooltipX = hoverX + tooltipW + 12 > W - padR ? hoverX - tooltipW - 12 : hoverX + 12;
+
+  const gridLevels = [0.5, 1];
+  const xTicks = n === 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1];
+
+  return (
+    <VStack gap={3}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label={t("dashboard.growthTitle")}
+        style={{ width: "100%", height: "auto", display: "block" }}
+        onMouseMove={onMove}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        {/* yatay ızgara + y ekseni etiketleri */}
+        <line x1={padL} y1={yBase} x2={padL + plotW} y2={yBase} stroke="var(--color-border-emphasized)" strokeWidth={1} />
+        {gridLevels.map((g) => (
+          <g key={g}>
+            <line x1={padL} y1={y(yMax * g)} x2={padL + plotW} y2={y(yMax * g)} stroke="var(--color-border)" strokeWidth={1} />
+            <text x={padL - 6} y={y(yMax * g) + 3} textAnchor="end" fontSize={10} fill="var(--color-text-secondary)">
+              {Math.round(yMax * g)}
+            </text>
+          </g>
+        ))}
+        <text x={padL - 6} y={yBase + 3} textAnchor="end" fontSize={10} fill="var(--color-text-secondary)">0</text>
+
+        {/* x ekseni etiketleri */}
+        {xTicks.map((i) => (
+          <text
+            key={i}
+            x={x(i)}
+            y={H - 6}
+            textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}
+            fontSize={10}
+            fill="var(--color-text-secondary)"
+          >
+            {formatDay(points[i].day, lang)}
+          </text>
+        ))}
+
+        {/* alan dolguları + çizgiler */}
+        {SERIES.map((s) => (
+          <path key={`area-${s.key}`} d={areaPath(s.key)} fill={s.color} opacity={0.12} />
+        ))}
+        {SERIES.map((s) => (
+          <polyline
+            key={`line-${s.key}`}
+            points={linePoints(s.key)}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={2}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ))}
+
+        {/* hover: dikey çizgi + noktalar + tooltip */}
+        {hover && (
+          <g pointerEvents="none">
+            <line x1={hoverX} y1={padT} x2={hoverX} y2={yBase} stroke="var(--color-border-emphasized)" strokeWidth={1} />
+            {SERIES.map((s) => (
+              <circle key={`dot-${s.key}`} cx={n === 1 ? hoverX : hoverX} cy={y(hover[s.key])} r={3.5} fill={s.color} />
+            ))}
+            <rect
+              x={tooltipX}
+              y={padT}
+              width={tooltipW}
+              height={20 + SERIES.length * 16}
+              rx={6}
+              fill="var(--color-background-popover)"
+              stroke="var(--color-border-emphasized)"
+              strokeWidth={1}
+            />
+            <text x={tooltipX + 10} y={padT + 16} fontSize={11} fill="var(--color-text-primary)">
+              {formatDay(hover.day, lang)}
+            </text>
+            {SERIES.map((s, si) => (
+              <g key={`tt-${s.key}`}>
+                <circle cx={tooltipX + 14} cy={padT + 28 + si * 16} r={3.5} fill={s.color} />
+                <text x={tooltipX + 24} y={padT + 32 + si * 16} fontSize={11} fill="var(--color-text-secondary)">
+                  {t(s.labelKey as TKey)}: {hover[s.key]}
+                </text>
+              </g>
+            ))}
+          </g>
+        )}
+      </svg>
+
+      {/* lejant + toplamlar */}
+      <HStack gap={5} vAlign="center" wrap="wrap">
+        {SERIES.map((s) => (
+          <HStack key={`legend-${s.key}`} gap={1.5} vAlign="center">
+            <svg width={10} height={10} viewBox="0 0 10 10" aria-hidden="true">
+              <circle cx={5} cy={5} r={5} fill={s.color} />
+            </svg>
+            <Text type="supporting" color="secondary">
+              {t(s.labelKey as TKey)}: {growth.totals[s.key]}
+            </Text>
+          </HStack>
+        ))}
+        <Text type="supporting" color="secondary">
+          {growth.totals.chunks} {t("dashboard.chunksLabel")}
+        </Text>
+      </HStack>
+    </VStack>
+  );
+}
+
 export function Dashboard() {
   const { t } = useI18n();
   const [stats, setStats] = useState<RagStats | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [sessions, setSessions] = useState<SessionLog[] | null>(null);
+  const [growth, setGrowth] = useState<GrowthStats | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -44,14 +249,16 @@ export function Dashboard() {
     setLoading(true);
     setError("");
     try {
-      const [s, h, sess] = await Promise.all([
+      const [s, h, sess, g] = await Promise.all([
         api<RagStats>("GET", "/api/rag/stats"),
         fetch("/health").then((r) => r.json() as Promise<HealthStatus>),
         api<SessionLog[]>("GET", "/api/sessions?limit=5"),
+        api<GrowthStats>("GET", "/api/stats/growth?days=90"),
       ]);
       setStats(s);
       setHealth(h);
       setSessions(sess);
+      setGrowth(g);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -187,6 +394,18 @@ export function Dashboard() {
               </VStack>
             </Card>
           </Grid>
+
+          {growth && (
+            <Card>
+              <VStack gap={3}>
+                <VStack gap={1}>
+                  <Heading level={4}>{t("dashboard.growthTitle")}</Heading>
+                  <Text type="supporting" color="secondary">{t("dashboard.growthSubtitle")}</Text>
+                </VStack>
+                <GrowthChart growth={growth} />
+              </VStack>
+            </Card>
+          )}
 
           {stats.sync.peers.length > 0 && (
             <Card>

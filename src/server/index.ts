@@ -2,7 +2,7 @@
 import { timingSafeEqual } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { config, embeddingsEnabled, getDb, hasVec, syncWithPrimary } from "../core/index.js";
+import { config, embeddingsEnabled, getDb, hasVec, onWrite, runDigest, syncWithPrimary } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
 
@@ -78,19 +78,68 @@ getDb(); // şemayı baştan kur, sorun varsa açılışta patlasın
 app.listen(config.port, config.host, () => {
   console.log(`[hub] http://${config.host}:${config.port}  (MCP: /mcp, REST: /api, health: /health)`);
   console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${config.token ? "açık" : "KAPALI"}`);
-  if (config.primaryUrl) {
-    console.log(`[hub] eşitleme: ${config.primaryUrl} ile her ${config.syncIntervalSec}sn`);
-    const runSync = async () => {
-      const res = await syncWithPrimary(config.primaryUrl, config.primaryToken);
-      if (res.ok) {
-        const p = res.pulled!, q = res.pushed!;
-        const total = p.memories + p.documents + p.projects + p.sessions + p.machines + p.deletions +
-                      q.memories + q.documents + q.projects + q.sessions + q.machines + q.deletions;
-        if (total > 0) console.log(`[hub] sync: alınan ${JSON.stringify(p)}, gönderilen ${JSON.stringify(q)}`);
+
+  if (config.primaryUrls.length > 0) {
+    console.log(`[hub] eşitleme: ${config.primaryUrls.join(", ")} ile her ${config.syncIntervalSec}sn (+ yazımda anında push)`);
+
+    // Eşzamanlı sync çalışmasın: devam eden varsa yeni istek kuyruğa alınır (tek pending yeter,
+    // üst üste binen istekler tek turda toplanır).
+    let syncing = false;
+    let pending = false;
+    const runSync = async (): Promise<void> => {
+      if (syncing) {
+        pending = true;
+        return;
       }
-      // Erişilemezse sessiz — local-first, primary dönünce kaldığı yerden devam eder
+      syncing = true;
+      try {
+        const res = await syncWithPrimary(config.primaryUrls, config.primaryToken);
+        if (res.ok) {
+          const p = res.pulled!, q = res.pushed!;
+          const total = p.memories + p.documents + p.projects + p.sessions + p.machines + p.deletions +
+                        q.memories + q.documents + q.projects + q.sessions + q.machines + q.deletions;
+          if (total > 0) console.log(`[hub] sync (${res.url}): alınan ${JSON.stringify(p)}, gönderilen ${JSON.stringify(q)}`);
+        } else {
+          // Erişilemezse sessizce devam — local-first, primary dönünce kaldığı yerden sürer.
+          console.error(`[hub] sync başarısız (yerel devam ediyor): ${res.error}`);
+        }
+      } finally {
+        syncing = false;
+        if (pending) {
+          pending = false;
+          void runSync();
+        }
+      }
     };
-    runSync();
+
+    void runSync();
     setInterval(runSync, config.syncIntervalSec * 1000);
+
+    // Push-on-write: her yazımdan 5sn sonra (art arda yazımlar tek sync'e toplanır).
+    let debounceTimer: NodeJS.Timeout | null = null;
+    onWrite(() => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        void runSync();
+      }, 5000);
+    });
   }
+
+  // Gece özeti: dakikada bir saat kontrolü ile hafif zamanlayıcı (node-cron yok — sıfır bağımlılık).
+  // Aynı gün ikinci kez tetiklenmeye karşı runDigest zaten memories'te o günün başlığını kontrol eder.
+  setInterval(() => {
+    const now = new Date();
+    const hh = now.getHours();
+    const mm = now.getMinutes();
+    if (hh === 3 && mm === 30) {
+      runDigest("daily")
+        .then((res) => console.log(`[hub] günlük özet: ${JSON.stringify(res)}`))
+        .catch((err) => console.error(`[hub] günlük özet hatası: ${(err as Error).message}`));
+    } else if (now.getDay() === 1 && hh === 4 && mm === 0) {
+      runDigest("weekly")
+        .then((res) => console.log(`[hub] haftalık özet: ${JSON.stringify(res)}`))
+        .catch((err) => console.error(`[hub] haftalık özet hatası: ${(err as Error).message}`));
+    }
+  }, 60_000);
 });

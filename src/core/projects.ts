@@ -1,4 +1,5 @@
 import { getDb } from "./db.js";
+import { notifyWrite } from "./events.js";
 import { recordDeletion } from "./sync.js";
 import type { ProjectMap } from "./types.js";
 
@@ -12,6 +13,7 @@ export function upsertProject(map: ProjectMap): ProjectMap {
     `INSERT INTO projects(name, data, updated_at) VALUES (@name, @data, datetime('now'))
      ON CONFLICT(name) DO UPDATE SET data=@data, updated_at=datetime('now')`
   ).run({ name: map.name, data: JSON.stringify(merged) });
+  notifyWrite();
   return getProject(map.name)!;
 }
 
@@ -32,7 +34,10 @@ export function listProjects(): ProjectMap[] {
 
 export function deleteProject(name: string): boolean {
   const deleted = getDb().prepare("DELETE FROM projects WHERE name = ?").run(name).changes > 0;
-  if (deleted) recordDeletion("projects", name);
+  if (deleted) {
+    recordDeletion("projects", name);
+    notifyWrite();
+  }
   return deleted;
 }
 

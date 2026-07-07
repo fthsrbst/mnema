@@ -31,8 +31,15 @@ export const config = {
   // Alaka eşiği: normalize vektörlerde L2 mesafesi (0.86 ≈ cos 0.63).
   // Ölçüm: gerçek eşleşmeler cos 0.70+, alakasızlar 0.51-0.59 (scripts/debug-dist kalibrasyonu)
   vecMaxDistance: Number(process.env.VEC_MAX_DISTANCE ?? 0.86),
-  // Local-first eşitleme: tanımlıysa bu instance, primary (Pi) ile periyodik eşitlenir
-  primaryUrl: (process.env.HUB_PRIMARY_URL ?? "").replace(/\/$/, ""),
+  // Local-first eşitleme: tanımlıysa bu instance, primary (Pi) ile periyodik eşitlenir.
+  // Virgülle ayrılmış çoklu adres desteklenir (örn. Tailscale + LAN yedeği):
+  // "http://100.x:8033,http://192.168.1.53:8033" — sırayla denenir, ilk erişilebilenle çalışılır.
+  primaryUrls: (process.env.HUB_PRIMARY_URL ?? "")
+    .split(",")
+    .map((u) => u.trim().replace(/\/$/, ""))
+    .filter((u) => u.length > 0),
   primaryToken: process.env.HUB_PRIMARY_TOKEN ?? "",
   syncIntervalSec: Number(process.env.HUB_SYNC_INTERVAL ?? 60),
+  // Recall skorlamasında güncellik decay yarı ömrü (gün). Büyütmek eski kayıtları daha uzun canlı tutar.
+  decayHalflifeDays: Number(process.env.HUB_DECAY_HALFLIFE_DAYS ?? 90),
 };

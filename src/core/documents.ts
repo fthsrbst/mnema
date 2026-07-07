@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getDb, hasVec } from "./db.js";
 import { chunkMarkdown } from "./chunker.js";
 import { embed, toBuffer } from "./embeddings.js";
+import { notifyWrite } from "./events.js";
 import { hybridSearch } from "./search.js";
 import { recordDeletion } from "./sync.js";
 import type { DocumentInput, ScoredChunk } from "./types.js";
@@ -61,6 +62,7 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
     }
   }
 
+  notifyWrite();
   return { document_id: docId, chunk_count: chunks.length, embedded };
 }
 
@@ -75,6 +77,7 @@ export function deleteDocument(id: number): boolean {
   db.prepare("DELETE FROM chunks WHERE document_id = ?").run(id);
   const deleted = db.prepare("DELETE FROM documents WHERE id = ?").run(id).changes > 0;
   if (deleted && row?.uid) recordDeletion("documents", row.uid);
+  if (deleted) notifyWrite();
   return deleted;
 }
 
@@ -130,11 +133,12 @@ export function listDocuments(limit = 100): DocumentListItem[] {
 
 /** Dokümanı açar/kapatır. Kapalı doküman RAG aramasından çıkar; durum cihazlar arası eşitlenir. */
 export function setDocumentEnabled(id: number, enabled: boolean): boolean {
-  return (
+  const changed =
     getDb()
       .prepare("UPDATE documents SET enabled = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(enabled ? 1 : 0, id).changes > 0
-  );
+      .run(enabled ? 1 : 0, id).changes > 0;
+  if (changed) notifyWrite();
+  return changed;
 }
 
 export function getDocument(id: number):

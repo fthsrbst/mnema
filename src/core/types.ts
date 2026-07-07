@@ -8,6 +8,9 @@ export interface Memory {
   project: string | null;
   tags: string[];
   source: string | null;
+  importance: number;
+  last_accessed: string | null;
+  access_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +22,8 @@ export interface MemoryInput {
   project?: string;
   tags?: string[];
   source?: string;
+  /** Önem çarpanı; 0.5–2.0 aralığına kelepçelenir. 2=kritik karar, 1=normal, 0.5=önemsiz detay. */
+  importance?: number;
 }
 
 export interface SearchFilters {

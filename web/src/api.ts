@@ -151,6 +151,21 @@ export interface RagSearchResult {
   score?: number;
 }
 
+export interface TimelineItem {
+  kind: "memory" | "session" | "document";
+  id: number;
+  title: string;
+  subtype: string | null;
+  project: string | null;
+  date: string;
+}
+
+export interface GrowthStats {
+  days: number;
+  daily: { day: string; memories: number; sessions: number; documents: number }[];
+  totals: { memories: number; sessions: number; documents: number; chunks: number };
+}
+
 export interface HealthStatus {
   ok: boolean;
   vec: boolean;

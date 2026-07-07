@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getDb } from "./db.js";
+import { notifyWrite } from "./events.js";
 import { composePrompt } from "./prompts.js";
 import { recordDeletion } from "./sync.js";
 
@@ -50,6 +51,7 @@ export function upsertMachine(m: Omit<Machine, "updated_at">): Machine {
       comfyui_port: m.comfyui_port ?? null,
       notes: m.notes ?? null,
     });
+  notifyWrite();
   return getMachine(m.name)!;
 }
 
@@ -63,7 +65,10 @@ export function listMachines(): Machine[] {
 
 export function deleteMachine(name: string): boolean {
   const deleted = getDb().prepare("DELETE FROM machines WHERE name = ?").run(name).changes > 0;
-  if (deleted) recordDeletion("machines", name);
+  if (deleted) {
+    recordDeletion("machines", name);
+    notifyWrite();
+  }
   return deleted;
 }
 
