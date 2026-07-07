@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "./db.js";
+import { recordDeletion } from "./sync.js";
 import type { SessionLog } from "./types.js";
 
 export function addSessionLog(summary: string, project?: string, source?: string): SessionLog {
@@ -9,6 +10,14 @@ export function addSessionLog(summary: string, project?: string, source?: string
   return getDb()
     .prepare("SELECT * FROM session_logs WHERE id = ?")
     .get(Number(info.lastInsertRowid)) as SessionLog;
+}
+
+export function deleteSessionLog(id: number): boolean {
+  const db = getDb();
+  const row = db.prepare("SELECT uid FROM session_logs WHERE id = ?").get(id) as { uid: string } | undefined;
+  const deleted = db.prepare("DELETE FROM session_logs WHERE id = ?").run(id).changes > 0;
+  if (deleted && row?.uid) recordDeletion("session_logs", row.uid);
+  return deleted;
 }
 
 export function recentSessionLogs(opts: { project?: string; limit?: number } = {}): SessionLog[] {

@@ -59,6 +59,7 @@ export interface ProjectMap {
   current_focus?: string;
   decisions?: string[];
   next_steps?: string[];
+  notes?: string;
   updated_at?: string;
 }
 
@@ -73,6 +74,9 @@ export interface SessionLog {
 export interface MachineStatus {
   name: string;
   host: string;
+  lmstudio_port: number | null;
+  comfyui_port: number | null;
+  notes: string | null;
   lmstudio: { online: boolean; models: string[] };
   comfyui: { online: boolean };
 }

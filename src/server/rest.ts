@@ -20,13 +20,18 @@ import {
   deleteMemory,
   formatRecall,
   composePrompt,
+  deleteProject,
+  deleteSessionLog,
+  deleteSkill,
   getDocument,
   getMemory,
   getPromptRaw,
   listPrompts,
+  listSkills,
   ragStats,
   reindex,
   savePrompt,
+  saveSkill,
   setDocumentEnabled,
   getProject,
   listDocuments,
@@ -120,6 +125,7 @@ export function buildRestRouter(): Router {
     const proj = appendToProject(req.params.name, "decisions", String(req.body.decision ?? ""));
     proj ? res.json(proj) : res.status(404).json({ error: "bulunamadı" });
   }));
+  r.delete("/projects/:name", wrap((req, res) => res.json({ deleted: deleteProject(req.params.name) })));
 
   // --- sessions ---
   r.post("/sessions", wrap((req, res) =>
@@ -132,6 +138,7 @@ export function buildRestRouter(): Router {
       limit: limit ? Number(limit) : undefined,
     }));
   }));
+  r.delete("/sessions/:id", wrap((req, res) => res.json({ deleted: deleteSessionLog(Number(req.params.id)) })));
 
   // --- compute (yerel AI orkestrasyonu) ---
   r.get("/machines", wrap((_req, res) => res.json(listMachines())));
@@ -160,26 +167,12 @@ export function buildRestRouter(): Router {
   }));
 
   // --- skills (repo'daki skills/ klasörü; düzenleme sonrası git commit + hub sync kullanıcıda) ---
-  r.get("/skills", wrap((_req, res) => {
-    const dir = "./skills";
-    if (!fs.existsSync(dir)) return res.json([]);
-    const out = fs.readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => {
-        const file = path.join(dir, e.name, "SKILL.md");
-        const content = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-        const desc = content.match(/^description:\s*(.+)$/m)?.[1] ?? "";
-        return { name: e.name, description: desc, content };
-      });
-    res.json(out);
-  }));
+  r.get("/skills", wrap((_req, res) => res.json(listSkills())));
   r.put("/skills/:name", wrap((req, res) => {
-    const name = req.params.name.replace(/[^a-z0-9-]/gi, "");
-    const file = path.join("./skills", name, "SKILL.md");
-    if (!fs.existsSync(path.dirname(file))) fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, String(req.body.content ?? ""));
+    saveSkill(req.params.name, String(req.body.content ?? ""));
     res.json({ ok: true, note: "Kalıcı olması için: git commit + push + her cihazda hub sync" });
   }));
+  r.delete("/skills/:name", wrap((req, res) => res.json({ deleted: deleteSkill(req.params.name) })));
 
   // --- prompts (rol bazlı master prompt kütüphanesi) ---
   r.get("/prompts", wrap((_req, res) => res.json(listPrompts())));

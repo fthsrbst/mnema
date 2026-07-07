@@ -8,6 +8,8 @@ import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Text, Heading } from "@astryxdesign/core/Text";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
+import { LayerProvider } from "@astryxdesign/core/Layer";
 import {
   Squares2X2Icon,
   ServerStackIcon,
@@ -30,6 +32,7 @@ import { Machines } from "./views/Machines";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
 import { getToken, setToken, setUnauthorizedHandler } from "./api";
+import { I18nContext, useI18n, useProvideI18n, type Lang } from "./i18n";
 
 type View =
   | "dashboard"
@@ -43,36 +46,50 @@ type View =
   | "skills"
   | "settings";
 
-const NAV: { id: View; label: string; icon: React.ComponentType }[] = [
-  { id: "dashboard", label: "Panel", icon: Squares2X2Icon },
-  { id: "rag", label: "RAG Yönetimi", icon: ServerStackIcon },
-  { id: "prompts", label: "Prompt'lar", icon: BookOpenIcon },
-  { id: "memories", label: "Hafıza", icon: CircleStackIcon },
-  { id: "projects", label: "Projeler", icon: FolderIcon },
-  { id: "sessions", label: "Oturumlar", icon: ClockIcon },
-  { id: "machines", label: "Makineler", icon: ComputerDesktopIcon },
-  { id: "media", label: "Medya", icon: PhotoIcon },
-  { id: "skills", label: "Skiller", icon: SparklesIcon },
-  { id: "settings", label: "Ayarlar", icon: Cog6ToothIcon },
+const NAV: { id: View; labelKey: Parameters<ReturnType<typeof useI18n>["t"]>[0]; icon: React.ComponentType }[] = [
+  { id: "dashboard", labelKey: "nav.dashboard", icon: Squares2X2Icon },
+  { id: "rag", labelKey: "nav.rag", icon: ServerStackIcon },
+  { id: "prompts", labelKey: "nav.prompts", icon: BookOpenIcon },
+  { id: "memories", labelKey: "nav.memories", icon: CircleStackIcon },
+  { id: "projects", labelKey: "nav.projects", icon: FolderIcon },
+  { id: "sessions", labelKey: "nav.sessions", icon: ClockIcon },
+  { id: "machines", labelKey: "nav.machines", icon: ComputerDesktopIcon },
+  { id: "media", labelKey: "nav.media", icon: PhotoIcon },
+  { id: "skills", labelKey: "nav.skills", icon: SparklesIcon },
+  { id: "settings", labelKey: "nav.settings", icon: Cog6ToothIcon },
 ];
 
+function LanguageToggle() {
+  const { lang, setLang, t } = useI18n();
+  return (
+    <VStack gap={1} paddingInline={3} paddingBlock={2}>
+      <Text type="supporting" color="secondary">{t("settings.language")}</Text>
+      <SegmentedControl label={t("settings.language")} value={lang} onChange={(v) => setLang(v as Lang)} layout="fill" size="sm">
+        <SegmentedControlItem value="tr" label="TR" />
+        <SegmentedControlItem value="en" label="EN" />
+      </SegmentedControl>
+    </VStack>
+  );
+}
+
 function Settings() {
+  const { t } = useI18n();
   const [token, setTokenValue] = useState(getToken());
   const [saved, setSaved] = useState(false);
   return (
     <VStack gap={4}>
-      <Heading level={3}>Ayarlar</Heading>
+      <Heading level={3}>{t("settings.title")}</Heading>
       <Card>
         <VStack gap={3}>
           <TextInput
-            label="API Token (sunucuda HUB_TOKEN doluysa gerekli)"
+            label={t("settings.tokenLabel")}
             type="password"
             value={token}
             onChange={(v: string) => { setTokenValue(v); setSaved(false); }}
           />
           <HStack gap={2} vAlign="center">
-            <Button label="Kaydet" variant="primary" onClick={() => { setToken(token); setSaved(true); }} />
-            {saved && <Text type="supporting" color="secondary">Kaydedildi (tarayıcıda saklanır)</Text>}
+            <Button label={t("common.save")} variant="primary" onClick={() => { setToken(token); setSaved(true); }} />
+            {saved && <Text type="supporting" color="secondary">{t("settings.saved")}</Text>}
           </HStack>
         </VStack>
       </Card>
@@ -82,28 +99,29 @@ function Settings() {
 
 /** 401 alındığında tam ekran token isteme ekranı — token girilince kaldığı görünüme döner. */
 function TokenGate({ onSubmit }: { onSubmit: (token: string) => void }) {
+  const { t } = useI18n();
   const [token, setTokenValue] = useState("");
   return (
     <Center axis="horizontal">
       <VStack gap={5} maxWidth={420} paddingBlock={10}>
         <VStack gap={1}>
-          <Heading level={3}>Oturum gerekli</Heading>
+          <Heading level={3}>{t("tokenGate.title")}</Heading>
           <Text type="supporting" color="secondary">
-            Sunucu bir API token'ı bekliyor (HUB_TOKEN). Devam etmek için token'ı gir.
+            {t("tokenGate.description")}
           </Text>
         </VStack>
         <Card>
           <VStack gap={3}>
             <TextInput
-              label="API Token"
+              label={t("tokenGate.tokenLabel")}
               type="password"
               value={token}
               onChange={setTokenValue}
               isRequired
-              placeholder="hub token'ınız"
+              placeholder={t("tokenGate.placeholder")}
             />
             <Button
-              label="Bağlan"
+              label={t("tokenGate.connect")}
               variant="primary"
               onClick={() => onSubmit(token)}
               isDisabled={!token.trim()}
@@ -111,15 +129,16 @@ function TokenGate({ onSubmit }: { onSubmit: (token: string) => void }) {
           </VStack>
         </Card>
         <EmptyState
-          title="Token'ı nereden bulurum?"
-          description="Pi üzerindeki sunucu ortam değişkeni HUB_TOKEN ile aynı değeri kullan."
+          title={t("tokenGate.whereTitle")}
+          description={t("tokenGate.whereDesc")}
         />
       </VStack>
     </Center>
   );
 }
 
-export default function App() {
+function AppInner() {
+  const { t } = useI18n();
   const [view, setView] = useState<View>("dashboard");
   const [needsToken, setNeedsToken] = useState(false);
 
@@ -146,11 +165,11 @@ export default function App() {
       height="fill"
       contentPadding={6}
       sideNav={
-        <SideNav>
+        <SideNav footer={<LanguageToggle />}>
           {NAV.map((item) => (
             <SideNavItem
               key={item.id}
-              label={item.label}
+              label={t(item.labelKey)}
               icon={item.icon}
               isSelected={view === item.id}
               onClick={() => setView(item.id)}
@@ -170,5 +189,16 @@ export default function App() {
       {view === "skills" && <Skills />}
       {view === "settings" && <Settings />}
     </AppShell>
+  );
+}
+
+export default function App() {
+  const i18n = useProvideI18n();
+  return (
+    <I18nContext.Provider value={i18n}>
+      <LayerProvider>
+        <AppInner />
+      </LayerProvider>
+    </I18nContext.Provider>
   );
 }

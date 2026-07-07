@@ -35,6 +35,7 @@ async function callBatch(texts: string[], taskType: EmbedTask): Promise<Float32A
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
     });
     if (res.status === 429 || res.status >= 500) {
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));

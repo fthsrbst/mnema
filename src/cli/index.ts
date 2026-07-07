@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { api, loadCliConfig, saveCliConfig } from "./client.js";
 import { sync } from "./sync.js";
+import { connectAgents, detectAgents, printAgentsTable } from "./agents.js";
 import type { Memory, ProjectMap, ScoredChunk, ScoredMemory, SessionLog } from "../core/types.js";
 
 const program = new Command();
@@ -200,6 +201,33 @@ program
       console.log(`skiller kopyalandı: ${res.skillsCopied.join(", ") || "(yok)"}`);
       console.log(`CLAUDE.md güncellendi: ${res.claudeMdUpdated}`);
       console.log(`MCP konfigleri: ${res.mcpUpdated.length ? res.mcpUpdated.join(", ") + " güncellendi" : "değişiklik yok"}`);
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("agents [action]")
+  .description("Kurulu AI agent uygulamalarını tespit et / hub'a bağla: hub agents [detect|connect]")
+  .action((action: string = "detect") => {
+    try {
+      if (action === "connect") {
+        const res = connectAgents();
+        printAgentsTable(detectAgents());
+        if (res.syncResult) {
+          console.log(`\nskiller kopyalandı: ${res.syncResult.skillsCopied.join(", ") || "(yok)"}`);
+          console.log(`CLAUDE.md güncellendi: ${res.syncResult.claudeMdUpdated}`);
+          console.log(
+            `MCP konfigleri (sync): ${res.syncResult.mcpUpdated.length ? res.syncResult.mcpUpdated.join(", ") + " güncellendi" : "değişiklik yok"}`
+          );
+        }
+        console.log(
+          `MCP konfigleri (ek): ${res.extrasUpdated.length ? res.extrasUpdated.join(", ") + " güncellendi" : "değişiklik yok"}`
+        );
+        return;
+      }
+      if (action !== "detect") return console.log("kullanım: hub agents [detect|connect]");
+      printAgentsTable(detectAgents());
     } catch (err) {
       fail(err);
     }

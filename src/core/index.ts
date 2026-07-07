@@ -12,3 +12,4 @@ export * from "./compute.js";
 export * from "./sync.js";
 export * from "./admin.js";
 export * from "./prompts.js";
+export * from "./skills.js";

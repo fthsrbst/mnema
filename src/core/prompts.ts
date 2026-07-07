@@ -60,6 +60,7 @@ export function composePrompt(role: string): string | null {
 
 export function savePrompt(name: string, content: string): void {
   const clean = safeName(name);
+  if (!clean) throw new Error("Geçersiz prompt adı (a-z, 0-9, - kullan)");
   const file = clean === "master" ? path.join(PROMPTS_DIR, "master.md") : path.join(ROLES_DIR, `${clean}.md`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, content);

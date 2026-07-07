@@ -4,23 +4,34 @@ import { Card } from "@astryxdesign/core/Card";
 import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { TextArea } from "@astryxdesign/core/TextArea";
+import { Selector } from "@astryxdesign/core/Selector";
 import { Table, pixel, proportional, type TableColumn } from "@astryxdesign/core/Table";
 import { Text, Heading } from "@astryxdesign/core/Text";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import { useToast } from "@astryxdesign/core/Toast";
 import { api, type Memory } from "../api";
+import { useI18n } from "../i18n";
 
 interface Row extends Record<string, unknown> {
   id: string;
   mem: Memory;
 }
 
+const MEMORY_TYPES = ["fact", "preference", "decision", "howto", "context"];
+
 export function Memories() {
+  const { t } = useI18n();
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<Memory[]>([]);
   const [selected, setSelected] = useState<Memory | null>(null);
-  const [draft, setDraft] = useState({ title: "", body: "", type: "fact", project: "" });
+  const [draft, setDraft] = useState({ title: "", body: "", type: "fact", project: "", tags: "" });
   const [showNew, setShowNew] = useState(false);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Memory | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -41,32 +52,38 @@ export function Memories() {
   const openRow = (mem: Memory) => {
     setSelected(mem);
     setShowNew(false);
-    setDraft({ title: mem.title, body: mem.body, type: mem.type, project: mem.project ?? "" });
+    setDraft({ title: mem.title, body: mem.body, type: mem.type, project: mem.project ?? "", tags: (mem.tags ?? []).join(", ") });
   };
 
   const columns: TableColumn<Row>[] = [
-    { key: "type", header: "Tür", width: pixel(100), renderCell: (r: Row) => r.mem.type },
-    { key: "title", header: "Başlık", width: proportional(1), renderCell: (r: Row) => r.mem.title },
-    { key: "project", header: "Proje", width: pixel(120), renderCell: (r: Row) => r.mem.project ?? "—" },
-    { key: "updated", header: "Güncelleme", width: pixel(150), renderCell: (r: Row) => r.mem.updated_at },
+    { key: "type", header: t("memories.colType"), width: pixel(100), renderCell: (r: Row) => r.mem.type },
+    { key: "title", header: t("memories.colTitle"), width: proportional(1), renderCell: (r: Row) => r.mem.title },
+    { key: "project", header: t("memories.colProject"), width: pixel(120), renderCell: (r: Row) => r.mem.project ?? "—" },
+    { key: "updated", header: t("memories.colUpdated"), width: pixel(150), renderCell: (r: Row) => r.mem.updated_at },
     {
       key: "actions",
       header: "",
-      width: pixel(90),
+      width: pixel(140),
       renderCell: (r: Row) => (
-        <Button label="Aç" variant="ghost" size="sm" onClick={() => openRow(r.mem)} />
+        <HStack gap={1}>
+          <Button label={t("common.open")} variant="ghost" size="sm" onClick={() => openRow(r.mem)} />
+          <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(r.mem)} />
+        </HStack>
       ),
     },
   ];
 
   const save = async () => {
+    setSaving(true);
     try {
+      const tags = draft.tags.split(",").map((s) => s.trim()).filter(Boolean);
       if (selected) {
         await api("PATCH", `/api/memory/${selected.id}`, {
           title: draft.title,
           body: draft.body,
           type: draft.type,
           project: draft.project || undefined,
+          tags,
         });
       } else {
         await api("POST", "/api/memory", {
@@ -74,22 +91,38 @@ export function Memories() {
           body: draft.body,
           type: draft.type,
           project: draft.project || undefined,
+          tags,
           source: "web-ui",
         });
       }
+      toast({ body: t("common.savedToast"), type: "info" });
       setSelected(null);
       setShowNew(false);
       await load();
     } catch (err) {
-      setError((err as Error).message);
+      toast({ body: `${t("common.saveFailed")}: ${(err as Error).message}`, type: "error" });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const remove = async () => {
-    if (!selected) return;
-    await api("DELETE", `/api/memory/${selected.id}`);
-    setSelected(null);
-    await load();
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api("DELETE", `/api/memory/${deleteTarget.id}`);
+      toast({ body: t("common.deletedToast"), type: "info" });
+      if (selected?.id === deleteTarget.id) {
+        setSelected(null);
+        setShowNew(false);
+      }
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      toast({ body: `${t("common.deleteFailed")}: ${(err as Error).message}`, type: "error" });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const editing = selected !== null || showNew;
@@ -97,51 +130,57 @@ export function Memories() {
   return (
     <VStack gap={4}>
       <HStack hAlign="between" vAlign="center">
-        <Heading level={3}>Hafıza</Heading>
+        <Heading level={3}>{t("memories.title")}</Heading>
         <Button
-          label="Yeni kayıt"
+          label={t("memories.newRecord")}
           variant="primary"
           onClick={() => {
             setSelected(null);
-            setDraft({ title: "", body: "", type: "fact", project: "" });
+            setDraft({ title: "", body: "", type: "fact", project: "", tags: "" });
             setShowNew(true);
           }}
         />
       </HStack>
       <HStack gap={2} vAlign="end">
         <TextInput
-          label="Ara"
+          label={t("common.search")}
           isLabelHidden
-          placeholder="Hibrit arama (anahtar kelime + anlamsal)..."
+          placeholder={t("memories.searchPlaceholder")}
           value={query}
           onChange={(v: string) => setQuery(v)}
           hasClear
         />
-        <Button label="Ara" variant="secondary" onClick={load} />
+        <Button label={t("common.search")} variant="secondary" onClick={load} />
       </HStack>
-      {error && <Text color="secondary">Hata: {error}</Text>}
+      {error && <Text color="secondary">{t("common.error")}: {error}</Text>}
       {editing && (
         <Card>
           <VStack gap={3}>
-            <Heading level={4}>{selected ? `#${selected.id} düzenle` : "Yeni hafıza kaydı"}</Heading>
-            <TextInput label="Başlık" value={draft.title} onChange={(v: string) => setDraft({ ...draft, title: v })} isRequired />
+            <Heading level={4}>{selected ? `#${selected.id} ${t("memories.editTitle")}` : t("memories.newTitle")}</Heading>
+            <TextInput label={t("common.title")} value={draft.title} onChange={(v: string) => setDraft({ ...draft, title: v })} isRequired />
             <HStack gap={3}>
-              <TextInput label="Tür (fact/preference/decision/howto/context)" value={draft.type} onChange={(v: string) => setDraft({ ...draft, type: v })} />
-              <TextInput label="Proje" value={draft.project} onChange={(v: string) => setDraft({ ...draft, project: v })} isOptional />
+              <Selector
+                label={t("memories.type")}
+                value={draft.type}
+                onChange={(v) => setDraft({ ...draft, type: v })}
+                options={MEMORY_TYPES}
+              />
+              <TextInput label={t("common.project")} value={draft.project} onChange={(v: string) => setDraft({ ...draft, project: v })} isOptional />
             </HStack>
-            <TextArea label="İçerik" value={draft.body} onChange={(v: string) => setDraft({ ...draft, body: v })} rows={6} isRequired />
+            <TextInput label={t("memories.tags")} value={draft.tags} onChange={(v: string) => setDraft({ ...draft, tags: v })} isOptional />
+            <TextArea label={t("memories.body")} value={draft.body} onChange={(v: string) => setDraft({ ...draft, body: v })} rows={6} isRequired />
             <HStack gap={2}>
-              <Button label="Kaydet" variant="primary" onClick={save} />
-              <Button label="Vazgeç" variant="secondary" onClick={() => { setSelected(null); setShowNew(false); }} />
-              {selected && <Button label="Sil" variant="destructive" onClick={remove} />}
+              <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} isDisabled={saving || !draft.title.trim() || !draft.body.trim()} />
+              <Button label={t("common.cancel")} variant="secondary" onClick={() => { setSelected(null); setShowNew(false); }} />
+              {selected && <Button label={t("common.delete")} variant="destructive" onClick={() => setDeleteTarget(selected)} />}
             </HStack>
           </VStack>
         </Card>
       )}
       {items.length === 0 && !editing ? (
         <EmptyState
-          title={query ? "Eşleşen kayıt yok" : "Henüz hafıza kaydı yok"}
-          description={query ? "Farklı kelimelerle dene — anlamsal arama eş anlamlıları da bulur." : "Agentlar çalıştıkça burası dolacak; elle de ekleyebilirsin."}
+          title={query ? t("memories.emptyTitleQuery") : t("memories.emptyTitle")}
+          description={query ? t("memories.emptyDescQuery") : t("memories.emptyDesc")}
         />
       ) : (
         <Table<Row>
@@ -153,6 +192,18 @@ export function Memories() {
           hasHover
         />
       )}
+
+      <AlertDialog
+        isOpen={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title={t("common.confirmDeleteTitle")}
+        description={`"${deleteTarget?.title}" ${t("memories.confirmDeleteDesc")}`}
+        actionLabel={t("memories.deleteAction")}
+        cancelLabel={t("common.cancel")}
+        actionVariant="destructive"
+        isActionLoading={deleting}
+        onAction={confirmDelete}
+      />
     </VStack>
   );
 }

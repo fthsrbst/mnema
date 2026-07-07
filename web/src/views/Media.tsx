@@ -6,12 +6,14 @@ import { Button } from "@astryxdesign/core/Button";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { Text, Heading } from "@astryxdesign/core/Text";
 import { api, type OutputFile } from "../api";
+import { useI18n } from "../i18n";
 
 const isImage = (name: string) => /\.(png|jpe?g|webp|gif)$/i.test(name);
 const isVideo = (name: string) => /\.(mp4|webm)$/i.test(name);
 const isAudio = (name: string) => /\.(mp3|wav|flac|ogg)$/i.test(name);
 
 export function Media() {
+  const { t } = useI18n();
   const [workflows, setWorkflows] = useState<string[]>([]);
   const [outputs, setOutputs] = useState<OutputFile[]>([]);
   const [workflow, setWorkflow] = useState("");
@@ -33,17 +35,17 @@ export function Media() {
 
   const generate = async () => {
     setBusy(true);
-    setMessage("Üretiliyor... (model ilk yüklemede dakikalar sürebilir)");
+    setMessage(t("media.generatingNote"));
     try {
       const res = await api<{ files: string[] }>("POST", "/api/media", {
         workflow,
         inputs: { prompt },
         timeoutSec: 600,
       });
-      setMessage(`Tamamlandı: ${res.files.length} dosya`);
+      setMessage(`${t("media.done")}: ${res.files.length}`);
       await load();
     } catch (err) {
-      setMessage(`Hata: ${(err as Error).message}`);
+      setMessage(`${t("media.error")}: ${(err as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -51,7 +53,7 @@ export function Media() {
 
   return (
     <VStack gap={4}>
-      <Heading level={3}>Medya Üretimi</Heading>
+      <Heading level={3}>{t("media.title")}</Heading>
       <Card>
         <VStack gap={3}>
           <HStack gap={2} wrap="wrap">
@@ -66,19 +68,19 @@ export function Media() {
             ))}
           </HStack>
           <TextArea
-            label="Prompt (İngilizce daha iyi sonuç verir)"
+            label={t("media.promptLabel")}
             value={prompt}
             onChange={setPrompt}
             rows={3}
-            placeholder="a minimal flat illustration of ..."
+            placeholder={t("media.placeholder")}
           />
           <HStack gap={3} vAlign="center">
-            <Button label={busy ? "Üretiliyor..." : "Üret"} variant="primary" onClick={generate} isDisabled={busy || !prompt.trim()} />
+            <Button label={busy ? t("media.generating") : t("media.generate")} variant="primary" onClick={generate} isDisabled={busy || !prompt.trim()} />
             {message && <Text type="supporting" color="secondary">{message}</Text>}
           </HStack>
         </VStack>
       </Card>
-      <Heading level={4}>Çıktılar</Heading>
+      <Heading level={4}>{t("media.outputs")}</Heading>
       <Grid columns={{ minWidth: 240, repeat: "fit" }} gap={4}>
         {outputs.map((f) => (
           <Card key={f.name} padding={2}>

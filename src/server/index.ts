@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { timingSafeEqual } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { config, embeddingsEnabled, getDb, hasVec, syncWithPrimary } from "../core/index.js";
@@ -23,10 +24,18 @@ app.use("/outputs", express.static("./data/outputs"));
 app.use("/", express.static("./web/dist"));
 
 // Bearer token auth (health hariç). Token boşsa auth kapalı (lokal dev).
+// ?token= desteği: claude.ai/ChatGPT/Gemini connector'ları özel header koyamıyor —
+// token URL'de taşınır (https zorunlu, Funnel/Serve bunu sağlar).
+const tokenMatches = (candidate: string): boolean => {
+  const a = Buffer.from(candidate);
+  const b = Buffer.from(config.token);
+  return a.length === b.length && timingSafeEqual(a, b); // zamanlama sızıntısına karşı
+};
 app.use((req, res, next) => {
   if (!config.token) return next();
   const header = req.headers.authorization ?? "";
-  if (header === `Bearer ${config.token}`) return next();
+  if (header.startsWith("Bearer ") && tokenMatches(header.slice(7))) return next();
+  if (typeof req.query.token === "string" && tokenMatches(req.query.token)) return next();
   res.status(401).json({ error: "unauthorized" });
 });
 

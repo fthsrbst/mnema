@@ -62,14 +62,27 @@ export interface ReindexResult {
   error?: string;
 }
 
+let reindexing = false;
+
 /**
  * Eksik embeddingleri tamamlar; force=true tüm vektörleri sıfırdan üretir
- * (EMBEDDING_DIM veya model değişince gerekir).
+ * (EMBEDDING_DIM veya model değişince gerekir). Eşzamanlı çağrı reddedilir —
+ * çift tıklama aynı chunk'ları iki kez embed edip API parası yakmasın.
  */
 export async function reindex(force = false): Promise<ReindexResult> {
   const result: ReindexResult = { ok: true, chunks_embedded: 0, memories_embedded: 0 };
+  if (reindexing) return { ...result, ok: false, error: "reindex zaten çalışıyor" };
   if (!hasVec()) return { ...result, ok: false, error: "sqlite-vec yok — vektör indeksi kullanılamıyor" };
   if (!embeddingsEnabled()) return { ...result, ok: false, error: "GEMINI_API_KEY tanımlı değil" };
+  reindexing = true;
+  try {
+    return await doReindex(force, result);
+  } finally {
+    reindexing = false;
+  }
+}
+
+async function doReindex(force: boolean, result: ReindexResult): Promise<ReindexResult> {
   const db = getDb();
 
   if (force) {

@@ -68,7 +68,7 @@ export function collectChanges(since: string): SyncPayload {
   const now = (db.prepare("SELECT datetime('now') AS n").get() as { n: string }).n;
 
   const memories = (db
-    .prepare("SELECT * FROM memories WHERE updated_at > ?")
+    .prepare("SELECT * FROM memories WHERE updated_at >= ?")
     .all(since) as (SyncMemory & { id: number })[]).map((m) => ({
     uid: m.uid, type: m.type, title: m.title, body: m.body, project: m.project,
     tags: m.tags, source: m.source, created_at: m.created_at, updated_at: m.updated_at,
@@ -76,7 +76,7 @@ export function collectChanges(since: string): SyncPayload {
   }));
 
   const docRows = db
-    .prepare("SELECT * FROM documents WHERE updated_at > ?")
+    .prepare("SELECT * FROM documents WHERE updated_at >= ?")
     .all(since) as (Omit<SyncDocument, "chunks"> & { id: number })[];
   const chunkStmt = db.prepare("SELECT id, seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq");
   const documents = docRows.map((d) => ({
@@ -91,10 +91,10 @@ export function collectChanges(since: string): SyncPayload {
     now,
     memories,
     documents,
-    projects: db.prepare("SELECT name, data, updated_at FROM projects WHERE updated_at > ?").all(since) as SyncPayload["projects"],
-    sessions: db.prepare("SELECT uid, project, summary, source, created_at FROM session_logs WHERE created_at > ?").all(since) as SyncPayload["sessions"],
-    machines: db.prepare("SELECT name, host, lmstudio_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at > ?").all(since) as SyncPayload["machines"],
-    deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at > ?").all(since) as SyncPayload["deletions"],
+    projects: db.prepare("SELECT name, data, updated_at FROM projects WHERE updated_at >= ?").all(since) as SyncPayload["projects"],
+    sessions: db.prepare("SELECT uid, project, summary, source, created_at FROM session_logs WHERE created_at >= ?").all(since) as SyncPayload["sessions"],
+    machines: db.prepare("SELECT name, host, lmstudio_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
+    deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at >= ?").all(since) as SyncPayload["deletions"],
   };
 }
 
@@ -180,6 +180,8 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   }
 
   for (const s of payload.sessions ?? []) {
+    const tomb = db.prepare("SELECT 1 FROM deletions WHERE uid = ?").get(s.uid);
+    if (tomb) continue; // silinmiş oturum logu geri dirilmesin
     const exists = db.prepare("SELECT 1 FROM session_logs WHERE uid = ?").get(s.uid);
     if (exists) continue;
     db.prepare(
@@ -201,7 +203,11 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   }
 
   for (const del of payload.deletions ?? []) {
-    db.prepare("INSERT INTO deletions(uid, tbl, deleted_at) VALUES (@uid, @tbl, @deleted_at) ON CONFLICT(uid) DO NOTHING").run(del);
+    // deleted_at donmasın: geç gelen silme daha yeni ise tombstone'u ilerlet (LWW)
+    db.prepare(
+      `INSERT INTO deletions(uid, tbl, deleted_at) VALUES (@uid, @tbl, @deleted_at)
+       ON CONFLICT(uid) DO UPDATE SET deleted_at = MAX(deleted_at, excluded.deleted_at)`
+    ).run(del);
     if (del.tbl === "memories") {
       const row = db.prepare("SELECT id, updated_at FROM memories WHERE uid = ?").get(del.uid) as { id: number; updated_at: string } | undefined;
       if (row && row.updated_at <= del.deleted_at) {
@@ -215,6 +221,12 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
         if (hasVec()) db.prepare("DELETE FROM chunks_vec WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)").run(row.id);
         db.prepare("DELETE FROM chunks WHERE document_id = ?").run(row.id);
         db.prepare("DELETE FROM documents WHERE id = ?").run(row.id);
+        result.deletions++;
+      }
+    } else if (del.tbl === "session_logs") {
+      const row = db.prepare("SELECT id FROM session_logs WHERE uid = ?").get(del.uid) as { id: number } | undefined;
+      if (row) {
+        db.prepare("DELETE FROM session_logs WHERE id = ?").run(row.id);
         result.deletions++;
       }
     } else if (del.tbl === "projects" || del.tbl === "machines") {

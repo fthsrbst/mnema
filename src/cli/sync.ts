@@ -104,6 +104,48 @@ function syncMcpServers(repoPath: string): string[] {
   const home = os.homedir();
   const updated: string[] = [];
 
+  // Codex: ~/.codex/config.toml — [mcp_servers.*] yönetilen blok (# hub:start/end).
+  // Codex remote HTTP MCP'yi doğrudan desteklemediği için mcp-remote stdio köprüsü kullanılır.
+  const codexDir = path.join(home, ".codex");
+  if (fs.existsSync(codexDir)) {
+    const codexFile = path.join(codexDir, "config.toml");
+    let toml = "";
+    try {
+      toml = fs.readFileSync(codexFile, "utf8");
+    } catch {
+      /* dosya yok, oluşturulacak */
+    }
+    const lines: string[] = ["# hub:start (otomatik yönetilen blok — hub sync)"];
+    for (const [name, entry] of servers) {
+      const args: string[] = entry.command
+        ? [...(entry.args ?? [])]
+        : ["-y", "mcp-remote", entry.url ?? ""];
+      const cmd = entry.command ?? "npx";
+      if (!entry.command) {
+        const auth = entry.headers?.Authorization;
+        if (auth) args.push("--header", `Authorization: ${auth}`);
+      }
+      lines.push(
+        `[mcp_servers.${name.replace(/[^a-zA-Z0-9_-]/g, "_")}]`,
+        `command = ${JSON.stringify(cmd)}`,
+        `args = [${args.map((a) => JSON.stringify(a)).join(", ")}]`,
+        ""
+      );
+    }
+    lines.push("# hub:end");
+    const block = lines.join("\n");
+    const start = toml.indexOf("# hub:start");
+    const end = toml.indexOf("# hub:end");
+    const next =
+      start !== -1 && end !== -1
+        ? toml.slice(0, start) + block + toml.slice(end + "# hub:end".length)
+        : toml.trimEnd() + (toml.trim() ? "\n\n" : "") + block + "\n";
+    if (next !== toml) {
+      fs.writeFileSync(codexFile, next);
+      updated.push("codex");
+    }
+  }
+
   // Claude Code (user scope): ~/.claude.json → mcpServers
   const claudeFile = path.join(home, ".claude.json");
   const claude = readJson(claudeFile);
@@ -189,6 +231,16 @@ export function sync(): SyncResult {
 
   const claudeMd = path.join(os.homedir(), ".claude", "CLAUDE.md");
   upsertManagedBlock(claudeMd, CLAUDE_MD_BLOCK);
+
+  // Aynı kurallar diğer istemcilerin kural dosyalarına — session_log/memory_save
+  // disiplini sadece Claude Code'da kalmasın (opencode AGENTS.md, Codex AGENTS.md)
+  const home = os.homedir();
+  for (const rulesFile of [
+    path.join(home, ".config", "opencode", "AGENTS.md"),
+    path.join(home, ".codex", "AGENTS.md"),
+  ]) {
+    if (fs.existsSync(path.dirname(rulesFile))) upsertManagedBlock(rulesFile, CLAUDE_MD_BLOCK);
+  }
 
   const mcpUpdated = syncMcpServers(cfg.repoPath);
 

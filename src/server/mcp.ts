@@ -11,7 +11,10 @@ import {
   appendToProject,
   composePrompt,
   deleteMemory,
+  deleteProject,
   listPrompts,
+  listSkills,
+  saveSkill,
   getProject,
   listProjects,
   recall,
@@ -215,6 +218,40 @@ export function buildMcpServer(): McpServer {
       const proj = appendToProject(name, "decisions", decision);
       return proj ? json(proj) : json({ error: `proje '${name}' yok` });
     }
+  );
+
+  server.registerTool(
+    "project_delete",
+    {
+      title: "Projeyi sil",
+      description: "Bir proje map'ini kalıcı siler (tombstone ile tüm cihazlara yayılır). Sadece kullanıcı isterse çağır.",
+      inputSchema: { name: z.string() },
+    },
+    async ({ name }) => json({ deleted: deleteProject(name) })
+  );
+
+  server.registerTool(
+    "skill_list",
+    {
+      title: "Skilleri listele",
+      description: "Hub'daki agent skillerini (ad + açıklama) listeler.",
+      inputSchema: {},
+    },
+    async () => json(listSkills().map(({ name, description }) => ({ name, description })))
+  );
+
+  server.registerTool(
+    "skill_save",
+    {
+      title: "Skill oluştur/güncelle",
+      description:
+        "skills/<ad>/SKILL.md yazar — AI ile yeni skill üretmek için kullan. İçerik SKILL.md formatında olmalı: '---\\nname: <ad>\\ndescription: <ne zaman kullanılacağı>\\n---' frontmatter + markdown gövde (adımlar, kurallar, örnekler). Cihazlara dağıtım: git commit + her cihazda `hub sync`.",
+      inputSchema: {
+        name: z.string().describe("kebab-case skill adı"),
+        content: z.string().describe("SKILL.md tam içeriği (frontmatter dahil)"),
+      },
+    },
+    async ({ name, content }) => json(saveSkill(name, content))
   );
 
   server.registerTool(

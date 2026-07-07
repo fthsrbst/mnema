@@ -185,6 +185,8 @@ export async function generateImage(opts: {
   if (!machine) throw new Error(`'${opts.machine}' makinesi yok veya ComfyUI portu tanımsız`);
   const base = `http://${machine.host}:${machine.comfyui_port}`;
 
+  // path traversal engeli: workflow adı sadece dosya adı olabilir
+  if (!/^[a-zA-Z0-9_-]+$/.test(opts.workflow)) throw new Error("geçersiz workflow adı");
   const wfPath = path.join("./workflows", `${opts.workflow}.json`);
   if (!fs.existsSync(wfPath)) {
     throw new Error(`workflow yok: ${opts.workflow} (mevcut: ${listWorkflows().join(", ") || "yok"})`);
