@@ -1,0 +1,20 @@
+{
+  "//": "Tek kaynak MCP kayıtları. 'hub sync' bunları Claude Code, Cursor ve opencode'a dağıtır. $HUB_URL ve $HUB_TOKEN cihazdaki hub config'inden çözülür.",
+  "servers": {
+    "hub": {
+      "url": "$HUB_URL/mcp",
+      "headers": { "Authorization": "Bearer $HUB_TOKEN" }
+    },
+    "context7": {
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    }
+  }
+}

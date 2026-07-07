@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Hub - ortak hafiza/RAG sunucusu
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/ai-hub
+ExecStart=/usr/bin/node /home/%i/ai-hub/dist/server/index.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

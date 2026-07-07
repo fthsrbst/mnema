@@ -1,0 +1,268 @@
+{
+  "_meta": {
+    "description": "Qwen-Image-Edit 2509 — var olan görseli talimatla düzenler. inputs.image_path: yerel görsel dosyası (otomatik yüklenir); prompt: düzenleme talimatı (İngilizce). turbo=true: 4 adım Lightning",
+    "defaults": { "turbo": true }
+  },
+  "60": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "433_8",
+        0
+      ],
+      "filename_prefix": "ComfyUI"
+    }
+  },
+  "78": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{image}}"
+    }
+  },
+  "435": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "{{prompt}}"
+    }
+  },
+  "433_75": {
+    "class_type": "CFGNorm",
+    "inputs": {
+      "model": [
+        "433_66",
+        0
+      ],
+      "strength": 1
+    }
+  },
+  "433_39": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    }
+  },
+  "433_38": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "433_37": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "433_110": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "433_38",
+        0
+      ],
+      "prompt": "",
+      "vae": [
+        "433_39",
+        0
+      ],
+      "image1": [
+        "433_117",
+        0
+      ]
+    }
+  },
+  "433_66": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+      "model": [
+        "433_440",
+        0
+      ],
+      "shift": 3
+    }
+  },
+  "433_111": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "433_38",
+        0
+      ],
+      "prompt": [
+        "435",
+        0
+      ],
+      "vae": [
+        "433_39",
+        0
+      ],
+      "image1": [
+        "433_117",
+        0
+      ]
+    }
+  },
+  "433_88": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "433_117",
+        0
+      ],
+      "vae": [
+        "433_39",
+        0
+      ]
+    }
+  },
+  "433_8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "433_3",
+        0
+      ],
+      "vae": [
+        "433_39",
+        0
+      ]
+    }
+  },
+  "433_89": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "433_37",
+        0
+      ],
+      "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1
+    }
+  },
+  "433_117": {
+    "class_type": "FluxKontextImageScale",
+    "inputs": {
+      "image": [
+        "78",
+        0
+      ]
+    }
+  },
+  "433_3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "433_75",
+        0
+      ],
+      "seed": "{{seed}}",
+      "steps": [
+        "433_441",
+        0
+      ],
+      "cfg": [
+        "433_442",
+        0
+      ],
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "433_111",
+        0
+      ],
+      "negative": [
+        "433_110",
+        0
+      ],
+      "latent_image": [
+        "433_88",
+        0
+      ],
+      "denoise": 1
+    }
+  },
+  "433_436": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 4
+    }
+  },
+  "433_437": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+      "value": 1
+    }
+  },
+  "433_438": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 20
+    }
+  },
+  "433_439": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+      "value": 4
+    }
+  },
+  "433_440": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "switch": [
+        "433_443",
+        0
+      ],
+      "on_false": [
+        "433_37",
+        0
+      ],
+      "on_true": [
+        "433_89",
+        0
+      ]
+    }
+  },
+  "433_441": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "switch": [
+        "433_443",
+        0
+      ],
+      "on_false": [
+        "433_438",
+        0
+      ],
+      "on_true": [
+        "433_436",
+        0
+      ]
+    }
+  },
+  "433_442": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "switch": [
+        "433_443",
+        0
+      ],
+      "on_false": [
+        "433_439",
+        0
+      ],
+      "on_true": [
+        "433_437",
+        0
+      ]
+    }
+  },
+  "433_443": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": {
+      "value": "{{turbo}}"
+    }
+  }
+}
