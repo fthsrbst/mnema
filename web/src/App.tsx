@@ -17,6 +17,7 @@ import {
   BookOpenIcon,
   FolderIcon,
   ClockIcon,
+  QueueListIcon,
   ComputerDesktopIcon,
   PhotoIcon,
   SparklesIcon,
@@ -28,6 +29,7 @@ import { Prompts } from "./views/Prompts";
 import { Memories } from "./views/Memories";
 import { Projects } from "./views/Projects";
 import { Sessions } from "./views/Sessions";
+import { Timeline } from "./views/Timeline";
 import { Machines } from "./views/Machines";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
@@ -36,6 +38,7 @@ import { I18nContext, useI18n, useProvideI18n, type Lang } from "./i18n";
 
 type View =
   | "dashboard"
+  | "timeline"
   | "rag"
   | "prompts"
   | "memories"
@@ -48,6 +51,7 @@ type View =
 
 const NAV: { id: View; labelKey: Parameters<ReturnType<typeof useI18n>["t"]>[0]; icon: React.ComponentType }[] = [
   { id: "dashboard", labelKey: "nav.dashboard", icon: Squares2X2Icon },
+  { id: "timeline", labelKey: "nav.timeline", icon: QueueListIcon },
   { id: "rag", labelKey: "nav.rag", icon: ServerStackIcon },
   { id: "prompts", labelKey: "nav.prompts", icon: BookOpenIcon },
   { id: "memories", labelKey: "nav.memories", icon: CircleStackIcon },
@@ -179,6 +183,7 @@ function AppInner() {
       }
     >
       {view === "dashboard" && <Dashboard />}
+      {view === "timeline" && <Timeline onNavigate={(target) => setView(target)} />}
       {view === "rag" && <RagManagement />}
       {view === "prompts" && <Prompts />}
       {view === "memories" && <Memories />}

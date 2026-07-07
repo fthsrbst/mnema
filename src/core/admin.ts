@@ -49,8 +49,68 @@ export function ragStats(): RagStats {
       embedded: vec ? one("SELECT COUNT(*) AS n FROM memories_vec") : 0,
     },
     sync: {
-      primary_url: config.primaryUrl,
+      primary_url: config.primaryUrls.join(","),
       peers: db.prepare("SELECT peer, last_pull, last_push FROM sync_state").all() as RagStats["sync"]["peers"],
+    },
+  };
+}
+
+export interface TimelineItem {
+  kind: "memory" | "session" | "document";
+  id: number;
+  title: string;
+  subtype: string | null; // memory type / session source / document source
+  project: string | null;
+  date: string;
+}
+
+/** Hafıza + oturum + dokümanları tek zaman ekseninde döner (en yeni önce, sayfalama: before). */
+export function timeline(opts: { limit?: number; before?: string } = {}): TimelineItem[] {
+  const limit = Math.min(opts.limit ?? 50, 200);
+  const before = opts.before ?? "9999-12-31";
+  return getDb()
+    .prepare(
+      `SELECT * FROM (
+         SELECT 'memory' AS kind, id, title, type AS subtype, project, updated_at AS date FROM memories
+         UNION ALL
+         SELECT 'session' AS kind, id, substr(summary, 1, 140) AS title, source AS subtype, project, created_at AS date FROM session_logs
+         UNION ALL
+         SELECT 'document' AS kind, id, title, source AS subtype, project, created_at AS date FROM documents
+       ) WHERE date < ? ORDER BY date DESC LIMIT ?`
+    )
+    .all(before, limit) as TimelineItem[];
+}
+
+export interface GrowthStats {
+  days: number;
+  daily: { day: string; memories: number; sessions: number; documents: number }[];
+  totals: { memories: number; sessions: number; documents: number; chunks: number };
+}
+
+/** Son N günün günlük kayıt sayıları — bilgi birikimi grafiği için. */
+export function growthStats(days = 90): GrowthStats {
+  const db = getDb();
+  const since = `-${Math.min(Math.max(days, 7), 365)} days`;
+  const rows = db
+    .prepare(
+      `SELECT day, SUM(m) AS memories, SUM(s) AS sessions, SUM(d) AS documents FROM (
+         SELECT date(created_at) AS day, 1 AS m, 0 AS s, 0 AS d FROM memories WHERE created_at >= date('now', ?)
+         UNION ALL
+         SELECT date(created_at), 0, 1, 0 FROM session_logs WHERE created_at >= date('now', ?)
+         UNION ALL
+         SELECT date(created_at), 0, 0, 1 FROM documents WHERE created_at >= date('now', ?)
+       ) GROUP BY day ORDER BY day`
+    )
+    .all(since, since, since) as GrowthStats["daily"];
+  const one = (sql: string): number => (db.prepare(sql).get() as { n: number }).n;
+  return {
+    days,
+    daily: rows,
+    totals: {
+      memories: one("SELECT COUNT(*) AS n FROM memories"),
+      sessions: one("SELECT COUNT(*) AS n FROM session_logs"),
+      documents: one("SELECT COUNT(*) AS n FROM documents"),
+      chunks: one("SELECT COUNT(*) AS n FROM chunks"),
     },
   };
 }

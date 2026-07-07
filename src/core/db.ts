@@ -115,6 +115,10 @@ function migrate(database: Database.Database): void {
   addColumn("documents", "updated_at", "updated_at TEXT");
   addColumn("documents", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumn("session_logs", "uid", "uid TEXT");
+  // Recall kalitesi: önem çarpanı + erişim takibi (bkz. memories.ts, search.ts)
+  addColumn("memories", "importance", "importance REAL NOT NULL DEFAULT 1.0");
+  addColumn("memories", "last_accessed", "last_accessed TEXT");
+  addColumn("memories", "access_count", "access_count INTEGER NOT NULL DEFAULT 0");
   database.exec(`
     UPDATE memories SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
     UPDATE documents SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
@@ -124,6 +128,29 @@ function migrate(database: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uid ON documents(uid);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_uid ON session_logs(uid);
   `);
+  migrateSyncStatePeers(database);
+}
+
+/**
+ * sync_state.peer eskiden URL bazlıydı (HUB_PRIMARY_URL değeri) — artık tek
+ * mantıksal "primary" peer kullanılıyor ki adres değişince (çoklu URL/failover)
+ * `since` sıfırlanmasın. Var olan URL bazlı satırları 'primary'ye taşır.
+ */
+function migrateSyncStatePeers(database: Database.Database): void {
+  const hasPrimary = database.prepare("SELECT 1 FROM sync_state WHERE peer = 'primary'").get();
+  if (hasPrimary) return;
+  const urlRows = database
+    .prepare("SELECT peer, last_pull, last_push FROM sync_state WHERE peer LIKE 'http%' ORDER BY last_pull DESC")
+    .all() as { peer: string; last_pull: string | null; last_push: string | null }[];
+  if (urlRows.length === 0) return;
+  const chosen = urlRows[0];
+  database
+    .prepare(
+      `INSERT INTO sync_state(peer, last_pull, last_push) VALUES ('primary', @last_pull, @last_push)
+       ON CONFLICT(peer) DO UPDATE SET last_pull=excluded.last_pull, last_push=excluded.last_push`
+    )
+    .run({ last_pull: chosen.last_pull, last_push: chosen.last_push });
+  database.prepare("DELETE FROM sync_state WHERE peer != 'primary'").run();
 }
 
 export function getDb(): Database.Database {

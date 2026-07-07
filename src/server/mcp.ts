@@ -79,6 +79,12 @@ export function buildMcpServer(): McpServer {
         project: z.string().optional().describe("İlgili proje adı"),
         tags: z.array(z.string()).optional(),
         source: z.string().optional().describe("Hangi agent/cihaz yazıyor"),
+        importance: z
+          .number()
+          .min(0.5)
+          .max(2)
+          .optional()
+          .describe("önem çarpanı; 2=kritik karar, 1=normal, 0.5=önemsiz detay"),
       },
     },
     async (args) => json(await saveMemory(args))
@@ -112,6 +118,12 @@ export function buildMcpServer(): McpServer {
         type: memoryType.optional(),
         project: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        importance: z
+          .number()
+          .min(0.5)
+          .max(2)
+          .optional()
+          .describe("önem çarpanı; 2=kritik karar, 1=normal, 0.5=önemsiz detay"),
       },
     },
     async ({ id, ...patch }) => {

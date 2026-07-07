@@ -18,6 +18,7 @@ export interface SyncMemory {
   source: string | null;
   created_at: string;
   updated_at: string;
+  importance?: number; // eski peer göndermezse 1.0 varsayılır
   embedding?: string; // base64 float32
 }
 
@@ -72,6 +73,8 @@ export function collectChanges(since: string): SyncPayload {
     .all(since) as (SyncMemory & { id: number })[]).map((m) => ({
     uid: m.uid, type: m.type, title: m.title, body: m.body, project: m.project,
     tags: m.tags, source: m.source, created_at: m.created_at, updated_at: m.updated_at,
+    importance: m.importance ?? 1.0,
+    // last_accessed/access_count kasıtlı olarak taşınmaz — cihaz-yerel istatistik
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
 
@@ -119,7 +122,9 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   const db = getDb();
   const result: ApplyResult = { memories: 0, documents: 0, projects: 0, sessions: 0, machines: 0, deletions: 0 };
 
-  for (const m of payload.memories ?? []) {
+  for (const raw of payload.memories ?? []) {
+    // eski peer importance göndermezse 1.0 varsay
+    const m = { ...raw, importance: raw.importance ?? 1.0 };
     // Bu uid bizde daha yeni silinmişse alma
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE uid = ?").get(m.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= m.updated_at) continue;
@@ -128,13 +133,13 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
       if (local.updated_at >= m.updated_at) continue;
       db.prepare(
         `UPDATE memories SET type=@type, title=@title, body=@body, project=@project, tags=@tags,
-         source=@source, updated_at=@updated_at WHERE uid=@uid`
+         source=@source, importance=@importance, updated_at=@updated_at WHERE uid=@uid`
       ).run(m);
       insertVec("memories_vec", local.id, m.embedding);
     } else {
       const info = db.prepare(
-        `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
-         VALUES (@uid, @type, @title, @body, @project, @tags, @source, @created_at, @updated_at)`
+        `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, created_at, updated_at)
+         VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, @created_at, @updated_at)`
       ).run(m);
       insertVec("memories_vec", Number(info.lastInsertRowid), m.embedding);
     }
@@ -251,35 +256,39 @@ export function recordDeletion(tbl: string, uid: string): void {
 
 // --- primary ile periyodik eşitleme (istemci tarafı) ---
 
-function getSyncState(peer: string): { last_pull: string; last_push: string } {
-  const row = getDb().prepare("SELECT last_pull, last_push FROM sync_state WHERE peer = ?").get(peer) as
+// Tek mantıksal peer: adres (Tailscale/LAN) değişse de since ilerlemeye devam eder.
+const PRIMARY_PEER = "primary";
+
+function getSyncState(): { last_pull: string; last_push: string } {
+  const row = getDb().prepare("SELECT last_pull, last_push FROM sync_state WHERE peer = ?").get(PRIMARY_PEER) as
     | { last_pull: string | null; last_push: string | null }
     | undefined;
   return { last_pull: row?.last_pull ?? "1970-01-01 00:00:00", last_push: row?.last_push ?? "1970-01-01 00:00:00" };
 }
 
-function setSyncState(peer: string, patch: Partial<{ last_pull: string; last_push: string }>): void {
-  const cur = getSyncState(peer);
+function setSyncState(patch: Partial<{ last_pull: string; last_push: string }>): void {
+  const cur = getSyncState();
   getDb()
     .prepare(
       `INSERT INTO sync_state(peer, last_pull, last_push) VALUES (@peer, @last_pull, @last_push)
        ON CONFLICT(peer) DO UPDATE SET last_pull=@last_pull, last_push=@last_push`
     )
-    .run({ peer, ...cur, ...patch });
+    .run({ peer: PRIMARY_PEER, ...cur, ...patch });
 }
 
 export interface SyncRunResult {
   ok: boolean;
+  url?: string;
   pulled?: ApplyResult;
   pushed?: ApplyResult;
   error?: string;
 }
 
-/** Primary ile tek tur eşitleme: pull → apply, collect → push. */
-export async function syncWithPrimary(primaryUrl: string, token: string): Promise<SyncRunResult> {
+/** Tek adresle tek tur eşitleme: pull → apply, collect → push. */
+async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResult> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const state = getSyncState(primaryUrl);
+  const state = getSyncState();
   try {
     const pullRes = await fetch(`${primaryUrl}/api/sync/changes?since=${encodeURIComponent(state.last_pull)}`, {
       headers,
@@ -288,7 +297,7 @@ export async function syncWithPrimary(primaryUrl: string, token: string): Promis
     if (!pullRes.ok) throw new Error(`pull ${pullRes.status}`);
     const remote = (await pullRes.json()) as SyncPayload;
     const pulled = applyChanges(remote);
-    setSyncState(primaryUrl, { last_pull: remote.now });
+    setSyncState({ last_pull: remote.now });
 
     const local = collectChanges(state.last_push);
     let pushed: ApplyResult = { memories: 0, documents: 0, projects: 0, sessions: 0, machines: 0, deletions: 0 };
@@ -303,9 +312,35 @@ export async function syncWithPrimary(primaryUrl: string, token: string): Promis
       if (!pushRes.ok) throw new Error(`push ${pushRes.status}`);
       pushed = (await pushRes.json()) as ApplyResult;
     }
-    setSyncState(primaryUrl, { last_push: local.now });
-    return { ok: true, pulled, pushed };
+    setSyncState({ last_push: local.now });
+    return { ok: true, url: primaryUrl, pulled, pushed };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, url: primaryUrl, error: (err as Error).message };
   }
+}
+
+// Son başarılı adresi hatırla — bir sonraki turda önce onu dene (Tailscale
+// düşüp LAN'a geçtiyse tekrar tekrar Tailscale'i denemek gecikme yaratmasın).
+let lastGoodPrimaryUrl: string | null = null;
+
+/**
+ * Primary adres listesiyle eşitleme: sırayla dener (son başarılı adres önce),
+ * ilk erişilebilenle tamamlar. Hepsi erişilemezse sessizce hata döner — throw etmez.
+ */
+export async function syncWithPrimary(primaryUrls: string[], token: string): Promise<SyncRunResult> {
+  if (primaryUrls.length === 0) return { ok: false, error: "HUB_PRIMARY_URL tanımlı değil" };
+  const ordered =
+    lastGoodPrimaryUrl && primaryUrls.includes(lastGoodPrimaryUrl)
+      ? [lastGoodPrimaryUrl, ...primaryUrls.filter((u) => u !== lastGoodPrimaryUrl)]
+      : primaryUrls;
+  let lastError = "";
+  for (const url of ordered) {
+    const res = await syncOnce(url, token);
+    if (res.ok) {
+      lastGoodPrimaryUrl = url;
+      return res;
+    }
+    lastError = res.error ?? "bilinmeyen hata";
+  }
+  return { ok: false, error: lastError };
 }
