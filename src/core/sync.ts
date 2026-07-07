@@ -34,6 +34,7 @@ export interface SyncDocument {
   source: string | null;
   uri: string | null;
   project: string | null;
+  enabled?: number; // eski peer'lar göndermez → 1 varsay
   created_at: string;
   updated_at: string;
   chunks: SyncChunk[];
@@ -80,7 +81,7 @@ export function collectChanges(since: string): SyncPayload {
   const chunkStmt = db.prepare("SELECT id, seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq");
   const documents = docRows.map((d) => ({
     uid: d.uid, title: d.title, source: d.source, uri: d.uri, project: d.project,
-    created_at: d.created_at, updated_at: d.updated_at,
+    enabled: d.enabled ?? 1, created_at: d.created_at, updated_at: d.updated_at,
     chunks: (chunkStmt.all(d.id) as { id: number; seq: number; heading: string | null; text: string }[]).map(
       (c) => ({ seq: c.seq, heading: c.heading, text: c.text, embedding: b64(getVecBuffer("chunks_vec", c.id)) })
     ),
@@ -150,14 +151,14 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
       docId = local.id;
       if (hasVec()) db.prepare("DELETE FROM chunks_vec WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)").run(docId);
       db.prepare("DELETE FROM chunks WHERE document_id = ?").run(docId);
-      db.prepare("UPDATE documents SET title=@title, source=@source, uri=@uri, project=@project, updated_at=@updated_at WHERE id=@id")
-        .run({ ...d, id: docId });
+      db.prepare("UPDATE documents SET title=@title, source=@source, uri=@uri, project=@project, enabled=@enabled, updated_at=@updated_at WHERE id=@id")
+        .run({ ...d, enabled: d.enabled ?? 1, id: docId });
     } else {
       docId = Number(
         db.prepare(
-          `INSERT INTO documents(uid, title, source, uri, project, created_at, updated_at)
-           VALUES (@uid, @title, @source, @uri, @project, @created_at, @updated_at)`
-        ).run(d).lastInsertRowid
+          `INSERT INTO documents(uid, title, source, uri, project, enabled, created_at, updated_at)
+           VALUES (@uid, @title, @source, @uri, @project, @enabled, @created_at, @updated_at)`
+        ).run({ ...d, enabled: d.enabled ?? 1 }).lastInsertRowid
       );
     }
     const insertChunk = db.prepare("INSERT INTO chunks(document_id, seq, heading, text) VALUES (?, ?, ?, ?)");

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getDb } from "./db.js";
+import { composePrompt } from "./prompts.js";
 import { recordDeletion } from "./sync.js";
 
 export interface Machine {
@@ -123,7 +124,13 @@ export async function localLlm(opts: {
     if (res.data.length === 0) throw new Error(`${machine.name}: LM Studio'da yüklü model yok`);
     model = res.data[0].id;
   }
-  const messages = opts.messages ?? [{ role: "user", content: opts.prompt ?? "" }];
+  let messages = opts.messages ?? [{ role: "user", content: opts.prompt ?? "" }];
+  // System prompt verilmediyse master mühendis zihniyetini enjekte et —
+  // küçük yerel modeller de aynı disiplinle (objektif, kanıta dayalı) çalışsın
+  if (!messages.some((m) => m.role === "system")) {
+    const master = composePrompt("master");
+    if (master) messages = [{ role: "system", content: master }, ...messages];
+  }
   const res = await fetchJson<{ choices: { message: { content: string } }[]; usage?: unknown }>(
     `${base}/chat/completions`,
     {

@@ -15,6 +15,7 @@ Kurallar:
 - **Göreve başlarken:** kullanıcının mesajına \`<hub-recall>\` bloğu eklendiyse önce onu oku; ek bağlam gerekirse \`recall\` veya \`memory_search\` çağır. Bir projede çalışıyorsan \`project_get\` ile proje map'ini çek.
 - **Çalışırken:** kalıcı olması gereken her şeyi kaydet — alınan teknik kararlar gerekçesiyle (\`memory_save\`, type=decision), çözülen zor bug'ların kök nedeni (\`memory_save\`, type=howto), kullanıcı tercihleri (type=preference).
 - **Öğrenme:** kullanıcı bir konu öğreniyorsa çıkan notları \`rag_add\` ile indeksle — sonraki oturumlarda aranabilir olsun.
+- **Rol disiplini:** ciddi bir mühendislik işine başlarken \`prompt_get\` ile işe uygun rol promptunu çek (\`prompt_list\` ile gör: senior-software-architect, senior-code-reviewer, debugging-specialist, security-engineer, frontend-engineer, devops-sre, ml-engineer) ve o disiplinle çalış. Alt modele iş devrederken (\`local_llm\` dahil) bu içeriği system prompt olarak ver — master çekirdek (objektif, yaltaklanmasız, kanıta dayalı mühendis zihniyeti) otomatik eklenir.
 - **Oturum sonunda:** \`session_log\` ile özet bırak (yapılanlar, yarım kalanlar, sıradaki adım) ve gerekiyorsa \`project_update\` ile current_focus/next_steps güncelle.
 - Yanlışlanan bilgiyi \`memory_update\`/\`memory_delete\` ile düzelt; hafızayı çöplüğe çevirme — oturuma özel detayları kaydetme.
 ${BLOCK_END}`;

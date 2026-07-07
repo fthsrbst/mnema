@@ -10,3 +10,5 @@ export * from "./sessions.js";
 export * from "./recall.js";
 export * from "./compute.js";
 export * from "./sync.js";
+export * from "./admin.js";
+export * from "./prompts.js";

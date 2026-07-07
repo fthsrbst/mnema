@@ -9,7 +9,9 @@ import {
   machinesStatus,
   upsertMachine,
   appendToProject,
+  composePrompt,
   deleteMemory,
+  listPrompts,
   getProject,
   listProjects,
   recall,
@@ -31,6 +33,35 @@ function json(data: unknown) {
 
 export function buildMcpServer(): McpServer {
   const server = new McpServer({ name: "ai-hub", version: "0.1.0" });
+
+  server.registerTool(
+    "prompt_list",
+    {
+      title: "Rol promptlarını listele",
+      description:
+        "Hub'daki rol bazlı sistem promptlarını listeler (senior-software-architect, senior-code-reviewer, debugging-specialist, security-engineer, frontend-engineer, devops-sre, ml-engineer). Bir işe uygun rol seçmek için önce bunu çağır.",
+      inputSchema: {},
+    },
+    async () => json(listPrompts())
+  );
+
+  server.registerTool(
+    "prompt_get",
+    {
+      title: "Rol promptu getir",
+      description:
+        "Seçilen rolün sistem promptunu döner; mühendis zihniyeti çekirdeği (master: objektif, yaltaklanmasız, kanıta dayalı disiplin) otomatik başa eklenir. Göreve başlarken uygun rolü çek; alt modellere (local_llm dahil) görev verirken bu içeriği system prompt olarak kullan.",
+      inputSchema: {
+        role: z.string().describe("Rol adı (prompt_list'ten) veya 'master' (sadece çekirdek)"),
+      },
+    },
+    async ({ role }) => {
+      const content = composePrompt(role);
+      return content !== null
+        ? { content: [{ type: "text" as const, text: content }] }
+        : json({ error: `rol bulunamadı: ${role}` });
+    }
+  );
 
   server.registerTool(
     "memory_save",

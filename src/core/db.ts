@@ -113,6 +113,7 @@ function migrate(database: Database.Database): void {
   addColumn("memories", "uid", "uid TEXT");
   addColumn("documents", "uid", "uid TEXT");
   addColumn("documents", "updated_at", "updated_at TEXT");
+  addColumn("documents", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumn("session_logs", "uid", "uid TEXT");
   database.exec(`
     UPDATE memories SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;

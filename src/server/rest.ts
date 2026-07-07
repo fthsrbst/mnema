@@ -19,7 +19,15 @@ import {
   deleteDocument,
   deleteMemory,
   formatRecall,
+  composePrompt,
+  getDocument,
   getMemory,
+  getPromptRaw,
+  listPrompts,
+  ragStats,
+  reindex,
+  savePrompt,
+  setDocumentEnabled,
   getProject,
   listDocuments,
   listMemories,
@@ -80,7 +88,17 @@ export function buildRestRouter(): Router {
   // --- rag ---
   r.post("/rag/documents", wrap(async (req, res) => res.json(await addDocument(req.body))));
   r.get("/rag/documents", wrap((_req, res) => res.json(listDocuments())));
+  r.get("/rag/documents/:id", wrap((req, res) => {
+    const doc = getDocument(Number(req.params.id));
+    doc ? res.json(doc) : res.status(404).json({ error: "bulunamadı" });
+  }));
+  r.patch("/rag/documents/:id", wrap((req, res) => {
+    const ok = setDocumentEnabled(Number(req.params.id), Boolean(req.body.enabled));
+    ok ? res.json({ ok: true, enabled: Boolean(req.body.enabled) }) : res.status(404).json({ error: "bulunamadı" });
+  }));
   r.delete("/rag/documents/:id", wrap((req, res) => res.json({ deleted: deleteDocument(Number(req.params.id)) })));
+  r.get("/rag/stats", wrap((_req, res) => res.json(ragStats())));
+  r.post("/rag/reindex", wrap(async (req, res) => res.json(await reindex(Boolean(req.body?.force)))));
   r.get("/rag/search", wrap(async (req, res) => {
     const { q, project, limit } = req.query;
     res.json(await searchChunks(String(q ?? ""), {
@@ -161,6 +179,20 @@ export function buildRestRouter(): Router {
     if (!fs.existsSync(path.dirname(file))) fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, String(req.body.content ?? ""));
     res.json({ ok: true, note: "Kalıcı olması için: git commit + push + her cihazda hub sync" });
+  }));
+
+  // --- prompts (rol bazlı master prompt kütüphanesi) ---
+  r.get("/prompts", wrap((_req, res) => res.json(listPrompts())));
+  r.get("/prompts/:name", wrap((req, res) => {
+    const raw = req.query.raw === "1";
+    const out = raw ? getPromptRaw(req.params.name) : composePrompt(req.params.name);
+    out !== null
+      ? res.json({ name: req.params.name, content: out })
+      : res.status(404).json({ error: "bulunamadı" });
+  }));
+  r.put("/prompts/:name", wrap((req, res) => {
+    savePrompt(req.params.name, String(req.body.content ?? ""));
+    res.json({ ok: true, note: "Kalıcı olması için: git commit + push (Pi'de git pull)" });
   }));
 
   // --- sync (cihazlar arası eşitleme) ---

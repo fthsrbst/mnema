@@ -87,7 +87,8 @@ export async function searchChunks(
   const stmt = getDb().prepare(
     `SELECT c.id AS chunk_id, c.document_id, c.heading, c.text,
             d.title AS document_title, d.uri, d.project
-     FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id = ?`
+     FROM chunks c JOIN documents d ON d.id = c.document_id
+     WHERE c.id = ? AND d.enabled = 1`
   );
   const limit = opts.limit ?? 6;
   const out: ScoredChunk[] = [];
@@ -101,8 +102,59 @@ export async function searchChunks(
   return out;
 }
 
-export function listDocuments(limit = 50): { id: number; title: string; uri: string | null; project: string | null; created_at: string }[] {
-  return getDb()
-    .prepare("SELECT id, title, uri, project, created_at FROM documents ORDER BY created_at DESC LIMIT ?")
-    .all(limit) as { id: number; title: string; uri: string | null; project: string | null; created_at: string }[];
+export interface DocumentListItem {
+  id: number;
+  title: string;
+  uri: string | null;
+  project: string | null;
+  enabled: number;
+  created_at: string;
+  chunk_count: number;
+  vec_count: number;
+}
+
+export function listDocuments(limit = 100): DocumentListItem[] {
+  const db = getDb();
+  const vecJoin = hasVec()
+    ? "(SELECT COUNT(*) FROM chunks_vec v WHERE v.rowid IN (SELECT id FROM chunks WHERE document_id = d.id))"
+    : "0";
+  return db
+    .prepare(
+      `SELECT d.id, d.title, d.uri, d.project, d.enabled, d.created_at,
+              (SELECT COUNT(*) FROM chunks WHERE document_id = d.id) AS chunk_count,
+              ${vecJoin} AS vec_count
+       FROM documents d ORDER BY d.created_at DESC LIMIT ?`
+    )
+    .all(limit) as DocumentListItem[];
+}
+
+/** Dokümanı açar/kapatır. Kapalı doküman RAG aramasından çıkar; durum cihazlar arası eşitlenir. */
+export function setDocumentEnabled(id: number, enabled: boolean): boolean {
+  return (
+    getDb()
+      .prepare("UPDATE documents SET enabled = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(enabled ? 1 : 0, id).changes > 0
+  );
+}
+
+export function getDocument(id: number):
+  | (DocumentListItem & { source: string | null; chunks: { id: number; seq: number; heading: string | null; text: string }[] })
+  | null {
+  const db = getDb();
+  const vecJoin = hasVec()
+    ? "(SELECT COUNT(*) FROM chunks_vec v WHERE v.rowid IN (SELECT id FROM chunks WHERE document_id = d.id))"
+    : "0";
+  const doc = db
+    .prepare(
+      `SELECT d.id, d.title, d.source, d.uri, d.project, d.enabled, d.created_at,
+              (SELECT COUNT(*) FROM chunks WHERE document_id = d.id) AS chunk_count,
+              ${vecJoin} AS vec_count
+       FROM documents d WHERE d.id = ?`
+    )
+    .get(id) as (DocumentListItem & { source: string | null }) | undefined;
+  if (!doc) return null;
+  const chunks = db
+    .prepare("SELECT id, seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq")
+    .all(id) as { id: number; seq: number; heading: string | null; text: string }[];
+  return { ...doc, chunks };
 }
