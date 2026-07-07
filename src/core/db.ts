@@ -9,6 +9,14 @@ const require = createRequire(import.meta.url);
 let db: Database.Database | null = null;
 let vecAvailable = false;
 
+/**
+ * Milisaniye hassasiyetli UTC zaman damgası üreten SQL ifadesi.
+ * LWW eşitlemede saniye hassasiyeti aynı saniyedeki iki yazmayı ayırt edemiyordu;
+ * ms hassasiyet çakışma olasılığını düşürür. Eski "YYYY-MM-DD HH:MM:SS" değerleriyle
+ * sözlüksel (lexicographic) karşılaştırma geriye uyumludur ("…:50.123" > "…:50").
+ */
+export const NOW_MS = "strftime('%Y-%m-%d %H:%M:%f','now')";
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories(
   id INTEGER PRIMARY KEY,
@@ -18,8 +26,8 @@ CREATE TABLE IF NOT EXISTS memories(
   project TEXT,
   tags TEXT NOT NULL DEFAULT '[]',
   source TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
@@ -43,8 +51,8 @@ CREATE TABLE IF NOT EXISTS documents(
   source TEXT,
   uri TEXT,
   project TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 CREATE TABLE IF NOT EXISTS chunks(
@@ -70,7 +78,7 @@ END;
 CREATE TABLE IF NOT EXISTS projects(
   name TEXT PRIMARY KEY,
   data TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 CREATE TABLE IF NOT EXISTS machines(
@@ -79,7 +87,7 @@ CREATE TABLE IF NOT EXISTS machines(
   lmstudio_port INTEGER,
   comfyui_port INTEGER,
   notes TEXT,
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 CREATE TABLE IF NOT EXISTS session_logs(
@@ -87,14 +95,14 @@ CREATE TABLE IF NOT EXISTS session_logs(
   project TEXT,
   summary TEXT NOT NULL,
   source TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 -- Cihazlar arası eşitleme: silinen kayıtların izi (LWW için)
 CREATE TABLE IF NOT EXISTS deletions(
   uid TEXT PRIMARY KEY,
   tbl TEXT NOT NULL,
-  deleted_at TEXT NOT NULL DEFAULT (datetime('now'))
+  deleted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 CREATE TABLE IF NOT EXISTS sync_state(

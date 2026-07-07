@@ -147,6 +147,11 @@ async function doReindex(force: boolean, result: ReindexResult): Promise<Reindex
 
   if (force) {
     db.exec("DELETE FROM chunks_vec; DELETE FROM memories_vec;");
+  } else {
+    // Öksüz vektörleri temizle: ana kaydı silinmiş (embed yarışı / eski bug) vec satırları
+    // rowid yeniden kullanımında başka kayda yapışabilir — normal reindex'te de süpür.
+    db.prepare("DELETE FROM chunks_vec WHERE rowid NOT IN (SELECT id FROM chunks)").run();
+    db.prepare("DELETE FROM memories_vec WHERE rowid NOT IN (SELECT id FROM memories)").run();
   }
 
   const chunks = db

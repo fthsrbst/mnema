@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
-import { getDb, hasVec } from "./db.js";
+import { getDb, hasVec, NOW_MS } from "./db.js";
 import { embedOne, toBuffer } from "./embeddings.js";
 import { notifyWrite } from "./events.js";
 import { hybridSearch } from "./search.js";
@@ -23,6 +23,9 @@ async function upsertVector(id: number, title: string, body: string): Promise<vo
     const vec = await embedOne(`${title}\n${body}`, "RETRIEVAL_DOCUMENT");
     if (!vec) return;
     const db = getDb();
+    // Embed (ağ çağrısı) beklenirken kayıt silinmiş olabilir; rowid yeniden
+    // kullanıldığından öksüz vektör başka bir kayda yapışabilir — yazmadan önce doğrula.
+    if (!db.prepare("SELECT 1 FROM memories WHERE id = ?").get(id)) return;
     // sqlite-vec rowid için katı INTEGER ister; number REAL bağlandığından BigInt şart
     db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(id));
     db.prepare("INSERT INTO memories_vec(rowid, embedding) VALUES (?, ?)").run(BigInt(id), toBuffer(vec));
@@ -35,8 +38,8 @@ export async function saveMemory(input: MemoryInput): Promise<Memory> {
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO memories(uid, type, title, body, project, tags, source, importance)
-       VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance)`
+      `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, created_at, updated_at)
+       VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, ${NOW_MS}, ${NOW_MS})`
     )
     .run({
       uid: randomUUID().replaceAll("-", ""),
@@ -76,7 +79,7 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
   getDb()
     .prepare(
       `UPDATE memories SET type=@type, title=@title, body=@body, project=@project,
-       tags=@tags, importance=@importance, updated_at=datetime('now') WHERE id=@id`
+       tags=@tags, importance=@importance, updated_at=${NOW_MS} WHERE id=@id`
     )
     .run(merged);
   if (patch.title !== undefined || patch.body !== undefined) {

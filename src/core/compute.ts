@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { getDb } from "./db.js";
+import { getDb, NOW_MS } from "./db.js";
 import { notifyWrite } from "./events.js";
 import { composePrompt } from "./prompts.js";
 import { recordDeletion } from "./sync.js";
@@ -40,9 +40,9 @@ export function upsertMachine(m: Omit<Machine, "updated_at">): Machine {
   getDb()
     .prepare(
       `INSERT INTO machines(name, host, lmstudio_port, comfyui_port, notes, updated_at)
-       VALUES (@name, @host, @lmstudio_port, @comfyui_port, @notes, datetime('now'))
+       VALUES (@name, @host, @lmstudio_port, @comfyui_port, @notes, ${NOW_MS})
        ON CONFLICT(name) DO UPDATE SET host=@host, lmstudio_port=@lmstudio_port,
-         comfyui_port=@comfyui_port, notes=@notes, updated_at=datetime('now')`
+         comfyui_port=@comfyui_port, notes=@notes, updated_at=${NOW_MS}`
     )
     .run({
       name: m.name,

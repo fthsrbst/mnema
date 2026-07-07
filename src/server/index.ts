@@ -18,9 +18,9 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Statik içerik auth'suz servis edilir (UI kabuğu + üretilen medya);
-// veri her zaman /api üzerinden ve token'lıdır.
-app.use("/outputs", express.static("./data/outputs"));
+// UI kabuğu (web/dist) bilinçli olarak auth'suz: sadece uygulama kodu içerir, veri içermez —
+// veri her zaman /api üzerinden ve token'lıdır. /outputs ise üretilen medya (kullanıcı verisi)
+// içerdiğinden auth'un ARKASINDA servis edilir (aşağıda) — Funnel açıkken internete sızmasın.
 app.use("/", express.static("./web/dist"));
 
 // Bearer token auth (health hariç). Token boşsa auth kapalı (lokal dev).
@@ -38,6 +38,9 @@ app.use((req, res, next) => {
   if (typeof req.query.token === "string" && tokenMatches(req.query.token)) return next();
   res.status(401).json({ error: "unauthorized" });
 });
+
+// Üretilen medya: auth middleware'inden sonra — tarayıcı/istemci ?token= ile erişir.
+app.use("/outputs", express.static("./data/outputs"));
 
 app.use("/api", buildRestRouter());
 

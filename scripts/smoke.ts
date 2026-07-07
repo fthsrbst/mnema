@@ -9,8 +9,11 @@ import fs from "node:fs";
 const {
   addDocument,
   addSessionLog,
+  applyChanges,
   closeDb,
+  contentFingerprint,
   deleteMemory,
+  listMemories,
   embeddingsEnabled,
   getProject,
   hasVec,
@@ -105,6 +108,24 @@ check(
 );
 deleteMemory(impA.id);
 deleteMemory(impB.id);
+
+// sync LWW tie-break: eşit updated_at'te içerik parmak izi büyük olan kazanmalı,
+// uygulama sırasından bağımsız (iki cihaz aynı kurala göre aynı kazanana yakınsar)
+const ts = "2030-01-01 00:00:00.000";
+const emptyPayload = { now: ts, memories: [], documents: [], projects: [], sessions: [], machines: [], deletions: [] };
+const mkConflict = (body: string) => ({
+  uid: "smokeconflict0000000000000000001", type: "fact", title: "Sync çakışma testi", body,
+  project: null, tags: "[]", source: "smoke", created_at: ts, updated_at: ts, importance: 1.0,
+});
+const fp = (body: string) => contentFingerprint(["fact", "Sync çakışma testi", body, null, "[]", "smoke", 1.0]);
+const winner = fp("versiyon A") > fp("versiyon B") ? "versiyon A" : "versiyon B";
+const loser = winner === "versiyon A" ? "versiyon B" : "versiyon A";
+applyChanges({ ...emptyPayload, memories: [mkConflict(loser)] });
+applyChanges({ ...emptyPayload, memories: [mkConflict(winner)] }); // kazanan ezmeli
+applyChanges({ ...emptyPayload, memories: [mkConflict(loser)] }); // kaybeden geri yazamamalı
+const conflictRow = listMemories({ limit: 500 }).find((mm) => mm.title === "Sync çakışma testi");
+check("sync LWW tie-break deterministik", conflictRow?.body === winner, `beklenen="${winner}", db="${conflictRow?.body}"`);
+if (conflictRow) deleteMemory(conflictRow.id);
 
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });

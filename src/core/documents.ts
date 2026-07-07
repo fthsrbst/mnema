@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDb, hasVec } from "./db.js";
+import { getDb, hasVec, NOW_MS } from "./db.js";
 import { chunkMarkdown } from "./chunker.js";
 import { embed, toBuffer } from "./embeddings.js";
 import { notifyWrite } from "./events.js";
@@ -25,7 +25,7 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
   }
 
   const info = db
-    .prepare("INSERT INTO documents(uid, title, source, uri, project) VALUES (?, ?, ?, ?, ?)")
+    .prepare(`INSERT INTO documents(uid, title, source, uri, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ${NOW_MS}, ${NOW_MS})`)
     .run(randomUUID().replaceAll("-", ""), input.title, input.source ?? null, input.uri ?? null, input.project ?? null);
   const docId = Number(info.lastInsertRowid);
 
@@ -48,7 +48,9 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
         chunks.map((c) => (c.heading ? `${c.heading}\n${c.text}` : c.text)),
         "RETRIEVAL_DOCUMENT"
       );
-      if (vecs) {
+      if (vecs && db.prepare("SELECT 1 FROM documents WHERE id = ?").get(docId)) {
+        // Varlık kontrolü: embed (ağ çağrısı) beklenirken doküman silinmişse
+        // chunk rowid'leri yeniden kullanılmış olabilir — öksüz vektör yazma.
         const insertVec = db.prepare("INSERT INTO chunks_vec(rowid, embedding) VALUES (?, ?)");
         const tx = db.transaction(() => {
           // sqlite-vec rowid için BigInt şart (number REAL bağlanır, reddedilir)
@@ -135,7 +137,7 @@ export function listDocuments(limit = 100): DocumentListItem[] {
 export function setDocumentEnabled(id: number, enabled: boolean): boolean {
   const changed =
     getDb()
-      .prepare("UPDATE documents SET enabled = ?, updated_at = datetime('now') WHERE id = ?")
+      .prepare(`UPDATE documents SET enabled = ?, updated_at = ${NOW_MS} WHERE id = ?`)
       .run(enabled ? 1 : 0, id).changes > 0;
   if (changed) notifyWrite();
   return changed;

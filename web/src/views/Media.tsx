@@ -5,7 +5,7 @@ import { Card } from "@astryxdesign/core/Card";
 import { Button } from "@astryxdesign/core/Button";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { Text, Heading } from "@astryxdesign/core/Text";
-import { api, type OutputFile } from "../api";
+import { api, assetUrl, type OutputFile } from "../api";
 import { useI18n } from "../i18n";
 
 const isImage = (name: string) => /\.(png|jpe?g|webp|gif)$/i.test(name);
@@ -86,15 +86,15 @@ export function Media() {
           <Card key={f.name} padding={2}>
             <VStack gap={2}>
               {isImage(f.name) ? (
-                <a href={f.url} target="_blank" rel="noreferrer">
-                  <img src={f.url} alt={f.name} style={{ width: "100%", borderRadius: "var(--radius-md, 8px)" }} />
+                <a href={assetUrl(f.url)} target="_blank" rel="noreferrer">
+                  <img src={assetUrl(f.url)} alt={f.name} style={{ width: "100%", borderRadius: "var(--radius-md, 8px)" }} />
                 </a>
               ) : isVideo(f.name) ? (
-                <video src={f.url} controls style={{ width: "100%", borderRadius: "var(--radius-md, 8px)" }} />
+                <video src={assetUrl(f.url)} controls style={{ width: "100%", borderRadius: "var(--radius-md, 8px)" }} />
               ) : isAudio(f.name) ? (
-                <audio src={f.url} controls style={{ width: "100%" }} />
+                <audio src={assetUrl(f.url)} controls style={{ width: "100%" }} />
               ) : (
-                <a href={f.url}>{f.name}</a>
+                <a href={assetUrl(f.url)}>{f.name}</a>
               )}
               <Text type="supporting" color="secondary">{f.name}</Text>
             </VStack>

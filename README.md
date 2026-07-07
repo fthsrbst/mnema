@@ -49,9 +49,10 @@ tools and devices.
 - **Local AI orchestration** — route simple/bulk text work to a local LLM
   (LM Studio, zero API cost) and image/video/audio generation to ComfyUI,
   both driven from any connected agent via `local_llm` / `media_generate`.
-- **Cross-device sync** — a local-first, last-write-wins sync model so
-  memories and project maps created on one machine reconcile cleanly with
-  the primary (Pi) instance.
+- **Cross-device sync** — a local-first, last-write-wins sync model
+  (millisecond timestamps, deterministic content-hash tie-break) so memories
+  and project maps created on one machine reconcile cleanly with the primary
+  instance and all replicas converge to the same winner.
 - **MCP + REST, same core** — every capability is exposed both as an MCP tool
   (for agents that speak MCP over Streamable HTTP) and as a REST endpoint
   (for scripts, custom agents, and the web UI) — one implementation, two doors.
@@ -108,16 +109,23 @@ For the full data model and phased build plan, see [`PLAN.md`](PLAN.md).
 
 ## Quick start
 
+**You don't need a Raspberry Pi.** The hub runs on any machine with Node 22+ —
+Windows, macOS, or Linux. The installer clones the repo, builds it, generates a
+`.env` with a random token, sets up autostart (systemd / launchd / Startup
+shortcut), and connects the AI agent apps it detects on your machine. A Pi (or
+any always-on box) is only worth adding later if you want one instance that is
+reachable from all your devices.
+
 ### Option A: one-click installer
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/<your-user>/ai-hub/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fthsrbst/ai-hub/master/scripts/install.sh | bash
 ```
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/<your-user>/ai-hub/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/fthsrbst/ai-hub/master/scripts/install.ps1 | iex
 ```
 
 The installer clones the repo, installs dependencies, builds, and writes a
@@ -126,7 +134,7 @@ starter `.env`.
 ### Option B: manual
 
 ```bash
-git clone https://github.com/<your-user>/ai-hub.git
+git clone https://github.com/fthsrbst/ai-hub.git
 cd ai-hub
 npm ci
 npm run build
@@ -141,7 +149,7 @@ recall until you add a key.
 ### Raspberry Pi deploy
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<your-user>/ai-hub/main/deploy/setup-pi.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fthsrbst/ai-hub/master/deploy/setup-pi.sh | bash
 ```
 
 This installs Node 22, clones the repo, builds server + web UI, generates a
