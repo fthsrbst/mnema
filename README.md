@@ -3,7 +3,7 @@
 <p align="center"><img src="docs/assets/logo.png" width="160" alt="Mnema logo"/></p>
 
 <p align="center"><strong>One memory for every AI agent.</strong></p>
-<p align="center"><em>Mnema (μνῆμα) — Greek for a memory, a monument.</em></p>
+
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
