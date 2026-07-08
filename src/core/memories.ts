@@ -147,7 +147,9 @@ export async function searchMemories(query: string, filters: SearchFilters = {})
     const ageMs = Math.max(0, now - parseSqliteUtc(mem.updated_at));
     // Tabanlı decay: taze kayıt öne geçer ama eski kayıt asla decayFloor'un altına
     // ezilmez — "1 yıl önce şu sorunu nasıl çözmüştüm" sorgusu hâlâ sonuç bulur.
-    const decay = config.decayFloor + (1 - config.decayFloor) * Math.exp(-ageMs / halflifeMs);
+    // ln(2) çarpanı şart: onsuz ageMs=halflifeMs anında çarpan 0.5 değil e^-1≈0.368 olur
+    // (yani "yarı ömür" adı yalan çıkar, kayıtlar isimlendirildiğinden çok daha hızlı bayatlar).
+    const decay = config.decayFloor + (1 - config.decayFloor) * Math.exp(-Math.LN2 * (ageMs / halflifeMs));
     const final = score * mem.importance * decay;
     candidates.push({ ...mem, score: final });
   }
