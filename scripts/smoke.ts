@@ -9,6 +9,7 @@ import fs from "node:fs";
 const {
   addDocument,
   addSessionLog,
+  extractFileText,
   applyChanges,
   closeDb,
   contentFingerprint,
@@ -126,6 +127,20 @@ applyChanges({ ...emptyPayload, memories: [mkConflict(loser)] }); // kaybeden ge
 const conflictRow = listMemories({ limit: 500 }).find((mm) => mm.title === "Sync çakışma testi");
 check("sync LWW tie-break deterministik", conflictRow?.body === winner, `beklenen="${winner}", db="${conflictRow?.body}"`);
 if (conflictRow) deleteMemory(conflictRow.id);
+
+// dosya upload akışı: PDF fixture'ından metin çıkar + indeksle + ara
+const pdfText = await extractFileText(fs.readFileSync("./scripts/fixtures/smoke.pdf"), "smoke.pdf");
+check("extract PDF", pdfText.includes("Zumrutanka smoke upload testi"), JSON.stringify(pdfText.slice(0, 60)));
+const upDoc = await addDocument({ title: "smoke.pdf", text: pdfText, uri: "upload/smoke.pdf", source: "upload:smoke.pdf" });
+const upFound = (await searchChunks("Zumrutanka upload")).some((c) => c.document_title === "smoke.pdf");
+check("upload indeks + arama", upDoc.chunk_count > 0 && upFound);
+let extRejected = false;
+try {
+  await extractFileText(Buffer.from("x"), "kotu.exe");
+} catch {
+  extRejected = true;
+}
+check("extract desteklenmeyen uzantı reddi", extRejected);
 
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });

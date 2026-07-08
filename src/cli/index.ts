@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
-import { api, loadCliConfig, saveCliConfig } from "./client.js";
+import { api, apiUpload, loadCliConfig, saveCliConfig } from "./client.js";
 import { sync } from "./sync.js";
 import { connectAgents, detectAgents, printAgentsTable } from "./agents.js";
 import type { Memory, ProjectMap, ScoredChunk, ScoredMemory, SessionLog } from "../core/types.js";
@@ -156,6 +156,8 @@ program
   });
 
 const INDEXABLE = new Set([".md", ".txt", ".mdx", ".rst", ".adoc"]);
+// Binary formatlar sunucuda parse edilir (/api/rag/upload) — metin dosyaları JSON ile gider.
+const BINARY_INDEXABLE = new Set([".pdf", ".docx"]);
 
 function collectFiles(target: string): string[] {
   const stat = fs.statSync(target);
@@ -165,26 +167,38 @@ function collectFiles(target: string): string[] {
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const full = path.join(target, entry.name);
     if (entry.isDirectory()) out.push(...collectFiles(full));
-    else if (INDEXABLE.has(path.extname(entry.name).toLowerCase())) out.push(full);
+    else if (
+      INDEXABLE.has(path.extname(entry.name).toLowerCase()) ||
+      BINARY_INDEXABLE.has(path.extname(entry.name).toLowerCase())
+    )
+      out.push(full);
   }
   return out;
 }
 
 program
   .command("index <paths...>")
-  .description("Dosya/klasörleri RAG'e indeksle (.md .txt .mdx .rst .adoc)")
+  .description("Dosya/klasörleri RAG'e indeksle (.md .txt .mdx .rst .adoc + .pdf .docx)")
   .option("-p, --project <name>")
   .action(async (paths: string[], opts: { project?: string }) => {
     try {
       const files = paths.flatMap((p) => collectFiles(path.resolve(p)));
       if (files.length === 0) return console.log("indekslenecek dosya yok");
       for (const file of files) {
-        const text = fs.readFileSync(file, "utf8");
-        const res = await api<{ document_id: number; chunk_count: number; embedded: boolean }>(
-          "POST",
-          "/api/rag/documents",
-          { title: path.basename(file), text, uri: file, project: opts.project, source: "hub-cli" }
-        );
+        const name = path.basename(file);
+        let res: { document_id: number; chunk_count: number; embedded: boolean };
+        if (BINARY_INDEXABLE.has(path.extname(file).toLowerCase())) {
+          const q = new URLSearchParams({ filename: name, title: name, uri: file });
+          if (opts.project) q.set("project", opts.project);
+          res = await apiUpload(`/api/rag/upload?${q}`, fs.readFileSync(file));
+        } else {
+          const text = fs.readFileSync(file, "utf8");
+          res = await api(
+            "POST",
+            "/api/rag/documents",
+            { title: name, text, uri: file, project: opts.project, source: "hub-cli" }
+          );
+        }
         console.log(`${file} → doc #${res.document_id} (${res.chunk_count} chunk${res.embedded ? ", embed edildi" : ", FTS-only"})`);
       }
     } catch (err) {

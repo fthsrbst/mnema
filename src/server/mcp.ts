@@ -172,7 +172,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Doküman indeksle",
       description:
-        "Bir metni/dokümanı RAG arşivine ekler (otomatik chunk + embed). Öğrenme notları, araştırma özetleri, önemli dokümanlar için. Aynı uri ile tekrar çağrılırsa re-index eder. Öğrenme notlarında project='learning' ve uri 'learning/<slug>' ver — web arayüzü Öğrenme sekmesinde bu projeyi listeler (uri 'learning/' ile başlayıp project verilmezse otomatik 'learning' atanır).",
+        "Bir metni/dokümanı RAG arşivine ekler (otomatik chunk + embed). Öğrenme notları, araştırma özetleri, önemli dokümanlar için. Aynı uri ile tekrar çağrılırsa re-index eder. Öğrenme notlarında project='learning' ve uri 'learning/<slug>' ver — web arayüzü Öğrenme sekmesinde bu projeyi listeler (uri 'learning/' ile başlayıp project verilmezse otomatik 'learning' atanır). PDF/DOCX gibi binary dosyaları buraya elle taşıma: `curl -X POST -H 'Authorization: Bearer <token>' --data-binary @dosya.pdf '<hub-url>/api/rag/upload?filename=dosya.pdf&title=...&project=...'` ile yükle veya `hub index dosya.pdf` kullan — sunucu parse edip indeksler (taranmış PDF'te metin çıkmazsa hata döner; o zaman vision/OCR ile okuyup rag_add çağır).",
       inputSchema: {
         title: z.string(),
         text: z.string().describe("Markdown içerik"),

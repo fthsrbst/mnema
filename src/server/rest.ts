@@ -1,9 +1,10 @@
-import { Router } from "express";
+import { Router, raw } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import {
   addDocument,
   addSessionLog,
+  extractFileText,
   applyChanges,
   collectChanges,
   config,
@@ -96,6 +97,29 @@ export function buildRestRouter(): Router {
 
   // --- rag ---
   r.post("/rag/documents", wrap(async (req, res) => res.json(await addDocument(req.body))));
+  // Ham dosya yükleme (PDF/DOCX/metin): gövde binary, meta query-string'de.
+  // curl -X POST -H "Authorization: Bearer $HUB_TOKEN" --data-binary @dosya.pdf \
+  //   "$HUB_URL/api/rag/upload?filename=dosya.pdf&title=Başlık&project=learning"
+  r.post(
+    "/rag/upload",
+    raw({ type: () => true, limit: "50mb" }),
+    wrap(async (req, res) => {
+      const { filename, title, project, uri } = req.query as Record<string, string | undefined>;
+      if (!filename) return res.status(400).json({ error: "filename query parametresi zorunlu" });
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0)
+        return res.status(400).json({ error: "boş gövde — dosyayı --data-binary ile gönder" });
+      const text = await extractFileText(req.body, filename);
+      res.json(
+        await addDocument({
+          title: title || filename,
+          text,
+          uri: uri || `upload/${filename}`,
+          project,
+          source: `upload:${filename}`,
+        })
+      );
+    })
+  );
   r.get("/rag/documents", wrap((req, res) => res.json(listDocuments(req.query.project as string | undefined))));
   r.get("/rag/documents/:id", wrap((req, res) => {
     const doc = getDocument(Number(req.params.id));
