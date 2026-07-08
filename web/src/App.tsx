@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "@astryxdesign/core/AppShell";
-import { SideNav, SideNavItem } from "@astryxdesign/core/SideNav";
+import { SideNav, SideNavItem, SideNavHeading } from "@astryxdesign/core/SideNav";
 import { VStack, HStack } from "@astryxdesign/core/Layout";
 import { Center } from "@astryxdesign/core/Center";
 import { Card } from "@astryxdesign/core/Card";
@@ -37,6 +37,7 @@ import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
 import { getToken, setToken, setUnauthorizedHandler } from "./api";
 import { I18nContext, useI18n, useProvideI18n, type Lang } from "./i18n";
+import logo from "./assets/logo.png";
 
 type View =
   | "dashboard"
@@ -173,7 +174,23 @@ function AppInner() {
       height="fill"
       contentPadding={6}
       sideNav={
-        <SideNav footer={<LanguageToggle />}>
+        <SideNav
+          header={
+            <SideNavHeading
+              heading="AI Hub"
+              icon={
+                <img
+                  src={logo}
+                  alt=""
+                  width={20}
+                  height={20}
+                  style={{ height: "var(--spacing-6)", width: "var(--spacing-6)", borderRadius: "var(--radius-inner)", objectFit: "cover" }}
+                />
+              }
+            />
+          }
+          footer={<LanguageToggle />}
+        >
           {NAV.map((item) => (
             <SideNavItem
               key={item.id}

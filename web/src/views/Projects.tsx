@@ -14,6 +14,7 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api, type ProjectMap } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 const STATUS_OPTIONS = ["active", "paused", "done", "idea"];
 
@@ -159,7 +160,10 @@ export function Projects() {
             <VStack gap={2}>
               <Heading level={4}>{t("projects.decisions")}</Heading>
               {selected.decisions!.map((d, i) => (
-                <Text key={i} type="supporting">• {d}</Text>
+                <HStack key={i} gap={2} vAlign="start">
+                  <Text type="supporting" color="secondary">•</Text>
+                  <Markdown headingLevelStart={6}>{d}</Markdown>
+                </HStack>
               ))}
             </VStack>
           </Card>

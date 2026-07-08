@@ -44,4 +44,7 @@ export const config = {
   syncIntervalSec: Number(process.env.HUB_SYNC_INTERVAL ?? 60),
   // Recall skorlamasında güncellik decay yarı ömrü (gün). Büyütmek eski kayıtları daha uzun canlı tutar.
   decayHalflifeDays: Number(process.env.HUB_DECAY_HALFLIFE_DAYS ?? 90),
+  // Decay taban değeri: skor çarpanı asla bunun altına inmez. Eski bilgi (1 yıl önceki
+  // çözüm gibi) tazelere göre geriye düşer ama hiçbir zaman aranamaz hale gelmez.
+  decayFloor: Math.min(1, Math.max(0, Number(process.env.HUB_DECAY_FLOOR ?? 0.25))),
 };

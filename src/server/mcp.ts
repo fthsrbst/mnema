@@ -172,12 +172,12 @@ export function buildMcpServer(): McpServer {
     {
       title: "Doküman indeksle",
       description:
-        "Bir metni/dokümanı RAG arşivine ekler (otomatik chunk + embed). Öğrenme notları, araştırma özetleri, önemli dokümanlar için. Aynı uri ile tekrar çağrılırsa re-index eder.",
+        "Bir metni/dokümanı RAG arşivine ekler (otomatik chunk + embed). Öğrenme notları, araştırma özetleri, önemli dokümanlar için. Aynı uri ile tekrar çağrılırsa re-index eder. Öğrenme notlarında project='learning' ve uri 'learning/<slug>' ver — web arayüzü Öğrenme sekmesinde bu projeyi listeler (uri 'learning/' ile başlayıp project verilmezse otomatik 'learning' atanır).",
       inputSchema: {
         title: z.string(),
         text: z.string().describe("Markdown içerik"),
-        uri: z.string().optional().describe("Tekil kimlik (dosya yolu/URL) — re-index için"),
-        project: z.string().optional(),
+        uri: z.string().optional().describe("Tekil kimlik (dosya yolu/URL) — re-index için; öğrenme notlarında 'learning/<slug>'"),
+        project: z.string().optional().describe("İlgili proje; öğrenme notlarında 'learning'"),
         source: z.string().optional(),
       },
     },

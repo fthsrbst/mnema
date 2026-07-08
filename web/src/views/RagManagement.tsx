@@ -25,6 +25,7 @@ import {
   type ReindexResult,
 } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 interface Row extends Record<string, unknown> {
   id: string;
@@ -353,7 +354,7 @@ export function RagManagement() {
                     <Text type="supporting" color="secondary">
                       Chunk #{c.seq}{c.heading ? ` — ${c.heading}` : ""}
                     </Text>
-                    <Text style={{ whiteSpace: "pre-wrap" }}>{c.text}</Text>
+                    <Markdown>{c.text}</Markdown>
                   </VStack>
                 ))}
               </VStack>

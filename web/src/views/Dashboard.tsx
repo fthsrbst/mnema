@@ -13,6 +13,7 @@ import { Item } from "@astryxdesign/core/Item";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { api, type GrowthStats, type HealthStatus, type RagStats, type SessionLog, type UsageStats } from "../api";
 import { useI18n, type Lang, type TKey } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -523,7 +524,7 @@ export function Dashboard() {
                       <Text type="supporting" color="secondary">{log.created_at}</Text>
                       {log.project && <Text type="supporting">[{log.project}]</Text>}
                     </HStack>
-                    <Text type="supporting">{log.summary}</Text>
+                    <Markdown headingLevelStart={5}>{log.summary}</Markdown>
                   </VStack>
                 ))
               )}

@@ -24,9 +24,13 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
     if (old) deleteDocument(old.id);
   }
 
+  // Öğrenme notları web'de project="learning" filtresiyle listelenir; project vermeyen
+  // istemciler (ör. ChatGPT connector) uri "learning/" ile başlıyorsa oraya düşsün.
+  const project =
+    input.project ?? (input.uri?.startsWith("learning/") ? "learning" : null);
   const info = db
     .prepare(`INSERT INTO documents(uid, title, source, uri, project, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ${NOW_MS}, ${NOW_MS})`)
-    .run(randomUUID().replaceAll("-", ""), input.title, input.source ?? null, input.uri ?? null, input.project ?? null);
+    .run(randomUUID().replaceAll("-", ""), input.title, input.source ?? null, input.uri ?? null, project);
   const docId = Number(info.lastInsertRowid);
 
   const chunks = chunkMarkdown(input.text);
@@ -136,12 +140,26 @@ export function listDocuments(project?: string, limit = 100): DocumentListItem[]
     .all(...params) as DocumentListItem[];
 }
 
-/** Dokümanı açar/kapatır. Kapalı doküman RAG aramasından çıkar; durum cihazlar arası eşitlenir. */
-export function setDocumentEnabled(id: number, enabled: boolean): boolean {
+/** Doküman metasını günceller (enabled ve/veya project). Değişiklik LWW sync ile cihazlara yayılır. */
+export function updateDocumentMeta(
+  id: number,
+  patch: { enabled?: boolean; project?: string | null }
+): boolean {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  if (patch.enabled !== undefined) {
+    sets.push("enabled = ?");
+    params.push(patch.enabled ? 1 : 0);
+  }
+  if (patch.project !== undefined) {
+    sets.push("project = ?");
+    params.push(patch.project);
+  }
+  if (sets.length === 0) return false;
   const changed =
     getDb()
-      .prepare(`UPDATE documents SET enabled = ?, updated_at = ${NOW_MS} WHERE id = ?`)
-      .run(enabled ? 1 : 0, id).changes > 0;
+      .prepare(`UPDATE documents SET ${sets.join(", ")}, updated_at = ${NOW_MS} WHERE id = ?`)
+      .run(...params, id).changes > 0;
   if (changed) notifyWrite();
   return changed;
 }

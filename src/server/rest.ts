@@ -36,7 +36,7 @@ import {
   usageStats,
   savePrompt,
   saveSkill,
-  setDocumentEnabled,
+  updateDocumentMeta,
   getProject,
   listDocuments,
   listMemories,
@@ -102,8 +102,11 @@ export function buildRestRouter(): Router {
     doc ? res.json(doc) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.patch("/rag/documents/:id", wrap((req, res) => {
-    const ok = setDocumentEnabled(Number(req.params.id), Boolean(req.body.enabled));
-    ok ? res.json({ ok: true, enabled: Boolean(req.body.enabled) }) : res.status(404).json({ error: "bulunamadı" });
+    const patch: { enabled?: boolean; project?: string | null } = {};
+    if (req.body.enabled !== undefined) patch.enabled = Boolean(req.body.enabled);
+    if (req.body.project !== undefined) patch.project = req.body.project === null ? null : String(req.body.project);
+    const ok = updateDocumentMeta(Number(req.params.id), patch);
+    ok ? res.json({ ok: true, ...patch }) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.delete("/rag/documents/:id", wrap((req, res) => res.json({ deleted: deleteDocument(Number(req.params.id)) })));
   r.get("/rag/stats", wrap((_req, res) => res.json(ragStats())));

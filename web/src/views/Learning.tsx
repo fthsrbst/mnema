@@ -14,6 +14,7 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api, type RagDocument, type RagDocumentDetail, type RagSearchResult } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 const LEARNING_PROJECT = "learning";
 
@@ -180,7 +181,7 @@ export function Learning() {
                       <Text type="supporting" color="secondary">
                         Chunk #{c.seq}{c.heading ? ` — ${c.heading}` : ""}
                       </Text>
-                      <Text style={{ whiteSpace: "pre-wrap" }}>{c.text}</Text>
+                      <Markdown>{c.text}</Markdown>
                     </VStack>
                   ))}
                 </VStack>

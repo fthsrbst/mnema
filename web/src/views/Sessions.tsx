@@ -8,6 +8,7 @@ import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api, type SessionLog } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 export function Sessions() {
   const { t } = useI18n();
@@ -56,7 +57,7 @@ export function Sessions() {
                 </HStack>
                 <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(log)} />
               </HStack>
-              <Text style={{ whiteSpace: "pre-wrap" }}>{log.summary}</Text>
+              <Markdown>{log.summary}</Markdown>
             </VStack>
           </Card>
         ))
