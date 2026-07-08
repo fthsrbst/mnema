@@ -118,19 +118,22 @@ export interface DocumentListItem {
   vec_count: number;
 }
 
-export function listDocuments(limit = 100): DocumentListItem[] {
+/** project verilirse sadece o projeye ait dokümanları döner (frontend "learning" görünümü için). */
+export function listDocuments(project?: string, limit = 100): DocumentListItem[] {
   const db = getDb();
   const vecJoin = hasVec()
     ? "(SELECT COUNT(*) FROM chunks_vec v WHERE v.rowid IN (SELECT id FROM chunks WHERE document_id = d.id))"
     : "0";
+  const where = project ? "WHERE d.project = ?" : "";
+  const params = project ? [project, limit] : [limit];
   return db
     .prepare(
       `SELECT d.id, d.title, d.uri, d.project, d.enabled, d.created_at,
               (SELECT COUNT(*) FROM chunks WHERE document_id = d.id) AS chunk_count,
               ${vecJoin} AS vec_count
-       FROM documents d ORDER BY d.created_at DESC LIMIT ?`
+       FROM documents d ${where} ORDER BY d.created_at DESC LIMIT ?`
     )
-    .all(limit) as DocumentListItem[];
+    .all(...params) as DocumentListItem[];
 }
 
 /** Dokümanı açar/kapatır. Kapalı doküman RAG aramasından çıkar; durum cihazlar arası eşitlenir. */

@@ -184,6 +184,24 @@ export interface HealthStatus {
   version: string;
 }
 
+// --- usage istatistikleri ---
+
+export interface UsageItem {
+  id: number;
+  title: string;
+  type: string;
+  project: string | null;
+  access_count: number;
+  last_accessed: string;
+}
+
+export interface UsageStats {
+  top: UsageItem[];
+  stale: UsageItem[];
+  stale_count: number;
+  total: number;
+}
+
 // --- prompts ---
 
 export interface PromptInfo {

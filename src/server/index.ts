@@ -2,7 +2,17 @@
 import { timingSafeEqual } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { config, embeddingsEnabled, getDb, hasVec, onWrite, runDigest, syncWithPrimary } from "../core/index.js";
+import {
+  config,
+  embeddingsDisabledReason,
+  embeddingsEnabled,
+  getDb,
+  hasVec,
+  onWrite,
+  runDigest,
+  syncWithPrimary,
+  vecError,
+} from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
 
@@ -10,11 +20,17 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => {
+  // Auth'suz uç: ham hata mesajları (dosya yolu içerebilir) sızdırılmaz — sadece sabit kodlar.
+  // Detaylı neden auth'lu /api/rag/stats içinde (degraded_detail).
+  const vec_error = vecError() ? "vec_load_failed" : undefined;
+  const embeddings_reason = embeddingsDisabledReason() ? "embeddings_disabled" : undefined;
+  const degraded = vec_error || embeddings_reason ? { vec_error, embeddings_reason } : null;
   res.json({
     ok: true,
     vec: hasVec(),
     embeddings: embeddingsEnabled(),
     version: "0.1.0",
+    degraded,
   });
 });
 

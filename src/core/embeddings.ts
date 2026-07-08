@@ -9,6 +9,16 @@ export function embeddingsEnabled(): boolean {
   return config.geminiApiKey.length > 0;
 }
 
+// Modül yüklenirken tek sefer tespit edilir (config runtime'da değişmez) — /health'te
+// degradasyon nedeni + zaman damgası olarak gösterilir.
+const embeddingsDisabledAt = embeddingsEnabled() ? null : new Date().toISOString();
+
+/** Embedding devre dışıysa nedeni + tespit zamanı; aktifse null. */
+export function embeddingsDisabledReason(): string | null {
+  if (embeddingsEnabled()) return null;
+  return `GEMINI_API_KEY boş (tespit: ${embeddingsDisabledAt})`;
+}
+
 function normalize(v: number[]): Float32Array {
   let norm = 0;
   for (const x of v) norm += x * x;

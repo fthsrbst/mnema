@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { VStack, HStack } from "@astryxdesign/core/Layout";
 import { Card } from "@astryxdesign/core/Card";
 import { Button } from "@astryxdesign/core/Button";
@@ -6,6 +6,7 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { Switch } from "@astryxdesign/core/Switch";
+import { Selector } from "@astryxdesign/core/Selector";
 import { Table, pixel, proportional, type TableColumn } from "@astryxdesign/core/Table";
 import { Text, Heading } from "@astryxdesign/core/Text";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
@@ -17,6 +18,7 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { TrashIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 import {
   api,
+  type ProjectMap,
   type RagDocument,
   type RagDocumentDetail,
   type RagSearchResult,
@@ -33,6 +35,8 @@ export function RagManagement() {
   const { t } = useI18n();
   const toast = useToast();
   const [docs, setDocs] = useState<RagDocument[] | null>(null);
+  const [projectFilter, setProjectFilter] = useState("");
+  const [projects, setProjects] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [detail, setDetail] = useState<RagDocumentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -54,17 +58,31 @@ export function RagManagement() {
   const load = useCallback(async () => {
     try {
       setError("");
-      const list = await api<RagDocument[]>("GET", "/api/rag/documents");
+      const route = projectFilter ? `/api/rag/documents?project=${encodeURIComponent(projectFilter)}` : "/api/rag/documents";
+      const list = await api<RagDocument[]>("GET", route);
       setDocs(list.map((d) => ({ ...d, enabled: Boolean(d.enabled) })));
     } catch (err) {
       setError((err as Error).message);
       setDocs([]);
     }
-  }, []);
+  }, [projectFilter]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    api<ProjectMap[]>("GET", "/api/projects")
+      .then((list) => setProjects(list.map((p) => p.name)))
+      .catch(() => {});
+  }, []);
+
+  // Dropdown seçenekleri: /api/projects listesi + yüklü dokümanlarda geçen proje adları birleşimi.
+  const projectOptions = useMemo(() => {
+    const set = new Set<string>(projects);
+    for (const d of docs ?? []) if (d.project) set.add(d.project);
+    return Array.from(set).sort();
+  }, [projects, docs]);
 
   const openDetail = async (doc: RagDocument) => {
     setDetailLoading(true);
@@ -236,7 +254,16 @@ export function RagManagement() {
           </VStack>
           <Button label={t("rag.addDocument")} variant="primary" onClick={() => { setNewTitle(""); setNewText(""); setNewUri(""); setNewProject(""); setShowNew(true); }} />
         </HStack>
-        <HStack gap={2} wrap="wrap">
+        <HStack gap={2} wrap="wrap" vAlign="end">
+          <Selector
+            label={t("common.project")}
+            isLabelHidden
+            value={projectFilter}
+            onChange={setProjectFilter}
+            options={[{ value: "", label: t("common.all") }, ...projectOptions.map((p) => ({ value: p, label: p }))]}
+            placeholder={t("common.all")}
+            width={180}
+          />
           <Button label={t("common.refresh")} variant="secondary" onClick={load} />
           <Button
             label={reindexing ? t("rag.reindexing") : t("rag.reindexDone")}

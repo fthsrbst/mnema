@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { VStack, HStack } from "@astryxdesign/core/Layout";
 import { Card } from "@astryxdesign/core/Card";
 import { Button } from "@astryxdesign/core/Button";
@@ -10,7 +10,7 @@ import { Text, Heading } from "@astryxdesign/core/Text";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { useToast } from "@astryxdesign/core/Toast";
-import { api, type Memory } from "../api";
+import { api, type Memory, type ProjectMap } from "../api";
 import { useI18n } from "../i18n";
 
 interface Row extends Record<string, unknown> {
@@ -24,6 +24,8 @@ export function Memories() {
   const { t } = useI18n();
   const toast = useToast();
   const [query, setQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [projects, setProjects] = useState<string[]>([]);
   const [items, setItems] = useState<Memory[]>([]);
   const [selected, setSelected] = useState<Memory | null>(null);
   const [draft, setDraft] = useState({ title: "", body: "", type: "fact", project: "", tags: "" });
@@ -36,18 +38,32 @@ export function Memories() {
   const load = useCallback(async () => {
     try {
       setError("");
+      const projectParam = projectFilter ? `&project=${encodeURIComponent(projectFilter)}` : "";
       const route = query.trim()
-        ? `/api/memory/search?q=${encodeURIComponent(query)}&limit=25`
-        : "/api/memory?limit=50";
+        ? `/api/memory/search?q=${encodeURIComponent(query)}&limit=25${projectParam}`
+        : `/api/memory?limit=50${projectParam}`;
       setItems(await api<Memory[]>("GET", route));
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [query]);
+  }, [query, projectFilter]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    api<ProjectMap[]>("GET", "/api/projects")
+      .then((list) => setProjects(list.map((p) => p.name)))
+      .catch(() => {});
+  }, []);
+
+  // Dropdown seçenekleri: /api/projects listesi + yüklü kayıtlarda geçen proje adları birleşimi.
+  const projectOptions = useMemo(() => {
+    const set = new Set<string>(projects);
+    for (const it of items) if (it.project) set.add(it.project);
+    return Array.from(set).sort();
+  }, [projects, items]);
 
   const openRow = (mem: Memory) => {
     setSelected(mem);
@@ -149,6 +165,15 @@ export function Memories() {
           value={query}
           onChange={(v: string) => setQuery(v)}
           hasClear
+        />
+        <Selector
+          label={t("common.project")}
+          isLabelHidden
+          value={projectFilter}
+          onChange={setProjectFilter}
+          options={[{ value: "", label: t("common.all") }, ...projectOptions.map((p) => ({ value: p, label: p }))]}
+          placeholder={t("common.all")}
+          width={180}
         />
         <Button label={t("common.search")} variant="secondary" onClick={load} />
       </HStack>

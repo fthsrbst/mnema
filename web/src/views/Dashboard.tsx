@@ -8,7 +8,10 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Divider } from "@astryxdesign/core/Divider";
-import { api, type GrowthStats, type HealthStatus, type RagStats, type SessionLog } from "../api";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Item } from "@astryxdesign/core/Item";
+import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { api, type GrowthStats, type HealthStatus, type RagStats, type SessionLog, type UsageStats } from "../api";
 import { useI18n, type Lang, type TKey } from "../i18n";
 
 function formatBytes(bytes: number): string {
@@ -222,12 +225,82 @@ function GrowthChart({ growth }: { growth: GrowthStats }) {
   );
 }
 
+// --- kullanım paneli: en çok başvurulan + uzun süredir erişilmeyen kayıtlar ---
+
+function UsageSection({ usage, formatRelative }: { usage: UsageStats; formatRelative: (iso: string | null) => string }) {
+  const { t } = useI18n();
+  return (
+    <Card>
+      <VStack gap={4}>
+        <Heading level={4}>{t("dashboard.usageTitle")}</Heading>
+
+        <VStack gap={2}>
+          <Text type="label" color="secondary">{t("dashboard.usageTopTitle")}</Text>
+          {usage.top.length === 0 ? (
+            <Text type="supporting" color="secondary">{t("dashboard.usageTopEmpty")}</Text>
+          ) : (
+            <VStack gap={0}>
+              {usage.top.slice(0, 10).map((it) => (
+                <Item
+                  key={`top-${it.type}-${it.id}`}
+                  density="compact"
+                  label={it.title}
+                  labelLines={1}
+                  description={`${it.type}${it.project ? ` · ${it.project}` : ""} · ${t("dashboard.usageLastAccessed")}: ${formatRelative(it.last_accessed)}`}
+                  endContent={<Badge variant="info" label={`${it.access_count} ${t("dashboard.usageAccessCount")}`} />}
+                />
+              ))}
+            </VStack>
+          )}
+        </VStack>
+
+        <Divider />
+
+        <VStack gap={2}>
+          <Collapsible
+            defaultIsOpen={false}
+            trigger={
+              <HStack gap={2} vAlign="center">
+                <Text type="label" color="secondary">{t("dashboard.usageStaleTitle")}</Text>
+                {usage.stale_count > 0 && <Badge variant="warning" label={String(usage.stale_count)} />}
+              </HStack>
+            }
+          >
+            <VStack gap={0} paddingBlock={2}>
+              {usage.stale.length === 0 ? (
+                <Text type="supporting" color="secondary">{t("dashboard.usageStaleEmpty")}</Text>
+              ) : (
+                usage.stale.map((it) => (
+                  <Item
+                    key={`stale-${it.type}-${it.id}`}
+                    density="compact"
+                    label={it.title}
+                    labelLines={1}
+                    description={it.project ? `${it.type} · ${it.project}` : it.type}
+                    endContent={<Text type="supporting" color="secondary">{formatRelative(it.last_accessed)}</Text>}
+                  />
+                ))
+              )}
+            </VStack>
+          </Collapsible>
+          {usage.stale_count > 0 && (
+            <Text type="supporting" color="secondary">
+              {usage.stale_count} {t("dashboard.usageStaleRecords")}
+            </Text>
+          )}
+        </VStack>
+      </VStack>
+    </Card>
+  );
+}
+
 export function Dashboard() {
   const { t } = useI18n();
   const [stats, setStats] = useState<RagStats | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [sessions, setSessions] = useState<SessionLog[] | null>(null);
   const [growth, setGrowth] = useState<GrowthStats | null>(null);
+  const [usage, setUsage] = useState<UsageStats | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -263,6 +336,12 @@ export function Dashboard() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+    }
+    try {
+      // Ayrı try/catch: eski sunucularda uç 404 dönebilir — bölüm o durumda sessizce gizlenir.
+      setUsage(await api<UsageStats>("GET", "/api/stats/usage"));
+    } catch {
+      setUsage(null);
     }
   }, []);
 
@@ -406,6 +485,8 @@ export function Dashboard() {
               </VStack>
             </Card>
           )}
+
+          {usage && <UsageSection usage={usage} formatRelative={formatRelative} />}
 
           {stats.sync.peers.length > 0 && (
             <Card>

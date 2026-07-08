@@ -5,7 +5,7 @@ import { embedOne, toBuffer } from "./embeddings.js";
 import { notifyWrite } from "./events.js";
 import { hybridSearch } from "./search.js";
 import { recordDeletion } from "./sync.js";
-import type { Memory, MemoryInput, ScoredMemory, SearchFilters } from "./types.js";
+import type { Memory, MemoryInput, SavedMemory, ScoredMemory, SearchFilters, SimilarHit } from "./types.js";
 
 /** Önem çarpanını 0.5–2.0 aralığına kelepçeler. */
 function clampImportance(v: number | undefined): number {
@@ -17,24 +17,40 @@ function rowToMemory(row: Record<string, unknown>): Memory {
   return { ...(row as unknown as Memory), tags: JSON.parse((row.tags as string) ?? "[]") };
 }
 
-async function upsertVector(id: number, title: string, body: string): Promise<void> {
-  if (!hasVec()) return;
+/**
+ * Yeni eklenen vektöre en yakın k=3 komşuyu bulur (kendisi hariç, eşik altında olanlar).
+ * Kayıt anında hafif dedup uyarısı için — sqlite-vec'teki KNN deseni search.ts#vecSearch ile aynı.
+ */
+function findSimilar(id: number, vec: Float32Array): SimilarHit[] {
+  const db = getDb();
+  // k+1: kendi vektörü de sonuçlarda çıkar (mesafe 0), aşağıda rowid ile ele alınır
+  const rows = db
+    .prepare(`SELECT rowid, distance FROM memories_vec WHERE embedding MATCH ? AND k = ? ORDER BY distance`)
+    .all(toBuffer(vec), 4) as { rowid: number; distance: number }[];
+  const hits = rows.filter((r) => r.rowid !== id && r.distance <= config.dupDistance).slice(0, 3);
+  return hits.map((r) => ({ id: r.rowid, title: getMemory(r.rowid)?.title ?? "?", distance: r.distance }));
+}
+
+async function upsertVector(id: number, title: string, body: string): Promise<SimilarHit[] | undefined> {
+  if (!hasVec()) return undefined;
   try {
     const vec = await embedOne(`${title}\n${body}`, "RETRIEVAL_DOCUMENT");
-    if (!vec) return;
+    if (!vec) return undefined;
     const db = getDb();
     // Embed (ağ çağrısı) beklenirken kayıt silinmiş olabilir; rowid yeniden
     // kullanıldığından öksüz vektör başka bir kayda yapışabilir — yazmadan önce doğrula.
-    if (!db.prepare("SELECT 1 FROM memories WHERE id = ?").get(id)) return;
+    if (!db.prepare("SELECT 1 FROM memories WHERE id = ?").get(id)) return undefined;
     // sqlite-vec rowid için katı INTEGER ister; number REAL bağlandığından BigInt şart
     db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(id));
     db.prepare("INSERT INTO memories_vec(rowid, embedding) VALUES (?, ?)").run(BigInt(id), toBuffer(vec));
+    return findSimilar(id, vec);
   } catch (err) {
     console.error(`[hub] memory #${id} embed edilemedi (FTS'te aranabilir): ${(err as Error).message}`);
+    return undefined;
   }
 }
 
-export async function saveMemory(input: MemoryInput): Promise<Memory> {
+export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
   const db = getDb();
   const info = db
     .prepare(
@@ -52,9 +68,10 @@ export async function saveMemory(input: MemoryInput): Promise<Memory> {
       importance: clampImportance(input.importance),
     });
   const id = Number(info.lastInsertRowid);
-  await upsertVector(id, input.title, input.body);
+  const similar = await upsertVector(id, input.title, input.body);
   notifyWrite();
-  return getMemory(id)!;
+  const mem = getMemory(id)!;
+  return similar && similar.length > 0 ? { ...mem, similar } : mem;
 }
 
 export function getMemory(id: number): Memory | null {

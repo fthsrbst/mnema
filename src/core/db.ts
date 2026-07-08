@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 
 let db: Database.Database | null = null;
 let vecAvailable = false;
+let vecErrorMsg: string | null = null;
 
 /**
  * Milisaniye hassasiyetli UTC zaman damgası üreten SQL ifadesi.
@@ -176,6 +177,7 @@ export function getDb(): Database.Database {
     vecAvailable = true;
   } catch (err) {
     vecAvailable = false;
+    vecErrorMsg = `${(err as Error).message} (tespit: ${new Date().toISOString()})`;
     console.error(`[hub] sqlite-vec yüklenemedi, vektör arama kapalı: ${(err as Error).message}`);
   }
 
@@ -194,6 +196,12 @@ export function getDb(): Database.Database {
 export function hasVec(): boolean {
   getDb();
   return vecAvailable;
+}
+
+/** sqlite-vec yüklenemediyse hata mesajı + tespit zamanı; her şey yolundaysa null. */
+export function vecError(): string | null {
+  getDb();
+  return vecErrorMsg;
 }
 
 export function closeDb(): void {
