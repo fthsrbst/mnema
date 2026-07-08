@@ -1,4 +1,4 @@
-import { getDb } from "./db.js";
+import { getDb, NOW_MS } from "./db.js";
 import { notifyWrite } from "./events.js";
 import { recordDeletion } from "./sync.js";
 import type { ProjectMap } from "./types.js";
@@ -10,8 +10,8 @@ export function upsertProject(map: ProjectMap): ProjectMap {
   const merged: ProjectMap = { ...(existing ?? {}), ...map, name: map.name };
   delete merged.updated_at;
   db.prepare(
-    `INSERT INTO projects(name, data, updated_at) VALUES (@name, @data, datetime('now'))
-     ON CONFLICT(name) DO UPDATE SET data=@data, updated_at=datetime('now')`
+    `INSERT INTO projects(name, data, updated_at) VALUES (@name, @data, ${NOW_MS})
+     ON CONFLICT(name) DO UPDATE SET data=@data, updated_at=${NOW_MS}`
   ).run({ name: map.name, data: JSON.stringify(merged) });
   notifyWrite();
   return getProject(map.name)!;

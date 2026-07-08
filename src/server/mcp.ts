@@ -87,7 +87,17 @@ export function buildMcpServer(): McpServer {
           .describe("önem çarpanı; 2=kritik karar, 1=normal, 0.5=önemsiz detay"),
       },
     },
-    async (args) => json(await saveMemory(args))
+    async (args) => {
+      const mem = await saveMemory(args);
+      const content = [{ type: "text" as const, text: JSON.stringify(mem, null, 2) }];
+      if (mem.similar && mem.similar.length > 0) {
+        const warning = mem.similar
+          .map((s) => `⚠ Benzer kayıt(lar) var: #${s.id} ${s.title} (${s.distance.toFixed(3)})`)
+          .join("\n");
+        content.push({ type: "text" as const, text: warning });
+      }
+      return { content };
+    }
   );
 
   server.registerTool(

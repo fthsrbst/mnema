@@ -25,6 +25,7 @@ const dict = {
   "nav.projects": { tr: "Projeler", en: "Projects" },
   "nav.sessions": { tr: "Oturumlar", en: "Sessions" },
   "nav.timeline": { tr: "Zaman Akışı", en: "Timeline" },
+  "nav.learning": { tr: "Öğrenme Notları", en: "Learning Notes" },
   "nav.machines": { tr: "Makineler", en: "Machines" },
   "nav.media": { tr: "Medya", en: "Media" },
   "nav.skills": { tr: "Skiller", en: "Skills" },
@@ -48,6 +49,7 @@ const dict = {
   "common.loading": { tr: "Yükleniyor...", en: "Loading..." },
   "common.error": { tr: "Hata", en: "Error" },
   "common.name": { tr: "Ad", en: "Name" },
+  "common.all": { tr: "Tümü", en: "All" },
   "common.title": { tr: "Başlık", en: "Title" },
   "common.content": { tr: "İçerik", en: "Content" },
   "common.project": { tr: "Proje", en: "Project" },
@@ -214,6 +216,18 @@ const dict = {
   "rag.docText": { tr: "Metin", en: "Text" },
   "rag.docUri": { tr: "URI", en: "URI" },
 
+  // --- learning ---
+  "learning.title": { tr: "Öğrenme Notları", en: "Learning Notes" },
+  "learning.subtitle": { tr: "learn skill'i ve rag_add ile eklenen öğrenme kaynakları", en: "Learning resources added via the learn skill and rag_add" },
+  "learning.searchPlaceholder": { tr: "Öğrenme notlarında ara...", en: "Search learning notes..." },
+  "learning.searchResultsTitle": { tr: "Arama sonuçları", en: "Search results" },
+  "learning.backToList": { tr: "← Listeye dön", en: "← Back to list" },
+  "learning.empty": { tr: "Henüz öğrenme notu yok", en: "No learning notes yet" },
+  "learning.emptyDesc": { tr: "learn skill'i veya rag_add ile project=learning olarak eklenen dokümanlar burada listelenir.", en: "Documents added via the learn skill or rag_add with project=learning appear here." },
+  "learning.noResults": { tr: "Eşleşen not bulunamadı.", en: "No matching notes found." },
+  "learning.chunkCount": { tr: "chunk", en: "chunks" },
+  "learning.noChunks": { tr: "Bu notta henüz chunk yok.", en: "This note has no chunks yet." },
+
   // --- media ---
   "media.title": { tr: "Medya Üretimi", en: "Media Generation" },
   "media.promptLabel": { tr: "Prompt (İngilizce daha iyi sonuç verir)", en: "Prompt (English works better)" },
@@ -288,6 +302,15 @@ const dict = {
   "dashboard.recentSessions": { tr: "Son oturumlar", en: "Recent sessions" },
   "dashboard.noSessions": { tr: "Henüz oturum kaydı yok", en: "No session logs yet" },
   "dashboard.noSessionsDesc": { tr: "Agentlar oturum sonunda session_log ile özet bırakır.", en: "Agents leave a summary via session_log at the end of a session." },
+  "dashboard.usageTitle": { tr: "Kullanım", en: "Usage" },
+  "dashboard.usageTopTitle": { tr: "En çok başvurulan hafızalar", en: "Most accessed memories" },
+  "dashboard.usageTopEmpty": { tr: "Henüz kullanım verisi yok", en: "No usage data yet" },
+  "dashboard.usageStaleTitle": { tr: "Uzun süredir erişilmeyen", en: "Not accessed in a while" },
+  "dashboard.usageStaleRecords": { tr: "kayıt uzun süredir erişilmedi", en: "records not accessed in a while" },
+  "dashboard.usageStaleEmpty": { tr: "Uzun süredir erişilmeyen kayıt yok", en: "No stale records" },
+  "dashboard.usageShowList": { tr: "Listeyi göster", en: "Show list" },
+  "dashboard.usageAccessCount": { tr: "erişim", en: "accesses" },
+  "dashboard.usageLastAccessed": { tr: "Son erişim", en: "Last accessed" },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type TKey = keyof typeof dict;

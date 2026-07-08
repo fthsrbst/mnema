@@ -33,6 +33,7 @@ import {
   reindex,
   runDigest,
   timeline,
+  usageStats,
   savePrompt,
   saveSkill,
   setDocumentEnabled,
@@ -95,7 +96,7 @@ export function buildRestRouter(): Router {
 
   // --- rag ---
   r.post("/rag/documents", wrap(async (req, res) => res.json(await addDocument(req.body))));
-  r.get("/rag/documents", wrap((_req, res) => res.json(listDocuments())));
+  r.get("/rag/documents", wrap((req, res) => res.json(listDocuments(req.query.project as string | undefined))));
   r.get("/rag/documents/:id", wrap((req, res) => {
     const doc = getDocument(Number(req.params.id));
     doc ? res.json(doc) : res.status(404).json({ error: "bulunamadı" });
@@ -111,6 +112,7 @@ export function buildRestRouter(): Router {
     res.json(timeline({ limit: limit ? Number(limit) : undefined, before: before as string | undefined }));
   }));
   r.get("/stats/growth", wrap((req, res) => res.json(growthStats(req.query.days ? Number(req.query.days) : undefined))));
+  r.get("/stats/usage", wrap((_req, res) => res.json(usageStats())));
   r.post("/rag/reindex", wrap(async (req, res) => res.json(await reindex(Boolean(req.body?.force)))));
   r.get("/rag/search", wrap(async (req, res) => {
     const { q, project, limit } = req.query;

@@ -1,10 +1,20 @@
-# ai-hub
+# Mnema
 
-**A shared memory, RAG, and project-context server for every AI agent you use.**
+<p align="center"><img src="docs/assets/logo.png" width="140" alt="Mnema logo"/></p>
+
+<p align="center"><strong>One memory for every AI agent.</strong></p>
+<p align="center"><em>Mnema (μνῆμα) — Greek for a memory, a monument.</em></p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white" alt="Node >=22"></a>
+  <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-6b46c1" alt="MCP"></a>
+  <a href="deploy/setup-pi.sh"><img src="https://img.shields.io/badge/deploy-self--hosted-orange" alt="Self-hosted"></a>
+</p>
 
 Claude Code, Cursor, opencode, Codex CLI, and custom agents each keep their own
 context today — decisions made in one tool are invisible to the others, and
-switching devices means starting from zero. ai-hub is a small self-hosted
+switching devices means starting from zero. Mnema is a small self-hosted
 server (MCP + REST) that gives all of them one common brain: structured
 memory, hybrid document search (RAG), project maps, and role-based system
 prompts. It runs on a Raspberry Pi 5 on your own network and follows you
@@ -23,7 +33,7 @@ Multi-agent workflows have a context problem:
 - "I learned X yesterday" has no durable home — it either lives in scrollback
   or nowhere.
 
-ai-hub is a deliberately small answer to that: one server, one SQLite file,
+Mnema is a deliberately small answer to that: one server, one SQLite file,
 one protocol (MCP) that every agent already speaks, plus REST for anything
 that doesn't. No vector database cluster, no message queue, no Docker layer —
 just enough infrastructure to make memory persistent and searchable across
@@ -112,12 +122,12 @@ For the full data model and phased build plan, see [`PLAN.md`](PLAN.md).
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/<your-user>/ai-hub/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/main/scripts/install.sh | bash
 ```
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/<your-user>/ai-hub/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/fthsrbst/mnema/main/scripts/install.ps1 | iex
 ```
 
 The installer clones the repo, installs dependencies, builds, and writes a
@@ -126,8 +136,8 @@ starter `.env`.
 ### Option B: manual
 
 ```bash
-git clone https://github.com/<your-user>/ai-hub.git
-cd ai-hub
+git clone https://github.com/fthsrbst/mnema.git
+cd mnema
 npm ci
 npm run build
 cp .env.example .env   # edit HUB_TOKEN, GEMINI_API_KEY (optional)
@@ -141,7 +151,7 @@ recall until you add a key.
 ### Raspberry Pi deploy
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<your-user>/ai-hub/main/deploy/setup-pi.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/main/deploy/setup-pi.sh | bash
 ```
 
 This installs Node 22, clones the repo, builds server + web UI, generates a
@@ -149,7 +159,7 @@ This installs Node 22, clones the repo, builds server + web UI, generates a
 schedules a nightly backup cron job. See [`deploy/setup-pi.sh`](deploy/setup-pi.sh)
 and [`deploy/clients.md`](deploy/clients.md) for details.
 
-## Connecting an agent
+## Connecting agents
 
 Every agent talks to the same `/mcp` endpoint. Replace `<HUB>` with your
 server URL (`http://127.0.0.1:8033` locally, `http://100.x.x.x:8033` on your
@@ -193,34 +203,111 @@ url = "<HUB>/mcp"
 http_headers = { "Authorization" = "Bearer <TOKEN>" }
 ```
 
-After connecting, run `hub sync` on each device — it copies the shared skill
-set into `~/.claude/skills/` and updates the managed block in `CLAUDE.md` /
-`AGENTS.md` / `.cursor/rules` so every agent knows the hub exists and when to
-use it. Full client details: [`deploy/clients.md`](deploy/clients.md).
+These four entries are not hand-maintained per client — they all come from
+one file, [`mcp-servers.json`](mcp-servers.json), which also lists auxiliary
+MCP servers (`context7`, `playwright`, `sequential-thinking`):
 
-## Remote access (claude.ai, ChatGPT, Gemini, phone)
-
-Anthropic's, OpenAI's, and Google's hosted apps connect from their own cloud
-infrastructure, not from your tailnet — the endpoint has to be reachable over
-the public internet. Tailscale **Funnel** does this without opening a port on
-your router:
-
-```bash
-sudo tailscale funnel --bg 8033
+```json
+{
+  "servers": {
+    "hub": {
+      "url": "$HUB_URL/mcp",
+      "headers": { "Authorization": "Bearer $HUB_TOKEN" }
+    }
+  }
+}
 ```
 
-Since these platforms can't attach custom headers, the server also accepts
-the token as a query parameter:
+Running `hub sync` on a device resolves `$HUB_URL` / `$HUB_TOKEN` from that
+device's `hub config`, writes the result into each detected client's own
+config file (`~/.claude.json`, `~/.cursor/mcp.json`, `~/.config/opencode/opencode.json`,
+`~/.codex/config.toml`), copies the shared skill set into `~/.claude/skills/`,
+and updates a managed block in `CLAUDE.md` / `AGENTS.md` so every agent knows
+the hub exists and when to use it. Full client details:
+[`deploy/clients.md`](deploy/clients.md).
 
-```
-https://<your-device>.<your-tailnet>.ts.net/mcp?token=<HUB_TOKEN>
+## Auto-recall hook
+
+This is the feature that makes the shared memory actually get used instead of
+sitting unread: Claude Code's `UserPromptSubmit` hook runs `hub recall --hook`
+on **every message you send**, before the agent sees it. The hook reads the
+prompt from stdin, skips short messages and slash commands, calls
+`GET /api/recall?q=<prompt>&format=text` on the hub with a tight timeout, and
+prints back whatever relevant memories/RAG chunks it finds — the agent then
+has that context already in front of it, with zero explicit "search your
+memory" step from you.
+
+It is deliberately fail-silent: if the hub is unreachable, slow, or returns an
+error, the hook exits `0` and your prompt goes through untouched. Auto-recall
+can only add context — it can never block or break a conversation.
+
+Wire it up by merging the hooks block from
+[`deploy/claude-code-settings.example.json`](deploy/claude-code-settings.example.json)
+into `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "hub recall --hook", "timeout": 5 }] }
+    ]
+  }
+}
 ```
 
-For devices already on your tailnet (including your phone with the Tailscale
-app installed), `tailscale serve` is enough — no public exposure needed, and
-the same URL works as an installable PWA for the web dashboard. Full
-walkthrough, security notes, and per-platform setup steps:
-[`docs/connectors.md`](docs/connectors.md).
+`hub sync` also writes a managed block into `CLAUDE.md` / `AGENTS.md` that
+tells the agent *when* to write back — save decisions with rationale, log
+sessions before closing, keep project maps current — so recall and capture
+work as a loop, not just a one-way lookup.
+
+## Security notes
+
+Mnema's auth model is intentionally simple — read this before exposing it
+beyond your own machine:
+
+- **Single bearer token.** `HUB_TOKEN` in `.env` gates every request except
+  `/health`. If it's empty, auth is off entirely (fine for local dev, not for
+  anything else). There's no per-agent scoping or rotation tooling — rotating
+  means changing `.env`, restarting the service, and updating every connected
+  client by hand.
+- **Two ways to send the token.** Most clients send
+  `Authorization: Bearer <token>`; platforms that can't attach custom headers
+  (claude.ai, ChatGPT, Gemini) fall back to `?token=<HUB_TOKEN>` in the URL.
+  Token-in-URL has real trade-offs (browser history, proxy/access logs) — see
+  [`docs/connectors.md`](docs/connectors.md) for the full write-up.
+- **Tailscale is the default network boundary.** The hub listens on a private
+  tailnet address; nothing is reachable from the open internet unless you
+  explicitly run `tailscale funnel`. Funnel makes the endpoint **fully
+  public** — the bearer token becomes the only thing standing between the
+  internet and your memory store, so treat turning it on as a deliberate,
+  temporary action, not a default.
+- **`/outputs` is served without auth, on purpose.** Generated media
+  (`data/outputs`, via `image_generate`/`media_generate`) and the web UI's
+  static shell are served unauthenticated (`express.static`, mounted before
+  the token middleware in `src/server/index.ts`) so `<img>`/`<video>` tags in
+  the dashboard work without token-laced URLs. All *data* endpoints
+  (`/api/*`, `/mcp`) stay behind the bearer check. Don't put anything
+  sensitive in `data/outputs`.
+
+This is a personal-scale tool, not a hardened multi-tenant service — see the
+maturity table below for what's actually battle-tested versus rough.
+
+## Roadmap
+
+Not built yet, tracked in [`PLAN.md`](PLAN.md) (Faz 5/6):
+
+- **`hub ask "<question>"`** — RAG + Gemini Flash, direct terminal Q&A without
+  opening an agent.
+- **Quick capture** — a mobile-friendly single-input web UI for dropping a
+  note or link straight into RAG (with auto-fetch + summarize for links).
+- **Watch mode** — re-index a notes/docs folder automatically on change.
+- **`hub timeline <project>`** — chronological dump of a project's decisions
+  and sessions.
+- **Weekly memory-maintenance digest** — a cron job that reports
+  stale/conflicting memory entries instead of just letting them accumulate.
+- **Qdrant migration path** — `sqlite-vec` is fine to roughly 1M vectors;
+  moving to a dedicated vector store if that ceiling is ever hit is planned,
+  not implemented.
 
 ## Maturity / honesty table
 

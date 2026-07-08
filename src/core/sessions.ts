@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { getDb } from "./db.js";
+import { getDb, NOW_MS } from "./db.js";
 import { notifyWrite } from "./events.js";
 import { recordDeletion } from "./sync.js";
 import type { SessionLog } from "./types.js";
 
 export function addSessionLog(summary: string, project?: string, source?: string): SessionLog {
   const info = getDb()
-    .prepare("INSERT INTO session_logs(uid, project, summary, source) VALUES (?, ?, ?, ?)")
+    .prepare(`INSERT INTO session_logs(uid, project, summary, source, created_at) VALUES (?, ?, ?, ?, ${NOW_MS})`)
     .run(randomUUID().replaceAll("-", ""), project ?? null, summary, source ?? null);
   const log = getDb()
     .prepare("SELECT * FROM session_logs WHERE id = ?")

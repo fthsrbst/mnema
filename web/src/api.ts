@@ -12,6 +12,17 @@ export function clearToken(): void {
   localStorage.removeItem("hub_token");
 }
 
+/**
+ * /outputs gibi auth arkasındaki statik dosyalar için URL üretir: <img>/<video>
+ * etiketleri Authorization header gönderemediğinden token query param ile taşınır
+ * (sunucu ?token= kabul eder).
+ */
+export function assetUrl(url: string): string {
+  const token = getToken();
+  if (!token) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+}
+
 /** 401 yanıtı alındığında App.tsx bu callback'i kurar; kullanıcıyı token ekranına yönlendirir. */
 let onUnauthorized: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: (() => void) | null): void {
@@ -171,6 +182,24 @@ export interface HealthStatus {
   vec: boolean;
   embeddings: boolean;
   version: string;
+}
+
+// --- usage istatistikleri ---
+
+export interface UsageItem {
+  id: number;
+  title: string;
+  type: string;
+  project: string | null;
+  access_count: number;
+  last_accessed: string;
+}
+
+export interface UsageStats {
+  top: UsageItem[];
+  stale: UsageItem[];
+  stale_count: number;
+  total: number;
 }
 
 // --- prompts ---

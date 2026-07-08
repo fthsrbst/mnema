@@ -15,6 +15,7 @@ import {
   ServerStackIcon,
   CircleStackIcon,
   BookOpenIcon,
+  AcademicCapIcon,
   FolderIcon,
   ClockIcon,
   QueueListIcon,
@@ -30,6 +31,7 @@ import { Memories } from "./views/Memories";
 import { Projects } from "./views/Projects";
 import { Sessions } from "./views/Sessions";
 import { Timeline } from "./views/Timeline";
+import { Learning } from "./views/Learning";
 import { Machines } from "./views/Machines";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
@@ -42,6 +44,7 @@ type View =
   | "rag"
   | "prompts"
   | "memories"
+  | "learning"
   | "projects"
   | "sessions"
   | "machines"
@@ -55,6 +58,7 @@ const NAV: { id: View; labelKey: Parameters<ReturnType<typeof useI18n>["t"]>[0];
   { id: "rag", labelKey: "nav.rag", icon: ServerStackIcon },
   { id: "prompts", labelKey: "nav.prompts", icon: BookOpenIcon },
   { id: "memories", labelKey: "nav.memories", icon: CircleStackIcon },
+  { id: "learning", labelKey: "nav.learning", icon: AcademicCapIcon },
   { id: "projects", labelKey: "nav.projects", icon: FolderIcon },
   { id: "sessions", labelKey: "nav.sessions", icon: ClockIcon },
   { id: "machines", labelKey: "nav.machines", icon: ComputerDesktopIcon },
@@ -187,6 +191,7 @@ function AppInner() {
       {view === "rag" && <RagManagement />}
       {view === "prompts" && <Prompts />}
       {view === "memories" && <Memories />}
+      {view === "learning" && <Learning />}
       {view === "projects" && <Projects />}
       {view === "sessions" && <Sessions />}
       {view === "machines" && <Machines />}

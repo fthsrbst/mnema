@@ -6,21 +6,34 @@
 # Idempotent: ikinci çalıştırma güvenlidir (mevcut .env/servis dosyalarını korur).
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/fthsrbst/ai-hub.git}"
+REPO_URL="${REPO_URL:-https://github.com/fthsrbst/mnema.git}"
 
 log() { echo -e "\n== $1 =="; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Evet/hayır sorusu. `curl | bash` ile çalışırken stdin script'in kendisidir —
+# oradan read yapmak script satırlarını yutar; terminal varsa /dev/tty'den oku,
+# yoksa (CI/tam otomatik) varsayılan Evet ile devam et.
+ask_yn() {
+  local ans=""
+  if [[ -t 0 ]]; then
+    read -r -p "$1 [Y/n] " ans
+  elif [[ -r /dev/tty ]]; then
+    read -r -p "$1 [Y/n] " ans < /dev/tty
+  fi
+  [[ "${ans:-Y}" =~ ^[Yy]$ ]]
+}
+
 # ---------------------------------------------------------------------------
 # 0) Repo kökünü bul: script zaten klonlanmış bir repo içindeyse onu kullan,
-#    değilse ~/ai-hub'a klonla.
+#    değilse ~/mnema'ya klonla.
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
-if [[ -f "$SCRIPT_DIR/../package.json" ]] && grep -q '"name": "ai-hub"' "$SCRIPT_DIR/../package.json" 2>/dev/null; then
+if [[ -f "$SCRIPT_DIR/../package.json" ]] && grep -q '"name": "mnema"' "$SCRIPT_DIR/../package.json" 2>/dev/null; then
   APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
   log "Mevcut repo kullanılıyor: $APP_DIR"
 else
-  APP_DIR="${APP_DIR:-$HOME/ai-hub}"
+  APP_DIR="${APP_DIR:-$HOME/mnema}"
   log "Repo"
   if [[ -d "$APP_DIR/.git" ]]; then
     echo "zaten klonlanmış: $APP_DIR (güncelleniyor)"
@@ -48,9 +61,7 @@ if [[ "$NODE_OK" -ne 1 ]]; then
   echo "Node.js >= 22 bulunamadı (mevcut: $(node -v 2>/dev/null || echo 'yok'))."
   UNAME="$(uname -s)"
   if [[ "$UNAME" == "Linux" ]] && have apt-get; then
-    read -r -p "Node 22'yi NodeSource ile şimdi kurmak ister misin? [Y/n] " ans
-    ans="${ans:-Y}"
-    if [[ "$ans" =~ ^[Yy]$ ]]; then
+    if ask_yn "Node 22'yi NodeSource ile şimdi kurmak ister misin?"; then
       curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
       sudo apt-get install -y nodejs
     else
@@ -59,9 +70,7 @@ if [[ "$NODE_OK" -ne 1 ]]; then
     fi
   elif [[ "$UNAME" == "Darwin" ]]; then
     if have brew; then
-      read -r -p "Node 22'yi Homebrew ile şimdi kurmak ister misin? [Y/n] " ans
-      ans="${ans:-Y}"
-      if [[ "$ans" =~ ^[Yy]$ ]]; then
+      if ask_yn "Node 22'yi Homebrew ile şimdi kurmak ister misin?"; then
         brew install node@22
         brew link --overwrite --force node@22
       else
@@ -124,9 +133,7 @@ mkdir -p "$(dirname "$(grep ^HUB_DB_PATH .env | cut -d= -f2)")" 2>/dev/null || t
 # ---------------------------------------------------------------------------
 UNAME="$(uname -s)"
 log "Başlangıçta otomatik başlatma"
-read -r -p "Hub sunucusunu sistem açılışında otomatik başlatalım mı? [Y/n] " ans
-ans="${ans:-Y}"
-if [[ "$ans" =~ ^[Yy]$ ]]; then
+if ask_yn "Hub sunucusunu sistem açılışında otomatik başlatalım mı?"; then
   if [[ "$UNAME" == "Linux" ]] && have systemctl; then
     if systemctl --user status >/dev/null 2>&1; then
       echo "Linux systemd (user service) kuruluyor..."

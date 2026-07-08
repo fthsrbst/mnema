@@ -5,14 +5,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
-import { getDb, hasVec } from "./db.js";
-import { embed, embeddingsEnabled, toBuffer } from "./embeddings.js";
+import { getDb, hasVec, vecError } from "./db.js";
+import { embed, embeddingsDisabledReason, embeddingsEnabled, toBuffer } from "./embeddings.js";
 
 export interface RagStats {
   db_path: string;
   db_size_bytes: number;
   vec_available: boolean;
   embeddings_enabled: boolean;
+  degraded_detail: { vec_error?: string; embeddings_reason?: string } | null;
   embedding_model: string;
   embedding_dim: number;
   vec_max_distance: number;
@@ -32,6 +33,11 @@ export function ragStats(): RagStats {
     db_size_bytes: fs.existsSync(dbFile) ? fs.statSync(dbFile).size : 0,
     vec_available: vec,
     embeddings_enabled: embeddingsEnabled(),
+    // Ham degradasyon nedenleri sadece bu auth'lu uçta — /health yalnızca sabit kod döner.
+    degraded_detail:
+      vecError() || embeddingsDisabledReason()
+        ? { vec_error: vecError() ?? undefined, embeddings_reason: embeddingsDisabledReason() ?? undefined }
+        : null,
     embedding_model: config.embeddingModel,
     embedding_dim: config.embeddingDim,
     vec_max_distance: config.vecMaxDistance,
@@ -53,6 +59,44 @@ export function ragStats(): RagStats {
       peers: db.prepare("SELECT peer, last_pull, last_push FROM sync_state").all() as RagStats["sync"]["peers"],
     },
   };
+}
+
+export interface UsageMemoryItem {
+  id: number;
+  title: string;
+  type: string;
+  project: string | null;
+  access_count: number;
+  last_accessed: string | null;
+}
+
+export interface UsageStats {
+  top: UsageMemoryItem[];
+  stale: UsageMemoryItem[];
+  stale_count: number;
+  total: number;
+}
+
+/**
+ * Hafıza kullanım istatistikleri: en çok erişilenler + bayatlamış (90+ gün dokunulmamış
+ * veya hiç erişilmemiş) kayıtlar. Web admin paneli için — kontrat frontend'le sabit, değiştirme.
+ */
+export function usageStats(): UsageStats {
+  const db = getDb();
+  const fields = "id, title, type, project, access_count, last_accessed";
+  const staleCond = "(last_accessed IS NULL OR last_accessed < datetime('now', '-90 days'))";
+  const top = db
+    .prepare(`SELECT ${fields} FROM memories ORDER BY access_count DESC LIMIT 10`)
+    .all() as UsageMemoryItem[];
+  const stale = db
+    .prepare(
+      `SELECT ${fields} FROM memories WHERE ${staleCond}
+       ORDER BY last_accessed IS NOT NULL, last_accessed ASC LIMIT 20`
+    )
+    .all() as UsageMemoryItem[];
+  const stale_count = (db.prepare(`SELECT COUNT(*) AS n FROM memories WHERE ${staleCond}`).get() as { n: number }).n;
+  const total = (db.prepare("SELECT COUNT(*) AS n FROM memories").get() as { n: number }).n;
+  return { top, stale, stale_count, total };
 }
 
 export interface TimelineItem {
@@ -147,6 +191,11 @@ async function doReindex(force: boolean, result: ReindexResult): Promise<Reindex
 
   if (force) {
     db.exec("DELETE FROM chunks_vec; DELETE FROM memories_vec;");
+  } else {
+    // Öksüz vektörleri temizle: ana kaydı silinmiş (embed yarışı / eski bug) vec satırları
+    // rowid yeniden kullanımında başka kayda yapışabilir — normal reindex'te de süpür.
+    db.prepare("DELETE FROM chunks_vec WHERE rowid NOT IN (SELECT id FROM chunks)").run();
+    db.prepare("DELETE FROM memories_vec WHERE rowid NOT IN (SELECT id FROM memories)").run();
   }
 
   const chunks = db

@@ -1,6 +1,6 @@
 export { config } from "./config.js";
-export { getDb, hasVec, closeDb } from "./db.js";
-export { embed, embedOne, embeddingsEnabled } from "./embeddings.js";
+export { getDb, hasVec, closeDb, vecError } from "./db.js";
+export { embed, embedOne, embeddingsEnabled, embeddingsDisabledReason } from "./embeddings.js";
 export { chunkMarkdown } from "./chunker.js";
 export * from "./types.js";
 export * from "./events.js";

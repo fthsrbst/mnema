@@ -31,6 +31,8 @@ export const config = {
   // Alaka eşiği: normalize vektörlerde L2 mesafesi (0.86 ≈ cos 0.63).
   // Ölçüm: gerçek eşleşmeler cos 0.70+, alakasızlar 0.51-0.59 (scripts/debug-dist kalibrasyonu)
   vecMaxDistance: Number(process.env.VEC_MAX_DISTANCE ?? 0.86),
+  // Kayıt anında benzerlik uyarısı eşiği: bundan yakın mesafedeki hafızalar dedup adayı sayılır.
+  dupDistance: Number(process.env.HUB_DUP_DISTANCE ?? 0.35),
   // Local-first eşitleme: tanımlıysa bu instance, primary (Pi) ile periyodik eşitlenir.
   // Virgülle ayrılmış çoklu adres desteklenir (örn. Tailscale + LAN yedeği):
   // "http://100.x:8033,http://192.168.1.53:8033" — sırayla denenir, ilk erişilebilenle çalışılır.

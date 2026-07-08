@@ -1,5 +1,5 @@
 {
-  "name": "ai-hub",
+  "name": "mnema",
   "version": "0.1.0",
   "description": "Ortak AI hafızası: MCP + REST üzerinden hafıza, RAG ve proje mapleri (Raspberry Pi hub)",
   "type": "module",

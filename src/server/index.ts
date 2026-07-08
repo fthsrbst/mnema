@@ -2,7 +2,17 @@
 import { timingSafeEqual } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { config, embeddingsEnabled, getDb, hasVec, onWrite, runDigest, syncWithPrimary } from "../core/index.js";
+import {
+  config,
+  embeddingsDisabledReason,
+  embeddingsEnabled,
+  getDb,
+  hasVec,
+  onWrite,
+  runDigest,
+  syncWithPrimary,
+  vecError,
+} from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
 
@@ -10,17 +20,23 @@ const app = express();
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => {
+  // Auth'suz uç: ham hata mesajları (dosya yolu içerebilir) sızdırılmaz — sadece sabit kodlar.
+  // Detaylı neden auth'lu /api/rag/stats içinde (degraded_detail).
+  const vec_error = vecError() ? "vec_load_failed" : undefined;
+  const embeddings_reason = embeddingsDisabledReason() ? "embeddings_disabled" : undefined;
+  const degraded = vec_error || embeddings_reason ? { vec_error, embeddings_reason } : null;
   res.json({
     ok: true,
     vec: hasVec(),
     embeddings: embeddingsEnabled(),
     version: "0.1.0",
+    degraded,
   });
 });
 
-// Statik içerik auth'suz servis edilir (UI kabuğu + üretilen medya);
-// veri her zaman /api üzerinden ve token'lıdır.
-app.use("/outputs", express.static("./data/outputs"));
+// UI kabuğu (web/dist) bilinçli olarak auth'suz: sadece uygulama kodu içerir, veri içermez —
+// veri her zaman /api üzerinden ve token'lıdır. /outputs ise üretilen medya (kullanıcı verisi)
+// içerdiğinden auth'un ARKASINDA servis edilir (aşağıda) — Funnel açıkken internete sızmasın.
 app.use("/", express.static("./web/dist"));
 
 // Bearer token auth (health hariç). Token boşsa auth kapalı (lokal dev).
@@ -38,6 +54,9 @@ app.use((req, res, next) => {
   if (typeof req.query.token === "string" && tokenMatches(req.query.token)) return next();
   res.status(401).json({ error: "unauthorized" });
 });
+
+// Üretilen medya: auth middleware'inden sonra — tarayıcı/istemci ?token= ile erişir.
+app.use("/outputs", express.static("./data/outputs"));
 
 app.use("/api", buildRestRouter());
 

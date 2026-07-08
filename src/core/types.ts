@@ -37,6 +37,18 @@ export interface ScoredMemory extends Memory {
   score: number;
 }
 
+/** Kayıt anında bulunan olası benzer/tekrar (dedup) hafıza. */
+export interface SimilarHit {
+  id: number;
+  title: string;
+  distance: number;
+}
+
+/** saveMemory() dönüşü: benzer kayıt bulunduysa `similar` alanı eklenir. */
+export interface SavedMemory extends Memory {
+  similar?: SimilarHit[];
+}
+
 export interface DocumentInput {
   title: string;
   text: string;

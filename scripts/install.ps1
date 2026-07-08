@@ -10,11 +10,11 @@ function Write-Step($msg) { Write-Host "`n== $msg ==" -ForegroundColor Cyan }
 function Write-Warn2($msg) { Write-Host "uyarı: $msg" -ForegroundColor Yellow }
 function Test-Cmd($name) { return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
-$RepoUrl = if ($env:REPO_URL) { $env:REPO_URL } else { "https://github.com/fthsrbst/ai-hub.git" }
+$RepoUrl = if ($env:REPO_URL) { $env:REPO_URL } else { "https://github.com/fthsrbst/mnema.git" }
 
 # ---------------------------------------------------------------------------
 # 0) Repo kökünü bul: script zaten klonlanmış bir repo içindeyse onu kullan,
-#    değilse ~\ai-hub'a klonla.
+#    değilse ~\mnema'a klonla.
 # ---------------------------------------------------------------------------
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path -ErrorAction SilentlyContinue
 if (-not $ScriptDir) { $ScriptDir = (Get-Location).Path }
@@ -25,7 +25,7 @@ $pkgJsonCandidate = Join-Path $CandidateRoot "package.json"
 if (Test-Path $pkgJsonCandidate) {
   try {
     $pkg = Get-Content $pkgJsonCandidate -Raw | ConvertFrom-Json
-    if ($pkg.name -eq "ai-hub") { $AppDir = $CandidateRoot }
+    if ($pkg.name -eq "mnema") { $AppDir = $CandidateRoot }
   } catch { }
 }
 
@@ -33,7 +33,7 @@ if ($AppDir) {
   Write-Step "Mevcut repo kullanılıyor: $AppDir"
 } else {
   Write-Step "Repo"
-  $AppDir = if ($env:APP_DIR) { $env:APP_DIR } else { Join-Path $HOME "ai-hub" }
+  $AppDir = if ($env:APP_DIR) { $env:APP_DIR } else { Join-Path $HOME "mnema" }
   if (Test-Path (Join-Path $AppDir ".git")) {
     Write-Host "zaten klonlanmış: $AppDir (güncelleniyor)"
     try { git -C $AppDir pull --ff-only } catch { Write-Warn2 "git pull başarısız, mevcut kopya kullanılacak" }

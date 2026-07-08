@@ -3,10 +3,32 @@
  * - Her cihaz kendi hub'ını çalıştırır; HUB_PRIMARY_URL tanımlıysa (genelde Pi)
  *   periyodik iki yönlü eşitleme yapar. Primary erişilemezse sessizce bekler —
  *   lokal sistem tam işlevsel kalır.
- * - Çakışma çözümü: LWW (updated_at en yeni olan kazanır). Silmeler tombstone ile yayılır.
+ * - Çakışma çözümü: LWW (updated_at en yeni olan kazanır). Zaman damgaları ms
+ *   hassasiyetli; yine de eşitse içerik parmak izi (SHA-256) büyük olan kazanır —
+ *   kural her iki cihazda aynı sonucu verdiği için kopyalar tek kazanana yakınsar.
+ *   (Eski davranış: eşit damgada iki taraf da kendi kopyasını tutuyordu → kalıcı ıraksama.)
+ * - Silmeler tombstone ile yayılır; silme-güncelleme eşitliğinde silme kazanır.
  * - Embedding vektörleri base64 taşınır — cihazlar yeniden embed etmez.
  */
-import { getDb, hasVec } from "./db.js";
+import { createHash } from "node:crypto";
+import { getDb, hasVec, NOW_MS } from "./db.js";
+
+/** Eşit updated_at için deterministik tie-break anahtarı. Alan sırası sabit kalmalı. */
+export function contentFingerprint(parts: (string | number | null | undefined)[]): string {
+  return createHash("sha256")
+    .update(parts.map((p) => (p === null || p === undefined ? "" : String(p))).join("\x1f"))
+    .digest("hex");
+}
+
+/**
+ * LWW karşılaştırma: uzaktaki kayıt yereli ezmeli mi?
+ * Damgalar farklıysa yeni olan; eşitse parmak izi büyük olan kazanır.
+ * Parmak izleri de eşitse içerik zaten aynıdır → yazmaya gerek yok.
+ */
+function remoteWins(localUpdated: string, remoteUpdated: string, localFp: () => string, remoteFp: () => string): boolean {
+  if (remoteUpdated !== localUpdated) return remoteUpdated > localUpdated;
+  return remoteFp() > localFp();
+}
 
 export interface SyncMemory {
   uid: string;
@@ -66,7 +88,7 @@ function getVecBuffer(table: string, rowid: number): Buffer | null {
 /** `since`'ten (ISO, UTC "YYYY-MM-DD HH:MM:SS") beri değişen her şeyi topla. */
 export function collectChanges(since: string): SyncPayload {
   const db = getDb();
-  const now = (db.prepare("SELECT datetime('now') AS n").get() as { n: string }).n;
+  const now = (db.prepare(`SELECT ${NOW_MS} AS n`).get() as { n: string }).n;
 
   const memories = (db
     .prepare("SELECT * FROM memories WHERE updated_at >= ?")
@@ -128,9 +150,13 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
     // Bu uid bizde daha yeni silinmişse alma
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE uid = ?").get(m.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= m.updated_at) continue;
-    const local = db.prepare("SELECT id, updated_at FROM memories WHERE uid = ?").get(m.uid) as { id: number; updated_at: string } | undefined;
+    const local = db.prepare("SELECT * FROM memories WHERE uid = ?").get(m.uid) as
+      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance: number }
+      | undefined;
     if (local) {
-      if (local.updated_at >= m.updated_at) continue;
+      const memFp = (r: { type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance?: number }) =>
+        contentFingerprint([r.type, r.title, r.body, r.project, r.tags, r.source, r.importance ?? 1.0]);
+      if (!remoteWins(local.updated_at, m.updated_at, () => memFp(local), () => memFp(m))) continue;
       db.prepare(
         `UPDATE memories SET type=@type, title=@title, body=@body, project=@project, tags=@tags,
          source=@source, importance=@importance, updated_at=@updated_at WHERE uid=@uid`
@@ -149,10 +175,27 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   for (const d of payload.documents ?? []) {
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE uid = ?").get(d.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= d.updated_at) continue;
-    const local = db.prepare("SELECT id, updated_at FROM documents WHERE uid = ?").get(d.uid) as { id: number; updated_at: string } | undefined;
+    const local = db.prepare("SELECT id, updated_at, title, source, uri, project, enabled FROM documents WHERE uid = ?").get(d.uid) as
+      | { id: number; updated_at: string; title: string; source: string | null; uri: string | null; project: string | null; enabled: number | null }
+      | undefined;
     let docId: number;
     if (local) {
-      if (local.updated_at >= d.updated_at) continue;
+      // Chunk içerikleri parmak izine dahil — sadece eşit damgada hesaplanır (lazy)
+      const localFp = () => {
+        const localChunks = db
+          .prepare("SELECT seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq")
+          .all(local.id) as { seq: number; heading: string | null; text: string }[];
+        return contentFingerprint([
+          local.title, local.source, local.uri, local.project, local.enabled ?? 1,
+          ...localChunks.flatMap((c) => [c.seq, c.heading, c.text]),
+        ]);
+      };
+      const remoteFp = () =>
+        contentFingerprint([
+          d.title, d.source, d.uri, d.project, d.enabled ?? 1,
+          ...(d.chunks ?? []).flatMap((c) => [c.seq, c.heading, c.text]),
+        ]);
+      if (!remoteWins(local.updated_at, d.updated_at, localFp, remoteFp)) continue;
       docId = local.id;
       if (hasVec()) db.prepare("DELETE FROM chunks_vec WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)").run(docId);
       db.prepare("DELETE FROM chunks WHERE document_id = ?").run(docId);
@@ -175,8 +218,10 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   }
 
   for (const p of payload.projects ?? []) {
-    const local = db.prepare("SELECT updated_at FROM projects WHERE name = ?").get(p.name) as { updated_at: string } | undefined;
-    if (local && local.updated_at >= p.updated_at) continue;
+    const local = db.prepare("SELECT data, updated_at FROM projects WHERE name = ?").get(p.name) as
+      | { data: string; updated_at: string }
+      | undefined;
+    if (local && !remoteWins(local.updated_at, p.updated_at, () => contentFingerprint([local.data]), () => contentFingerprint([p.data]))) continue;
     db.prepare(
       `INSERT INTO projects(name, data, updated_at) VALUES (@name, @data, @updated_at)
        ON CONFLICT(name) DO UPDATE SET data=@data, updated_at=@updated_at`
@@ -196,8 +241,12 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   }
 
   for (const m of payload.machines ?? []) {
-    const local = db.prepare("SELECT updated_at FROM machines WHERE name = ?").get(m.name) as { updated_at: string } | undefined;
-    if (local && local.updated_at >= m.updated_at) continue;
+    const local = db.prepare("SELECT host, lmstudio_port, comfyui_port, notes, updated_at FROM machines WHERE name = ?").get(m.name) as
+      | { host: string; lmstudio_port: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }
+      | undefined;
+    const machineFp = (r: { host: string; lmstudio_port: number | null; comfyui_port: number | null; notes: string | null }) =>
+      contentFingerprint([r.host, r.lmstudio_port, r.comfyui_port, r.notes]);
+    if (local && !remoteWins(local.updated_at, m.updated_at, () => machineFp(local), () => machineFp(m))) continue;
     db.prepare(
       `INSERT INTO machines(name, host, lmstudio_port, comfyui_port, notes, updated_at)
        VALUES (@name, @host, @lmstudio_port, @comfyui_port, @notes, @updated_at)
@@ -250,7 +299,7 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
 
 export function recordDeletion(tbl: string, uid: string): void {
   getDb()
-    .prepare("INSERT INTO deletions(uid, tbl) VALUES (?, ?) ON CONFLICT(uid) DO UPDATE SET deleted_at = datetime('now')")
+    .prepare(`INSERT INTO deletions(uid, tbl, deleted_at) VALUES (?, ?, ${NOW_MS}) ON CONFLICT(uid) DO UPDATE SET deleted_at = ${NOW_MS}`)
     .run(uid, tbl);
 }
 
