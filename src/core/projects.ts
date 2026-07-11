@@ -41,6 +41,32 @@ export function deleteProject(name: string): boolean {
   return deleted;
 }
 
+/**
+ * Çalışma dizininden proje adını çözer (hook'lar için). Eşleşme sırası:
+ * 1. cwd'nin herhangi bir segmenti proje adına eşit (case-insensitive),
+ * 2. proje repo/paths alanlarının son segmenti cwd'nin son segmentine eşit.
+ * Bulamazsa null — recall global çalışır, köprü susar.
+ */
+export function resolveProjectFromPath(cwd: string): string | null {
+  if (!cwd) return null;
+  const segments = cwd.split(/[\\/]+/).filter(Boolean).map((s) => s.toLowerCase());
+  if (segments.length === 0) return null;
+  const base = segments[segments.length - 1];
+  let fallback: string | null = null;
+  for (const proj of listProjects()) {
+    const name = proj.name.toLowerCase();
+    if (segments.includes(name)) return proj.name;
+    const candidates = [proj.repo, ...Object.values(proj.paths ?? {})].filter(
+      (v): v is string => typeof v === "string" && v.length > 0
+    );
+    for (const c of candidates) {
+      const tail = c.split(/[\\/]+/).filter(Boolean).pop()?.replace(/\.git$/, "").toLowerCase();
+      if (tail && tail === base) fallback = fallback ?? proj.name;
+    }
+  }
+  return fallback;
+}
+
 /** Karar/adım ekleme gibi kısmi güncellemeler için yardımcı. */
 export function appendToProject(
   name: string,

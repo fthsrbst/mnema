@@ -11,6 +11,7 @@ const {
   addSessionLog,
   extractFileText,
   applyChanges,
+  bridge,
   closeDb,
   contentFingerprint,
   deleteMemory,
@@ -20,6 +21,7 @@ const {
   hasVec,
   recall,
   formatRecall,
+  resolveProjectFromPath,
   saveMemory,
   searchChunks,
   searchMemories,
@@ -79,6 +81,41 @@ check("recall + format", rec.memories.length > 0 && recText.includes("<hub-recal
 
 const emptyRec = formatRecall(await recall("xyzzy qqqwww zzzyyy"));
 check("recall boş sonuç → boş string", emptyRec === "");
+
+// recall hassasiyet filtresi: yabancı projenin zayıf eşleşmesi, aktif projenin
+// güçlü eşleşmesi varken enjekte edilmemeli
+const foreign = await saveMemory({
+  type: "context",
+  title: "Başka projenin sqlite notu",
+  body: "sqlite hakkında alakasız bir not — yabancı proje gürültüsü.",
+  project: "baska-proje",
+  source: "smoke",
+});
+const scopedRec = await recall("sqlite vektör kararı", undefined, "C:\\Users\\test\\dev\\ai-hub");
+check(
+  "recall proje yakınlığı (cwd çözümü + yabancı proje cezası)",
+  scopedRec.project === "ai-hub" && scopedRec.memories.some((m) => m.id === mem.id),
+  `project=${scopedRec.project}, ids=[${scopedRec.memories.map((m) => m.id).join(",")}]`
+);
+check(
+  "recall enjeksiyon sınırı",
+  scopedRec.memories.length <= 3 && scopedRec.chunks.length <= 2,
+  `mem=${scopedRec.memories.length}, chunk=${scopedRec.chunks.length}`
+);
+deleteMemory(foreign.id);
+
+// cwd → proje çözümü
+check("resolveProjectFromPath segment eşleşmesi", resolveProjectFromPath("/home/fatih/ai-hub/src") === "ai-hub");
+check("resolveProjectFromPath bilinmeyen yol → null", resolveProjectFromPath("C:\\tmp\\rastgele-klasor") === null);
+
+// oturum köprüsü: map + son oturum özeti döner; çözülemeyen cwd'de susar
+const bridgeText = bridge("/home/fatih/ai-hub");
+check(
+  "bridge proje map'i + son oturum",
+  bridgeText.includes("<hub-bridge>") && bridgeText.includes("ai-hub") && bridgeText.includes("Smoke test oturumu"),
+  bridgeText.slice(0, 80).replaceAll("\n", " ")
+);
+check("bridge çözülemeyen cwd → boş", bridge("C:\\tmp\\rastgele-klasor") === "");
 
 check("memory_delete", deleteMemory(mem.id) && (await searchMemories("qdrant sqlite")).every((m) => m.id !== mem.id));
 

@@ -71,12 +71,15 @@ export function buildMcpServer(): McpServer {
     {
       title: "Hafızaya kaydet",
       description:
-        "Kalıcı olması gereken bilgiyi ortak hafızaya yazar: kararlar (gerekçesiyle), kullanıcı tercihleri, öğrenilen how-to'lar, proje bağlamı. Oturum bitince kaybolmaması gereken her şey buraya.",
+        "Kalıcı olması gereken bilgiyi ortak hafızaya yazar: kararlar (gerekçesiyle), kullanıcı tercihleri, öğrenilen how-to'lar, proje bağlamı. Oturum bitince kaybolmaması gereken her şey buraya. SINIR: uzun doküman/talimat/prompt/araştırma notu memory DEĞİLDİR — rag_add kullan; memory 'bir bakışta okunur tek bilgi'dir.",
       inputSchema: {
         title: z.string().describe("Kısa başlık"),
         body: z.string().describe("İçerik (markdown). Kararlar için gerekçeyi de yaz."),
         type: memoryType.optional().describe("fact | preference | decision | howto | context"),
-        project: z.string().optional().describe("İlgili proje adı"),
+        project: z
+          .string()
+          .optional()
+          .describe("project_list'teki KANONİK proje adı. Makine/cihaz/etiket proje değildir — onlar için tags kullan."),
         tags: z.array(z.string()).optional(),
         source: z.string().optional().describe("Hangi agent/cihaz yazıyor"),
         importance: z
@@ -84,7 +87,9 @@ export function buildMcpServer(): McpServer {
           .min(0.5)
           .max(2)
           .optional()
-          .describe("önem çarpanı; 2=kritik karar, 1=normal, 0.5=önemsiz detay"),
+          .describe(
+            "önem çarpanı; varsayılan 1 çoğu kayıt için doğrudur. 2'yi NADİR kullan (aylar sonra bile her recall'da öne geçmesi gereken kritik karar/tercih); 0.5=önemsiz detay"
+          ),
       },
     },
     async (args) => {
@@ -94,7 +99,16 @@ export function buildMcpServer(): McpServer {
         const warning = mem.similar
           .map((s) => `⚠ Benzer kayıt(lar) var: #${s.id} ${s.title} (${s.distance.toFixed(3)})`)
           .join("\n");
-        content.push({ type: "text" as const, text: warning });
+        content.push({
+          type: "text" as const,
+          text: warning + "\nYenisi bunlardan birini güncelliyorsa memory_update ile birleştir, bu kaydı memory_delete ile geri al.",
+        });
+      }
+      if (args.body.length > 1500) {
+        content.push({
+          type: "text" as const,
+          text: "ℹ Gövde 1500 karakteri aşıyor — bu bir doküman/talimat ise rag_add daha uygun (memory kısa ve öz kalmalı).",
+        });
       }
       return { content };
     }
@@ -281,14 +295,25 @@ export function buildMcpServer(): McpServer {
     {
       title: "Oturum özeti kaydet",
       description:
-        "Oturum sonunda ne yapıldığını kaydeder: bitirilenler, yarım kalanlar, sıradaki adım. Bir sonraki oturum (hangi cihazda olursa olsun) buradan devam eder.",
+        "Oturum sonunda ne yapıldığını kaydeder: bitirilenler, yarım kalanlar, sıradaki adım. Bir sonraki oturum (hangi cihazda olursa olsun) buradan devam eder. Proje odağı değiştiyse project_update ile current_focus/next_steps'i de güncelle — bayat map bir sonraki agent'ı yanlış yönlendirir.",
       inputSchema: {
         summary: z.string().describe("Markdown özet: yapılanlar, yarım kalanlar, sıradaki adım"),
-        project: z.string().optional(),
+        project: z.string().optional().describe("project_list'teki kanonik proje adı"),
         source: z.string().optional(),
       },
     },
-    async ({ summary, project, source }) => json(addSessionLog(summary, project, source))
+    async ({ summary, project, source }) => {
+      const log = addSessionLog(summary, project, source);
+      if (project && !getProject(project)) {
+        return json({
+          ...log,
+          uyari: `'${project}' adında proje map'i YOK — log kaydedildi ama proje bağlamına bağlanamaz. Ad yanlışsa doğrusuyla tekrar dene; proje yeniyse project_update ile map aç. Mevcut projeler: ${listProjects()
+            .map((p) => p.name)
+            .join(", ")}`,
+        });
+      }
+      return json(log);
+    }
   );
 
   server.registerTool(
@@ -296,7 +321,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "İlgili hafızayı çek",
       description:
-        "Bir mesaj/görev için ilgili hafıza kayıtlarını ve doküman parçalarını tek çağrıda döner (hibrit arama). Göreve başlarken çağır.",
+        "Bir mesaj/görev için ilgili hafıza kayıtlarını ve doküman parçalarını tek çağrıda döner (hibrit arama + hassasiyet filtresi: az ve isabetli). Göreve başlarken çağır; boş dönerse 'kayıt yok' demek değildir — geniş arama için memory_search/rag_search kullan.",
       inputSchema: { query: z.string(), project: z.string().optional() },
     },
     async ({ query, project }) => json(await recall(query, project))

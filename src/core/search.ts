@@ -15,21 +15,28 @@ export function toFtsQuery(query: string): string {
   return tokens.map((t) => `"${t.replaceAll('"', "")}"`).join(" OR ");
 }
 
+export type SearchChannel = "fts" | "vec";
+
 export interface RankedId {
   id: number;
   score: number;
+  /** Hangi arama kanalları buldu. Recall'un anlamsal kanıt kapısı bunu kullanır. */
+  channels: SearchChannel[];
 }
 
 /** FTS + vektör sonuçlarını Reciprocal Rank Fusion ile birleştirir. */
-export function rrfFuse(lists: number[][]): RankedId[] {
-  const scores = new Map<number, number>();
-  for (const list of lists) {
-    list.forEach((id, rank) => {
-      scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + rank + 1));
+export function rrfFuse(lists: { channel: SearchChannel; ids: number[] }[]): RankedId[] {
+  const scores = new Map<number, { score: number; channels: SearchChannel[] }>();
+  for (const { channel, ids } of lists) {
+    ids.forEach((id, rank) => {
+      const cur = scores.get(id) ?? { score: 0, channels: [] };
+      cur.score += 1 / (RRF_K + rank + 1);
+      cur.channels.push(channel);
+      scores.set(id, cur);
     });
   }
   return [...scores.entries()]
-    .map(([id, score]) => ({ id, score }))
+    .map(([id, v]) => ({ id, score: v.score, channels: v.channels }))
     .sort((a, b) => b.score - a.score);
 }
 
@@ -66,5 +73,8 @@ export async function hybridSearch(ftsTable: string, vecTable: string, query: st
       return [] as number[];
     }),
   ]);
-  return rrfFuse([ftsIds, vecIds].filter((l) => l.length > 0));
+  return rrfFuse([
+    { channel: "fts", ids: ftsIds },
+    { channel: "vec", ids: vecIds },
+  ]);
 }

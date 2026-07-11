@@ -82,19 +82,22 @@ program
   .action(async (words: string[] | undefined, opts: { hook?: boolean; project?: string }) => {
     let query = (words ?? []).join(" ");
     if (opts.hook) {
+      let cwd = "";
       try {
         const stdin = fs.readFileSync(0, "utf8");
-        const parsed = JSON.parse(stdin) as { prompt?: string };
+        const parsed = JSON.parse(stdin) as { prompt?: string; cwd?: string };
         query = parsed.prompt ?? "";
+        cwd = parsed.cwd ?? "";
       } catch {
         process.exit(0);
       }
       // Kısa mesajlar ve slash komutları için arama yapma
       if (query.trim().length < 8 || query.trim().startsWith("/")) process.exit(0);
       try {
+        const cwdParam = cwd ? `&cwd=${encodeURIComponent(cwd)}` : "";
         const text = await api<string>(
           "GET",
-          `/api/recall?q=${encodeURIComponent(query)}&format=text`,
+          `/api/recall?q=${encodeURIComponent(query)}${cwdParam}&format=text`,
           undefined,
           { timeoutMs: 2500 }
         );
@@ -108,6 +111,44 @@ program
     try {
       const proj = opts.project ? `&project=${encodeURIComponent(opts.project)}` : "";
       console.log(await api<string>("GET", `/api/recall?q=${encodeURIComponent(query)}${proj}&format=text`));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("bridge")
+  .description("Oturum köprüsü: aktif projenin map'i + son oturum özeti. --hook: SessionStart için stdin JSON okur")
+  .option("--hook", "Claude Code hook modu (stdin JSON, sessiz hata)")
+  .option("-p, --project <name>")
+  .action(async (opts: { hook?: boolean; project?: string }) => {
+    let cwd = process.cwd();
+    let project = opts.project ?? "";
+    if (opts.hook) {
+      try {
+        const stdin = fs.readFileSync(0, "utf8");
+        const parsed = JSON.parse(stdin) as { cwd?: string };
+        cwd = parsed.cwd ?? cwd;
+      } catch {
+        process.exit(0);
+      }
+      try {
+        const proj = project ? `&project=${encodeURIComponent(project)}` : "";
+        const text = await api<string>(
+          "GET",
+          `/api/bridge?cwd=${encodeURIComponent(cwd)}${proj}`,
+          undefined,
+          { timeoutMs: 2500 }
+        );
+        if (text.trim()) console.log(text);
+      } catch {
+        /* hub kapalıysa oturumu bloklama */
+      }
+      process.exit(0);
+    }
+    try {
+      const proj = project ? `&project=${encodeURIComponent(project)}` : "";
+      console.log(await api<string>("GET", `/api/bridge?cwd=${encodeURIComponent(cwd)}${proj}`) || "(köprü boş: cwd bir proje map'ine çözülemedi)");
     } catch (err) {
       fail(err);
     }

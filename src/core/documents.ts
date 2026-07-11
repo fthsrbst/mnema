@@ -101,11 +101,11 @@ export async function searchChunks(
   );
   const limit = opts.limit ?? 6;
   const out: ScoredChunk[] = [];
-  for (const { id, score } of ranked) {
+  for (const { id, score, channels } of ranked) {
     const row = stmt.get(id) as Omit<ScoredChunk, "score"> | undefined;
     if (!row) continue;
     if (opts.project && row.project !== opts.project) continue;
-    out.push({ ...row, score });
+    out.push({ ...row, score, channels });
     if (out.length >= limit) break;
   }
   return out;

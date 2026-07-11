@@ -9,15 +9,24 @@ const BLOCK_END = "<!-- hub:end -->";
 const CLAUDE_MD_BLOCK = `${BLOCK_START}
 ## AI Hub — ortak hafıza (otomatik yönetilen blok, elle düzenleme)
 
-Tüm cihazlarda ortak bir hafıza/RAG/proje sunucusu var: **hub** MCP server'ı.
+Tüm cihazlarda ortak bir hafıza/RAG/proje sunucusu var: **hub** MCP server'ı. Bağlam üç katmandır — otomatik gelen, görev başında çekilen, çalışırken yazılan:
 
-Kurallar:
-- **Göreve başlarken:** kullanıcının mesajına \`<hub-recall>\` bloğu eklendiyse önce onu oku; ek bağlam gerekirse \`recall\` veya \`memory_search\` çağır. Bir projede çalışıyorsan \`project_get\` ile proje map'ini çek.
-- **Çalışırken:** kalıcı olması gereken her şeyi kaydet — alınan teknik kararlar gerekçesiyle (\`memory_save\`, type=decision), çözülen zor bug'ların kök nedeni (\`memory_save\`, type=howto), kullanıcı tercihleri (type=preference).
-- **Öğrenme:** kullanıcı bir konu öğreniyorsa çıkan notları \`rag_add\` ile indeksle — sonraki oturumlarda aranabilir olsun.
-- **Rol disiplini:** ciddi bir mühendislik işine başlarken \`prompt_get\` ile işe uygun rol promptunu çek (\`prompt_list\` ile gör: senior-software-architect, senior-code-reviewer, debugging-specialist, security-engineer, frontend-engineer, devops-sre, ml-engineer) ve o disiplinle çalış. Alt modele iş devrederken (\`local_llm\` dahil) bu içeriği system prompt olarak ver — master çekirdek (objektif, yaltaklanmasız, kanıta dayalı mühendis zihniyeti) otomatik eklenir.
-- **Oturum sonunda:** \`session_log\` ile özet bırak (yapılanlar, yarım kalanlar, sıradaki adım) ve gerekiyorsa \`project_update\` ile current_focus/next_steps güncelle.
-- Yanlışlanan bilgiyi \`memory_update\`/\`memory_delete\` ile düzelt; hafızayı çöplüğe çevirme — oturuma özel detayları kaydetme.
+**1. Otomatik gelen (okuman yeter):**
+- \`<hub-bridge>\` (oturum başı): aktif projenin map'i + son oturum özeti. Kaldığın yeri buradan al; map bayatsa \`project_update\` ile düzelt.
+- \`<hub-recall>\` (mesaj başı): mesajla yüksek benzerlikli az sayıda kayıt. Bilinçli dar tutulur; BOŞ olması "hafızada yok" demek değildir.
+
+**2. Görev başında sen çek:**
+- Bir projede çalışıyorsan ve bridge gelmediyse \`project_get(name)\` — özet, kararlar, odak, sıradaki adımlar.
+- "Bunu daha önce nasıl çözmüştük / neden X kullanıyoruz" → \`memory_search\`; doküman/not arşivi → \`rag_search\`; "nerede kalmıştım" → \`session_recent\`.
+- Ciddi mühendislik işinde \`prompt_get\` ile role uygun promptu çek (\`prompt_list\`: architect, code-reviewer, debugging, security, frontend, devops, ml). Alt modele iş devrederken (\`local_llm\` dahil) bunu system prompt yap.
+
+**3. Çalışırken yaz (kalite kuralları):**
+- Kaydet: teknik karar + GEREKÇE (\`memory_save\` type=decision), zor bug'ın kök nedeni (type=howto), kullanıcı tercihi (type=preference). Ölçüt: "başka cihazdaki agent 2 hafta sonra bundan faydalanır mı?"
+- Kaydetme: oturuma özel detay, koddan/git'ten okunabilen şey, geçici durum. Uzun doküman/talimat/araştırma → memory değil \`rag_add\` (öğrenme notları: project='learning', uri='learning/<slug>').
+- \`project\` alanı = \`project_list\`'teki kanonik ad; makine/cihaz adı proje DEĞİLDİR (tags kullan). importance=2 nadirdir; varsayılan 1 doğrudur.
+- Yanlışlanan bilgiyi gördüğün an \`memory_update\`/\`memory_delete\` — çelişkili hafıza, hafızasızlıktan kötüdür.
+
+**Oturum sonunda:** \`session_log\` (yapılanlar, yarım kalanlar, sıradaki adım) + odak değiştiyse \`project_update\` ile current_focus/next_steps. Map'i güncellemeden kapatma: bayat map bir sonraki agent'ı aktif olarak yanıltır (kanıt: jobpilot vakası).
 ${BLOCK_END}`;
 
 export interface SyncResult {

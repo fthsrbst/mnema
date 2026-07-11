@@ -13,7 +13,7 @@ Detaylı mimari ve fazlar: PLAN.md.
 ## Yapı
 - `src/core/` — DB (SQLite + sqlite-vec + FTS5), Gemini embedding, chunker, hibrit arama (RRF), memory/document/project/session işlemleri. Sunucudan bağımsız, saf kütüphane.
 - `src/server/` — Express: `/mcp` (Streamable HTTP, stateless), `/api` (REST), `/health`. Auth: bearer token (HUB_TOKEN boşsa kapalı).
-- `src/cli/` — `hub` komutu. REST üzerinden konuşur; sunucuya bağımlı. `hub recall --hook` Claude Code UserPromptSubmit hook'u içindir: stdin'den JSON okur, sessizce başarısız olur (prompt'u asla bloklamaz).
+- `src/cli/` — `hub` komutu. REST üzerinden konuşur; sunucuya bağımlı. `hub recall --hook` (UserPromptSubmit) ve `hub bridge --hook` (SessionStart) Claude Code hook'larıdır: stdin'den JSON okur, sessizce başarısız olur (prompt'u/oturumu asla bloklamaz). Recall hassasiyet-öncelikli çalışır (anlamsal kanıt kapısı + proje yakınlığı + ortak tepe eşiği); bridge proje map'i + son oturumu enjekte eder.
 - `skills/` — agent skilleri; `hub sync` bunları `~/.claude/skills/`e kopyalar ve `~/.claude/CLAUDE.md`deki `<!-- hub:start/end -->` yönetilen bloğunu günceller.
 - `prompts/` — rol bazlı sistem promptları: `master.md` (mühendis zihniyeti çekirdeği, her role otomatik eklenir) + `roles/*.md`. MCP `prompt_get`/`prompt_list` ile servis edilir; `local_llm` system prompt verilmezse master'ı enjekte eder. Gövdeler İngilizce (küçük modeller İngilizce talimatı daha iyi izler), açıklamalar Türkçe.
 - `deploy/` — Pi kurulum/güncelleme/yedek scriptleri + systemd unit.

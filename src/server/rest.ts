@@ -17,6 +17,7 @@ import {
   machinesStatus,
   upsertMachine,
   appendToProject,
+  bridge,
   deleteDocument,
   deleteMemory,
   formatRecall,
@@ -243,13 +244,25 @@ export function buildRestRouter(): Router {
 
   // --- recall (hook'ların kullandığı uç) ---
   r.get("/recall", wrap(async (req, res) => {
-    const { q, project, format } = req.query;
-    const result = await recall(String(q ?? ""), project as string | undefined);
+    const { q, project, cwd, format } = req.query;
+    const result = await recall(
+      String(q ?? ""),
+      project as string | undefined,
+      cwd as string | undefined
+    );
     if (format === "text") {
       res.type("text/plain").send(formatRecall(result));
     } else {
       res.json(result);
     }
+  }));
+
+  // --- bridge (SessionStart hook'u: proje map'i + son oturum köprüsü) ---
+  r.get("/bridge", wrap(async (req, res) => {
+    const { cwd, project } = req.query;
+    res
+      .type("text/plain")
+      .send(bridge(cwd as string | undefined, project as string | undefined));
   }));
 
   return r;

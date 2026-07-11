@@ -47,4 +47,17 @@ export const config = {
   // Decay taban değeri: skor çarpanı asla bunun altına inmez. Eski bilgi (1 yıl önceki
   // çözüm gibi) tazelere göre geriye düşer ama hiçbir zaman aranamaz hale gelmez.
   decayFloor: Math.min(1, Math.max(0, Number(process.env.HUB_DECAY_FLOOR ?? 0.25))),
+  // --- Auto-recall hassasiyet ayarları (sadece recall/hook yolunu etkiler; memory_search geniş kalır) ---
+  // Göreli eşik: en yüksek skorun bu oranının altındaki adaylar enjekte edilmez.
+  recallMinRatio: Math.min(1, Math.max(0, Number(process.env.HUB_RECALL_MIN_RATIO ?? 0.45))),
+  // Enjeksiyon üst sınırları: az ve isabetli > çok ve gürültülü.
+  recallMaxMemories: Number(process.env.HUB_RECALL_MAX_MEMORIES ?? 3),
+  recallMaxChunks: Number(process.env.HUB_RECALL_MAX_CHUNKS ?? 2),
+  // Proje yakınlığı: aktif projeyle eşleşen kayıt yükselir, başka projenin kaydı geriler
+  // (project=null olan global kayıtlar cezasız kalır).
+  recallProjectBoost: Number(process.env.HUB_RECALL_PROJECT_BOOST ?? 1.25),
+  recallForeignPenalty: Number(process.env.HUB_RECALL_FOREIGN_PENALTY ?? 0.5),
+  // Tek kanallı eşleşme cezası: sadece FTS (anahtar kelime) bulduysa gürültü olasılığı
+  // yüksek — iki kanalın (FTS+vektör) anlaştığı kayıtlar öne geçer.
+  recallSingleSourcePenalty: Number(process.env.HUB_RECALL_SINGLE_SOURCE_PENALTY ?? 0.6),
 };
