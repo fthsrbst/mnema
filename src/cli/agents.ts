@@ -131,6 +131,21 @@ function windsurfConnected(): boolean {
   return !!j?.mcpServers?.hub;
 }
 
+function lmstudioDetect() {
+  if (fs.existsSync(path.join(home, ".lmstudio"))) return { installed: true, via: "~/.lmstudio" };
+  if (commandExists("lms")) return { installed: true, via: "PATH (lms)" };
+  return { installed: false, via: "" };
+}
+
+function lmstudioConfigFile(): string {
+  return path.join(home, ".lmstudio", "mcp.json");
+}
+
+function lmstudioConnected(): boolean {
+  const j = readJson(lmstudioConfigFile());
+  return !!j?.mcpServers?.hub;
+}
+
 function geminiDetect() {
   if (fs.existsSync(path.join(home, ".gemini"))) return { installed: true, via: "~/.gemini" };
   if (commandExists("gemini")) return { installed: true, via: "PATH" };
@@ -189,6 +204,13 @@ const AGENTS: AgentDef[] = [
     configFile: geminiConfigFile(),
     isConnected: geminiConnected,
   },
+  {
+    id: "lmstudio",
+    label: "LM Studio",
+    detect: lmstudioDetect,
+    configFile: lmstudioConfigFile(),
+    isConnected: lmstudioConnected,
+  },
 ];
 
 export function detectAgents(): AgentInfo[] {
@@ -233,6 +255,21 @@ function connectExtras(): string[] {
       j.mcpServers.hub = desired;
       writeJson(file, j);
       updated.push("gemini-cli");
+    }
+  }
+
+  // LM Studio: ~/.lmstudio/mcp.json — Cursor formatı (mcpServers.hub {url, headers}).
+  // Yerel modeller (chat UI'daki tool use ile) hub'a bu köprüden erişir.
+  const lmstudio = lmstudioDetect();
+  if (lmstudio.installed) {
+    const file = lmstudioConfigFile();
+    const j = readJson(file) ?? {};
+    j.mcpServers ??= {};
+    const desired = { url, ...(headers ? { headers } : {}) };
+    if (JSON.stringify(j.mcpServers.hub) !== JSON.stringify(desired)) {
+      j.mcpServers.hub = desired;
+      writeJson(file, j);
+      updated.push("lmstudio");
     }
   }
 

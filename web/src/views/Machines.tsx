@@ -23,6 +23,7 @@ export function Machines() {
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [lmstudioPort, setLmstudioPort] = useState("");
+  const [ollamaPort, setOllamaPort] = useState("");
   const [comfyuiPort, setComfyuiPort] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -46,6 +47,7 @@ export function Machines() {
     setName("");
     setHost("");
     setLmstudioPort("");
+    setOllamaPort("");
     setComfyuiPort("");
     setNotes("");
     setShowForm(true);
@@ -56,6 +58,7 @@ export function Machines() {
     setName(m.name);
     setHost(m.host);
     setLmstudioPort(m.lmstudio_port ? String(m.lmstudio_port) : "");
+    setOllamaPort(m.ollama_port ? String(m.ollama_port) : "");
     setComfyuiPort(m.comfyui_port ? String(m.comfyui_port) : "");
     setNotes(m.notes ?? "");
     setShowForm(true);
@@ -68,6 +71,7 @@ export function Machines() {
       await api("PUT", `/api/machines/${encodeURIComponent(name.trim())}`, {
         host: host.trim(),
         lmstudio_port: lmstudioPort ? Number(lmstudioPort) : null,
+        ollama_port: ollamaPort ? Number(ollamaPort) : null,
         comfyui_port: comfyuiPort ? Number(comfyuiPort) : null,
         notes: notes.trim() || null,
       });
@@ -112,7 +116,7 @@ export function Machines() {
       ) : (
         <Grid columns={{ minWidth: 300, repeat: "fit" }} gap={4}>
           {machines.map((m) => (
-            <Card key={m.name}>
+            <Card key={m.name} className="glass-card">
               <VStack gap={3}>
                 <HStack hAlign="between" vAlign="center">
                   <Heading level={4}>{m.name}</Heading>
@@ -122,19 +126,48 @@ export function Machines() {
                   </HStack>
                 </HStack>
                 <Text type="supporting" color="secondary">{m.host}</Text>
-                <HStack gap={2} vAlign="center">
-                  <StatusDot variant={m.lmstudio.online ? "success" : "neutral"} label="LM Studio" />
-                  <Text type="supporting">
-                    LM Studio: {m.lmstudio.online ? `${t("machines.lmstudioOnline")} — ${m.lmstudio.models.length} ${t("machines.models")}` : t("machines.lmstudioOffline")}
-                  </Text>
-                </HStack>
+
+                {m.lmstudio.online ? (
+                  <span className="rx-live-pill">
+                    <span className="rx-live-dot" />
+                    LM Studio — {m.lmstudio.models.length} {t("machines.models")}
+                  </span>
+                ) : (
+                  <HStack gap={2} vAlign="center">
+                    <StatusDot variant="neutral" label="LM Studio" />
+                    <Text type="supporting">LM Studio: {t("machines.lmstudioOffline")}</Text>
+                  </HStack>
+                )}
                 {m.lmstudio.models.map((model) => (
                   <Text key={model} type="supporting" color="secondary">  {model}</Text>
                 ))}
-                <HStack gap={2} vAlign="center">
-                  <StatusDot variant={m.comfyui.online ? "success" : "neutral"} label="ComfyUI" />
-                  <Text type="supporting">ComfyUI: {m.comfyui.online ? t("machines.lmstudioOnline") : t("machines.lmstudioOffline")}</Text>
-                </HStack>
+
+                {m.ollama?.online ? (
+                  <span className="rx-live-pill">
+                    <span className="rx-live-dot" />
+                    Ollama — {m.ollama.models.length} {t("machines.models")}
+                  </span>
+                ) : (
+                  <HStack gap={2} vAlign="center">
+                    <StatusDot variant="neutral" label="Ollama" />
+                    <Text type="supporting">Ollama: {t("machines.lmstudioOffline")}</Text>
+                  </HStack>
+                )}
+                {(m.ollama?.models ?? []).map((model) => (
+                  <Text key={model} type="supporting" color="secondary">  {model}</Text>
+                ))}
+
+                {m.comfyui.online ? (
+                  <span className="rx-live-pill">
+                    <span className="rx-live-dot" />
+                    ComfyUI — {t("machines.lmstudioOnline")}
+                  </span>
+                ) : (
+                  <HStack gap={2} vAlign="center">
+                    <StatusDot variant="neutral" label="ComfyUI" />
+                    <Text type="supporting">ComfyUI: {t("machines.lmstudioOffline")}</Text>
+                  </HStack>
+                )}
                 {m.notes && <Text type="supporting" color="secondary">{m.notes}</Text>}
               </VStack>
             </Card>
@@ -149,6 +182,7 @@ export function Machines() {
           <TextInput label={t("machines.host")} value={host} onChange={setHost} isRequired placeholder="192.168.1.10" />
           <HStack gap={3}>
             <TextInput label={t("machines.lmstudioPort")} value={lmstudioPort} onChange={setLmstudioPort} isOptional placeholder="1234" />
+            <TextInput label={t("machines.ollamaPort")} value={ollamaPort} onChange={setOllamaPort} isOptional placeholder="11434" />
             <TextInput label={t("machines.comfyuiPort")} value={comfyuiPort} onChange={setComfyuiPort} isOptional placeholder="8188" />
           </HStack>
           <TextArea label={t("machines.notes")} value={notes} onChange={setNotes} rows={3} isOptional />

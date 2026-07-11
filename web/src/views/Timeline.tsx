@@ -6,7 +6,6 @@ import { Text, Heading } from "@astryxdesign/core/Text";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Item } from "@astryxdesign/core/Item";
 import { Icon } from "@astryxdesign/core/Icon";
-import { Badge } from "@astryxdesign/core/Badge";
 import { Divider } from "@astryxdesign/core/Divider";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { CircleStackIcon, ClockIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
@@ -24,14 +23,14 @@ const KIND_CONFIG: Record<
   {
     icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
     iconColor: "accent" | "success" | "warning";
-    badgeVariant: "blue" | "green" | "orange";
+    tagClass: "rx-tag-blue" | "rx-tag-forest" | "rx-tag-amber";
     labelKey: TKey;
     targetView: "memories" | "sessions" | "rag";
   }
 > = {
-  memory: { icon: CircleStackIcon, iconColor: "accent", badgeVariant: "blue", labelKey: "timeline.kindMemory", targetView: "memories" },
-  session: { icon: ClockIcon, iconColor: "success", badgeVariant: "green", labelKey: "timeline.kindSession", targetView: "sessions" },
-  document: { icon: DocumentTextIcon, iconColor: "warning", badgeVariant: "orange", labelKey: "timeline.kindDocument", targetView: "rag" },
+  memory: { icon: CircleStackIcon, iconColor: "accent", tagClass: "rx-tag-blue", labelKey: "timeline.kindMemory", targetView: "memories" },
+  session: { icon: ClockIcon, iconColor: "success", tagClass: "rx-tag-forest", labelKey: "timeline.kindSession", targetView: "sessions" },
+  document: { icon: DocumentTextIcon, iconColor: "warning", tagClass: "rx-tag-amber", labelKey: "timeline.kindDocument", targetView: "rag" },
 };
 
 /** SQLite UTC tarihini ("YYYY-MM-DD HH:MM:SS") yerel Date'e çevirir. */
@@ -165,11 +164,11 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
           {groups.map((group) => (
             <VStack key={group.key} gap={2}>
               <VStack gap={1}>
-                <Text type="label" color="secondary">{group.label}</Text>
+                <span className="rx-label">{group.label}</span>
                 <Divider />
               </VStack>
               <VStack gap={0}>
-                {group.items.map((it) => {
+                {group.items.map((it, idx) => {
                   const cfg = KIND_CONFIG[it.kind];
                   const d = parseDate(it.date);
                   const time = Number.isNaN(d.getTime())
@@ -184,10 +183,11 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
                       label={it.title}
                       labelLines={1}
                       description={it.subtype ? `${t(cfg.labelKey)} · ${it.subtype}` : t(cfg.labelKey)}
+                      style={idx > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
                       endContent={
                         <HStack gap={2} vAlign="center">
-                          {it.project && <Badge variant={cfg.badgeVariant} label={it.project} />}
-                          <Text type="supporting" color="secondary">{time}</Text>
+                          {it.project && <span className={`rx-tag ${cfg.tagClass}`}>{it.project}</span>}
+                          <Text type="supporting" color="disabled">{time}</Text>
                         </HStack>
                       }
                     />

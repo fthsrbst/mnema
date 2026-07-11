@@ -54,7 +54,7 @@ export function Media() {
   return (
     <VStack gap={4}>
       <Heading level={3}>{t("media.title")}</Heading>
-      <Card>
+      <Card className="glass-card">
         <VStack gap={3}>
           <HStack gap={2} wrap="wrap">
             {workflows.map((w) => (
@@ -83,14 +83,14 @@ export function Media() {
       <Heading level={4}>{t("media.outputs")}</Heading>
       <Grid columns={{ minWidth: 240, repeat: "fit" }} gap={4}>
         {outputs.map((f) => (
-          <Card key={f.name} padding={2}>
+          <Card key={f.name} padding={2} className="glass-card">
             <VStack gap={2}>
               {isImage(f.name) ? (
                 <a href={assetUrl(f.url)} target="_blank" rel="noreferrer">
-                  <img src={assetUrl(f.url)} alt={f.name} style={{ width: "100%", borderRadius: "var(--radius-md, 8px)" }} />
+                  <img src={assetUrl(f.url)} alt={f.name} style={{ width: "100%", borderRadius: "var(--radius-inner)" }} />
                 </a>
               ) : isVideo(f.name) ? (
-                <video src={assetUrl(f.url)} controls style={{ width: "100%", borderRadius: "var(--radius-md, 8px)" }} />
+                <video src={assetUrl(f.url)} controls style={{ width: "100%", borderRadius: "var(--radius-inner)" }} />
               ) : isAudio(f.name) ? (
                 <audio src={assetUrl(f.url)} controls style={{ width: "100%" }} />
               ) : (

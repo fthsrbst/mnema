@@ -294,12 +294,14 @@ program
   .description("Kayıtlı makineler ve yerel AI servislerinin canlı durumu")
   .action(async () => {
     try {
-      const machines = await api<{ name: string; host: string; lmstudio: { online: boolean; models: string[] }; comfyui: { online: boolean } }[]>("GET", "/api/machines/status");
+      const machines = await api<{ name: string; host: string; lmstudio: { online: boolean; models: string[] }; ollama: { online: boolean; models: string[] }; comfyui: { online: boolean } }[]>("GET", "/api/machines/status");
       if (machines.length === 0) return console.log("kayıtlı makine yok");
       for (const m of machines) {
         console.log(`${m.name} (${m.host})`);
         console.log(`  LM Studio: ${m.lmstudio.online ? `açık — ${m.lmstudio.models.length} model` : "kapalı/tanımsız"}`);
         if (m.lmstudio.models.length) console.log(`    ${m.lmstudio.models.join("\n    ")}`);
+        console.log(`  Ollama:    ${m.ollama?.online ? `açık — ${m.ollama.models.length} model` : "kapalı/tanımsız"}`);
+        if (m.ollama?.models.length) console.log(`    ${m.ollama.models.join("\n    ")}`);
         console.log(`  ComfyUI:   ${m.comfyui.online ? "açık" : "kapalı/tanımsız"}`);
       }
     } catch (err) {
@@ -309,14 +311,15 @@ program
 
 program
   .command("llm <prompt...>")
-  .description("Yerel LM Studio modeliyle üretim (API maliyeti yok)")
+  .description("Yerel modelle üretim — LM Studio veya Ollama (API maliyeti yok)")
   .option("-m, --model <model>")
   .option("--machine <name>")
-  .action(async (words: string[], opts: { model?: string; machine?: string }) => {
+  .option("--backend <backend>", "lmstudio | ollama (boşsa LM Studio öncelikli)")
+  .action(async (words: string[], opts: { model?: string; machine?: string; backend?: string }) => {
     try {
       const res = await api<{ machine: string; model: string; content: string }>(
         "POST", "/api/llm",
-        { prompt: words.join(" "), model: opts.model, machine: opts.machine },
+        { prompt: words.join(" "), model: opts.model, machine: opts.machine, backend: opts.backend },
         { timeoutMs: 180000 }
       );
       console.log(`[${res.machine} / ${res.model}]\n${res.content}`);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "@astryxdesign/core/AppShell";
-import { SideNav, SideNavItem, SideNavHeading } from "@astryxdesign/core/SideNav";
+import { SideNav, SideNavItem, SideNavHeading, SideNavSection } from "@astryxdesign/core/SideNav";
 import { VStack, HStack } from "@astryxdesign/core/Layout";
 import { Center } from "@astryxdesign/core/Center";
 import { Card } from "@astryxdesign/core/Card";
@@ -10,6 +10,8 @@ import { Text, Heading } from "@astryxdesign/core/Text";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { LayerProvider } from "@astryxdesign/core/Layer";
+import { Theme } from "@astryxdesign/core";
+import { revenueXTheme } from "./theme";
 import {
   Squares2X2Icon,
   ServerStackIcon,
@@ -53,19 +55,41 @@ type View =
   | "skills"
   | "settings";
 
-const NAV: { id: View; labelKey: Parameters<ReturnType<typeof useI18n>["t"]>[0]; icon: React.ComponentType }[] = [
-  { id: "dashboard", labelKey: "nav.dashboard", icon: Squares2X2Icon },
-  { id: "timeline", labelKey: "nav.timeline", icon: QueueListIcon },
-  { id: "rag", labelKey: "nav.rag", icon: ServerStackIcon },
-  { id: "prompts", labelKey: "nav.prompts", icon: BookOpenIcon },
-  { id: "memories", labelKey: "nav.memories", icon: CircleStackIcon },
-  { id: "learning", labelKey: "nav.learning", icon: AcademicCapIcon },
-  { id: "projects", labelKey: "nav.projects", icon: FolderIcon },
-  { id: "sessions", labelKey: "nav.sessions", icon: ClockIcon },
-  { id: "machines", labelKey: "nav.machines", icon: ComputerDesktopIcon },
-  { id: "media", labelKey: "nav.media", icon: PhotoIcon },
-  { id: "skills", labelKey: "nav.skills", icon: SparklesIcon },
-  { id: "settings", labelKey: "nav.settings", icon: Cog6ToothIcon },
+type NavItem = { id: View; labelKey: Parameters<ReturnType<typeof useI18n>["t"]>[0]; icon: React.ComponentType };
+
+const NAV_SECTIONS: { titleKey: Parameters<ReturnType<typeof useI18n>["t"]>[0]; items: NavItem[] }[] = [
+  {
+    titleKey: "nav.sectionGeneral",
+    items: [
+      { id: "dashboard", labelKey: "nav.dashboard", icon: Squares2X2Icon },
+      { id: "timeline", labelKey: "nav.timeline", icon: QueueListIcon },
+    ],
+  },
+  {
+    titleKey: "nav.sectionInfo",
+    items: [
+      { id: "rag", labelKey: "nav.rag", icon: ServerStackIcon },
+      { id: "prompts", labelKey: "nav.prompts", icon: BookOpenIcon },
+      { id: "memories", labelKey: "nav.memories", icon: CircleStackIcon },
+      { id: "learning", labelKey: "nav.learning", icon: AcademicCapIcon },
+    ],
+  },
+  {
+    titleKey: "nav.sectionWork",
+    items: [
+      { id: "projects", labelKey: "nav.projects", icon: FolderIcon },
+      { id: "sessions", labelKey: "nav.sessions", icon: ClockIcon },
+    ],
+  },
+  {
+    titleKey: "nav.sectionSystem",
+    items: [
+      { id: "machines", labelKey: "nav.machines", icon: ComputerDesktopIcon },
+      { id: "media", labelKey: "nav.media", icon: PhotoIcon },
+      { id: "skills", labelKey: "nav.skills", icon: SparklesIcon },
+      { id: "settings", labelKey: "nav.settings", icon: Cog6ToothIcon },
+    ],
+  },
 ];
 
 function LanguageToggle() {
@@ -88,7 +112,7 @@ function Settings() {
   return (
     <VStack gap={4}>
       <Heading level={3}>{t("settings.title")}</Heading>
-      <Card>
+      <Card className="glass-card">
         <VStack gap={3}>
           <TextInput
             label={t("settings.tokenLabel")}
@@ -119,7 +143,7 @@ function TokenGate({ onSubmit }: { onSubmit: (token: string) => void }) {
             {t("tokenGate.description")}
           </Text>
         </VStack>
-        <Card>
+        <Card className="glass-card">
           <VStack gap={3}>
             <TextInput
               label={t("tokenGate.tokenLabel")}
@@ -191,14 +215,18 @@ function AppInner() {
           }
           footer={<LanguageToggle />}
         >
-          {NAV.map((item) => (
-            <SideNavItem
-              key={item.id}
-              label={t(item.labelKey)}
-              icon={item.icon}
-              isSelected={view === item.id}
-              onClick={() => setView(item.id)}
-            />
+          {NAV_SECTIONS.map((section) => (
+            <SideNavSection key={section.titleKey} title={t(section.titleKey)}>
+              {section.items.map((item) => (
+                <SideNavItem
+                  key={item.id}
+                  label={t(item.labelKey)}
+                  icon={item.icon}
+                  isSelected={view === item.id}
+                  onClick={() => setView(item.id)}
+                />
+              ))}
+            </SideNavSection>
           ))}
         </SideNav>
       }
@@ -222,10 +250,12 @@ function AppInner() {
 export default function App() {
   const i18n = useProvideI18n();
   return (
-    <I18nContext.Provider value={i18n}>
-      <LayerProvider>
-        <AppInner />
-      </LayerProvider>
-    </I18nContext.Provider>
+    <Theme theme={revenueXTheme}>
+      <I18nContext.Provider value={i18n}>
+        <LayerProvider>
+          <AppInner />
+        </LayerProvider>
+      </I18nContext.Provider>
+    </Theme>
   );
 }

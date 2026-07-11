@@ -5,6 +5,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { Text, Heading } from "@astryxdesign/core/Text";
+import { Item } from "@astryxdesign/core/Item";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
@@ -163,20 +164,24 @@ export function Skills() {
       {skills.length === 0 ? (
         <EmptyState title={t("skills.empty")} description={t("skills.emptyDesc")} />
       ) : (
-        skills.map((s) => (
-          <Card key={s.name}>
-            <HStack hAlign="between" vAlign="center">
-              <VStack gap={1}>
-                <Heading level={4}>{s.name}</Heading>
-                <Text type="supporting" color="secondary">{s.description}</Text>
-              </VStack>
-              <HStack gap={1}>
-                <Button label={t("common.edit")} variant="secondary" size="sm" onClick={() => { setSelected(s); setContent(s.content); setMessage(""); }} />
-                <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(s)} />
-              </HStack>
-            </HStack>
-          </Card>
-        ))
+        <Card className="glass-card" padding={0}>
+          <VStack gap={0}>
+            {skills.map((s, i) => (
+              <div key={s.name} style={i > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}>
+                <Item
+                  label={s.name}
+                  description={s.description}
+                  endContent={
+                    <HStack gap={1}>
+                      <Button label={t("common.edit")} variant="secondary" size="sm" onClick={() => { setSelected(s); setContent(s.content); setMessage(""); }} />
+                      <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(s)} />
+                    </HStack>
+                  }
+                />
+              </div>
+            ))}
+          </VStack>
+        </Card>
       )}
 
       <Dialog isOpen={showNew} onOpenChange={setShowNew} purpose="form" width={640}>

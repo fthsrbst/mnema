@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { VStack, HStack } from "@astryxdesign/core/Layout";
 import { Grid } from "@astryxdesign/core/Grid";
-import { Card } from "@astryxdesign/core/Card";
 import { ClickableCard } from "@astryxdesign/core/ClickableCard";
 import { Button } from "@astryxdesign/core/Button";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Text, Heading } from "@astryxdesign/core/Text";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Badge } from "@astryxdesign/core/Badge";
 import { Divider } from "@astryxdesign/core/Divider";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
@@ -91,6 +89,7 @@ export function Learning() {
 
       <HStack gap={2} vAlign="end">
         <TextInput
+          className="rx-search"
           label={t("common.search")}
           isLabelHidden
           placeholder={t("learning.searchPlaceholder")}
@@ -106,11 +105,7 @@ export function Learning() {
         />
       </HStack>
 
-      {error && (
-        <Card variant="red">
-          <Text color="secondary">{t("common.error")}: {error}</Text>
-        </Card>
-      )}
+      {error && <Text color="secondary">{t("common.error")}: {error}</Text>}
 
       {searchResults !== null ? (
         <VStack gap={3}>
@@ -142,19 +137,18 @@ export function Learning() {
       ) : (
         <Grid columns={{ minWidth: 260, repeat: "fit" }} gap={4}>
           {docs.map((d) => (
-            <ClickableCard key={d.id} label={d.title} onClick={() => openDetail(d)}>
+            <ClickableCard key={d.id} label={d.title} onClick={() => openDetail(d)} className="glass-card">
               <VStack gap={2}>
                 <HStack hAlign="between" vAlign="start">
                   <Heading level={4}>{d.title}</Heading>
                   <StatusDot variant={d.enabled ? "success" : "warning"} label={d.enabled ? t("rag.docActive") : t("rag.docDisabled")} />
                 </HStack>
-                <HStack gap={2} vAlign="center" wrap="wrap">
-                  <Badge
-                    variant={d.vec_count === d.chunk_count && d.chunk_count > 0 ? "neutral" : "warning"}
-                    label={`${d.chunk_count} ${t("learning.chunkCount")}`}
-                  />
-                  <Text type="supporting" color="secondary">{d.created_at}</Text>
-                </HStack>
+                <Text type="supporting" color="secondary">{d.created_at} · {d.chunk_count} {t("learning.chunkCount")}</Text>
+                {d.chunk_count > 0 && (
+                  <VStack className="rx-progress">
+                    <span style={{ width: `${Math.round((d.vec_count / d.chunk_count) * 100)}%` }} />
+                  </VStack>
+                )}
               </VStack>
             </ClickableCard>
           ))}

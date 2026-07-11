@@ -1,0 +1,327 @@
+/*
+ * RevenueX — "sıcak cam panel" tasarım dili, Astryx teması üstü katman.
+ * Renk/radius/gölge tokenleri theme.ts'te (defineTheme); burada sadece
+ * tema API'sinin kapsamadığı parçalar yaşar: fontlar, ambient arka plan,
+ * cam efektleri, serif başlık kuralları ve sabit tag paleti.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap");
+
+:root {
+  --rx-font-serif: "Newsreader", "Source Serif 4", Georgia, serif;
+  --rx-gold-start: #f3b94a;
+  --rx-gold-end: #e07a2c;
+  --rx-live: #7faf52;
+  --rx-live-bg: #e4eeda;
+  --rx-border-glass: rgba(255, 255, 255, 0.4);
+  /* Sabit tag paleti — serbest renk üretme, bu dörtlüden seç */
+  --rx-tag-navy-bg: #1e2a3a;
+  --rx-tag-navy-text: #ffffff;
+  --rx-tag-amber-bg: #f3d9a8;
+  --rx-tag-amber-text: #6b4a16;
+  --rx-tag-forest-bg: #d9e8ce;
+  --rx-tag-forest-text: #3a5a28;
+  --rx-tag-blue-bg: #d9e2ef;
+  --rx-tag-blue-text: #2a4468;
+}
+
+/* Ambient arka plan: fotoğrafik gün batımı hissi — çöl ufku, sıcak gökyüzü.
+   Uygulama bu zeminin ÜSTÜNDE yüzen cam panel olarak durur. */
+body {
+  min-height: 100dvh;
+  background: #e3c9ae;
+}
+
+/* Sabit pseudo-element: background-attachment:fixed'ten çok daha ucuz —
+   bir kez rasterize edilir, scroll'da yeniden çizilmez. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(90% 60% at 78% 88%, rgba(224, 122, 44, 0.55) 0%, transparent 60%),
+    radial-gradient(70% 45% at 15% 95%, rgba(122, 82, 51, 0.5) 0%, transparent 65%),
+    radial-gradient(120% 80% at 60% 105%, rgba(243, 185, 74, 0.45) 0%, transparent 55%),
+    linear-gradient(180deg, #d8c4c6 0%, #e3c9ae 34%, #eeb877 62%, #c98a4e 82%, #8a5a3b 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #33261e;
+  }
+  body::before {
+    background:
+      radial-gradient(90% 60% at 78% 88%, rgba(224, 122, 44, 0.35) 0%, transparent 60%),
+      radial-gradient(120% 80% at 60% 105%, rgba(160, 100, 40, 0.3) 0%, transparent 55%),
+      linear-gradient(180deg, #2a2430 0%, #33261e 45%, #472e1a 78%, #241a12 100%);
+  }
+}
+
+/* Uygulama kabuğu: zeminde yüzen tek büyük cam panel */
+.astryx-app-shell {
+  max-width: 1560px;
+  height: calc(100dvh - 48px) !important;
+  margin: 24px auto;
+  border-radius: var(--radius-page);
+  overflow: hidden;
+  background: var(--color-background-muted);
+  border: 1px solid var(--rx-border-glass);
+  box-shadow: var(--shadow-high);
+}
+
+/* Not: kabukta backdrop-filter bilinçli YOK — zemin düz gradyan olduğundan
+   blur görsel fark yaratmıyor ama iç içe blur (kabuk + kartlar) compositing'i
+   kilitleyip scroll/screenshot performansını çökertiyor. Cam hissi yarı saydam
+   yüzey + kart seviyesindeki blur'dan geliyor. */
+
+@media (max-width: 720px) {
+  .astryx-app-shell {
+    height: calc(100dvh - 16px) !important;
+    margin: 8px;
+    border-radius: var(--radius-container);
+  }
+}
+
+/* Sidebar: panelin camını gösterir, sağda ince ayraç; item'lar pill */
+.astryx-app-shell-sidenav,
+.astryx-side-nav {
+  background: transparent !important;
+}
+
+.astryx-app-shell-sidenav {
+  border-right: 1px solid var(--color-border);
+}
+
+.astryx-side-nav-item {
+  border-radius: var(--radius-element);
+}
+
+/* Aktif nav: düz beyaz pill + yumuşak gölge (koyu temada koyu yüzey) */
+.astryx-side-nav-item[aria-current],
+.astryx-side-nav-item[data-selected],
+.astryx-side-nav-item[data-state="selected"] {
+  background: var(--color-background-popover);
+  box-shadow: 0 2px 8px -2px rgba(60, 40, 10, 0.18);
+}
+
+/* Section başlıkları: küçük, uppercase, geniş letter-spacing */
+.astryx-side-nav-section [class*="title"],
+.astryx-side-nav-section > span:first-child {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+/* Pill arama kutusu — TextInput'a className="rx-search" ile */
+.rx-search input {
+  border-radius: 999px !important;
+}
+.rx-search [class*="input"],
+.rx-search > div {
+  border-radius: 999px !important;
+}
+
+/* Editoryal serif: sayfa başlıkları (h1-h3) — normal ağırlık, kitap hissi.
+   Kart başlıkları (h4-h6) sans kalır; serif küçük UI metninde kullanılmaz. */
+h1, h2, h3 {
+  font-family: var(--rx-font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* Büyük istatistik değerleri — serif display, asla sans-bold değil */
+.rx-display {
+  font-family: var(--rx-font-serif);
+  font-weight: 400;
+  font-size: 32px;
+  line-height: 1.1;
+  color: var(--color-text-primary);
+}
+
+.rx-display-sm {
+  font-family: var(--rx-font-serif);
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1.15;
+  color: var(--color-text-primary);
+}
+
+/* Hero başlıkta italik vurgu ("Explore your performance" tarzı) */
+.rx-italic {
+  font-family: var(--rx-font-serif);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Section etiketi: küçük, geniş letter-spacing, gri, sans */
+.rx-label {
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+/* Cam panel — en dış yüzeyler (blur destelenmezse düz yüzeye düşer) */
+.glass-panel {
+  background: var(--color-background-muted);
+  border: 1px solid var(--rx-border-glass);
+  border-radius: var(--radius-page);
+  box-shadow: var(--shadow-high);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass-panel {
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+  }
+}
+
+/* Cam kart — iç kartlar; Card bileşenine className ile eklenir */
+.glass-card {
+  background: var(--color-background-card);
+  border: 1px solid var(--rx-border-glass);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-low);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass-card {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
+
+/* Hero kart — ipeksi amber-gold dalga dokusu, büyük serif başlık için zemin */
+.rx-hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 88% 8%, rgba(255, 244, 224, 0.75) 0%, transparent 55%),
+    radial-gradient(100% 80% at 15% 110%, rgba(191, 94, 26, 0.85) 0%, transparent 60%),
+    radial-gradient(150% 120% at 65% 65%, rgba(243, 185, 74, 0.9) 0%, transparent 75%),
+    linear-gradient(130deg, #f7d795 0%, #efaf54 45%, #e07a2c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-med);
+  color: #2b1c08;
+}
+
+/* İpek kıvrımları: yumuşak, eğimli parlaklık bantları */
+.rx-hero::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(45% 60% at 62% 38%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.1) 45%, transparent 72%),
+    radial-gradient(55% 42% at 80% 72%, rgba(255, 235, 200, 0.35) 0%, rgba(255, 235, 200, 0.12) 50%, transparent 74%),
+    radial-gradient(38% 55% at 38% 78%, rgba(150, 70, 15, 0.24) 0%, rgba(150, 70, 15, 0.08) 50%, transparent 75%);
+  transform: rotate(-8deg);
+}
+
+.rx-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hero tipografisi: büyük editoryal serif — referanstaki "Explore your
+   performance" ölçeği. !important: bileşen kendi rengini/boyutunu basıyor. */
+.rx-hero h1, .rx-hero h2, .rx-hero h3, .rx-hero h4 {
+  color: #2b1c08 !important;
+  font-family: var(--rx-font-serif) !important;
+  font-size: clamp(30px, 4.5vw, 46px) !important;
+  font-weight: 400 !important;
+  line-height: 1.06 !important;
+  letter-spacing: -0.01em;
+}
+
+.rx-hero, .rx-hero span, .rx-hero p {
+  color: #2b1c08;
+}
+
+.rx-hero {
+  padding-block: var(--space-6, 32px);
+}
+
+/* Hero içi küçük pill badge */
+.rx-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Sabit tag paleti — pill biçimli */
+.rx-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rx-tag-navy { background: var(--rx-tag-navy-bg); color: var(--rx-tag-navy-text); }
+.rx-tag-amber { background: var(--rx-tag-amber-bg); color: var(--rx-tag-amber-text); }
+.rx-tag-forest { background: var(--rx-tag-forest-bg); color: var(--rx-tag-forest-text); }
+.rx-tag-blue { background: var(--rx-tag-blue-bg); color: var(--rx-tag-blue-text); }
+
+/* Canlı durum noktası + pill (yeşil onay — paletteki tek "canlı" renk) */
+.rx-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--rx-live-bg);
+  color: #3a5a28;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.rx-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--rx-live);
+  flex-shrink: 0;
+}
+
+/* İnce progress bar — tam yuvarlak uçlu, sage dolgu */
+.rx-progress {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.rx-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--rx-live);
+}
+
+/* Grafik seri renkleri — düşük doygunluk; neon yasak */
+:root {
+  --rx-chart-teal: #5e93a3;
+  --rx-chart-sage: #7faf52;
+  --rx-chart-amber: #e89a3c;
+}

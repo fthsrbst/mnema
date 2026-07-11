@@ -47,8 +47,11 @@ tools and devices.
   mindset" core auto-injected into every role, including prompts handed to
   local models.
 - **Local AI orchestration** — route simple/bulk text work to a local LLM
-  (LM Studio, zero API cost) and image/video/audio generation to ComfyUI,
-  both driven from any connected agent via `local_llm` / `media_generate`.
+  (LM Studio or Ollama, zero API cost) and image/video/audio generation to
+  ComfyUI, all driven from any connected agent via `local_llm` /
+  `media_generate`. Local models can also reach the hub directly: `hub agents
+  connect` wires LM Studio's MCP client to the hub (see
+  `docs/local-models.md`).
 - **Cross-device sync** — a local-first, last-write-wins sync model
   (millisecond timestamps, deterministic content-hash tie-break) so memories
   and project maps created on one machine reconcile cleanly with the primary
@@ -243,7 +246,7 @@ No inflation — this is what's actually solid versus still rough.
 | REST API | Stable | Mirrors MCP tools; used by CLI and web UI |
 | Cross-device sync (LWW) | Functional, lightly tested | Works for the author's two-to-three-device setup; not stress-tested for heavy concurrent writes |
 | Web UI | Functional | Covers memory/RAG/projects/prompts browsing; not a polished product UI |
-| Local LLM orchestration (LM Studio) | Functional | Works when LM Studio is reachable; no retry/queueing beyond basic error handling |
+| Local LLM orchestration (LM Studio, Ollama) | Functional | Works when the backend is reachable; no retry/queueing beyond basic error handling |
 | Media generation (ComfyUI) | Experimental | Works for the author's own workflows; expect to write your own `workflows/*.json` |
 | Public connector exposure (Funnel + `?token=`) | Functional, use with care | Token-in-URL is a real trade-off — see [`docs/connectors.md`](docs/connectors.md) |
 | Auth model | Basic | Single bearer token, no per-agent scoping or rotation automation |

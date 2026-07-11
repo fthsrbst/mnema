@@ -86,9 +86,11 @@ export interface MachineStatus {
   name: string;
   host: string;
   lmstudio_port: number | null;
+  ollama_port: number | null;
   comfyui_port: number | null;
   notes: string | null;
   lmstudio: { online: boolean; models: string[] };
+  ollama: { online: boolean; models: string[] };
   comfyui: { online: boolean };
 }
 
