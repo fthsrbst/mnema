@@ -61,9 +61,11 @@ export async function recall(query: string, project?: string, cwd?: string): Pro
   const resolved = project ?? (cwd ? resolveProjectFromPath(cwd) : null);
   // Geniş aday havuzu çek, hassasiyet filtresi daraltsın (proje filtresi arama
   // seviyesinde uygulanmaz — global tercih/karar kayıtları da aday kalmalı).
+  // Havuz limitleri enjeksiyon limitinden bilinçli büyük: yüksek importance'lı
+  // FTS-only gürültü, vec kanıtlı kayıtları havuz dışına itememeli.
   const [memories, chunks] = await Promise.all([
-    searchMemories(query, { limit: 8 }),
-    searchChunks(query, { limit: 6 }),
+    searchMemories(query, { limit: 12 }),
+    searchChunks(query, { limit: 8 }),
   ]);
   const requireSemantic = hasVec() && embeddingsEnabled();
   const adjMems = adjustScores(memories, resolved, requireSemantic);
@@ -109,7 +111,8 @@ export function bridge(cwd?: string, projectName?: string): string {
   const lines: string[] = ["<hub-bridge>", `Aktif proje (hub map): **${proj.name}**${proj.status ? ` [${proj.status}]` : ""}`];
   if (proj.summary) lines.push(`Özet: ${proj.summary}`);
   if (proj.current_focus) lines.push(`Mevcut odak: ${proj.current_focus}`);
-  const steps = (proj.next_steps ?? []).slice(0, 5);
+  // Map verisi serbest JSON'dan gelir — next_steps dizi olmayabilir; hook'u düşürme.
+  const steps = Array.isArray(proj.next_steps) ? proj.next_steps.slice(0, 5) : [];
   if (steps.length > 0) lines.push(`Sıradaki adımlar:\n${steps.map((s) => `  - ${s}`).join("\n")}`);
   const [last] = recentSessionLogs({ project: proj.name, limit: 1 });
   if (last) {
