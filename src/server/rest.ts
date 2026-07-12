@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   addDocument,
+  addRecallFeedback,
   addSessionLog,
+  feedbackSummary,
+  listRecallFeedback,
   extractFileText,
   applyChanges,
   collectChanges,
@@ -50,6 +53,7 @@ import {
   searchMemories,
   updateMemory,
   upsertProject,
+  type FeedbackVerdict,
   type MemoryType,
   type ProjectMap,
 } from "../core/index.js";
@@ -263,6 +267,19 @@ export function buildRestRouter(): Router {
     res
       .type("text/plain")
       .send(bridge(cwd as string | undefined, project as string | undefined));
+  }));
+
+  // --- recall geri bildirimi (eşik kalibrasyonu verisi) ---
+  r.post("/recall/feedback", wrap((req, res) => res.json(addRecallFeedback(req.body))));
+  r.get("/recall/feedback", wrap((req, res) => {
+    const { verdict, limit } = req.query;
+    res.json({
+      summary: feedbackSummary(),
+      items: listRecallFeedback({
+        verdict: verdict as FeedbackVerdict | undefined,
+        limit: limit ? Number(limit) : undefined,
+      }),
+    });
   }));
 
   return r;

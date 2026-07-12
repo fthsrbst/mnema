@@ -195,6 +195,7 @@ export interface UsageItem {
   project: string | null;
   access_count: number;
   last_accessed: string;
+  importance: number;
 }
 
 export interface UsageStats {

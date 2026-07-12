@@ -100,6 +100,18 @@ CREATE TABLE IF NOT EXISTS session_logs(
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
+-- Recall kalite geri bildirimi (agent'lardan): eşik kalibrasyonu verisi.
+-- Cihaz-yerel tutulur (sync'e girmez) — her cihazın recall yolu kendi eşikleriyle ölçülür.
+CREATE TABLE IF NOT EXISTS recall_feedback(
+  id INTEGER PRIMARY KEY,
+  query TEXT NOT NULL,
+  verdict TEXT NOT NULL,
+  memory_id INTEGER,
+  note TEXT,
+  source TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+
 -- Cihazlar arası eşitleme: silinen kayıtların izi (LWW için)
 CREATE TABLE IF NOT EXISTS deletions(
   uid TEXT PRIMARY KEY,
@@ -131,6 +143,9 @@ function migrate(database: Database.Database): void {
   addColumn("memories", "importance", "importance REAL NOT NULL DEFAULT 1.0");
   addColumn("memories", "last_accessed", "last_accessed TEXT");
   addColumn("memories", "access_count", "access_count INTEGER NOT NULL DEFAULT 0");
+  // Bağlantılı hafızalar: uid listesi (JSON). uid tutulur çünkü id'ler cihaz-yerel
+  // autoincrement'tir — sync sonrası aynı kayıt farklı cihazda farklı id alabilir.
+  addColumn("memories", "related", "related TEXT NOT NULL DEFAULT '[]'");
   database.exec(`
     UPDATE memories SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
     UPDATE documents SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;

@@ -70,9 +70,35 @@ export async function embed(texts: string[], taskType: EmbedTask): Promise<Float
   return out;
 }
 
+/**
+ * Sorgu embedding LRU cache'i: recall her mesajda çalıştığından tekrarlanan
+ * mesaj kalıplarında Gemini çağrısını atlamak hook gecikmesini ve API kullanımını
+ * düşürür. Sadece RETRIEVAL_QUERY cache'lenir — doküman embed'leri zaten kayıt
+ * başına bir kez yapılır, cache'lemenin getirisi yok.
+ */
+const QUERY_CACHE_MAX = 128;
+const queryCache = new Map<string, Float32Array>();
+
 export async function embedOne(text: string, taskType: EmbedTask): Promise<Float32Array | null> {
+  if (taskType !== "RETRIEVAL_QUERY") {
+    const res = await embed([text], taskType);
+    return res?.[0] ?? null;
+  }
+  const key = text.trim().toLowerCase();
+  const hit = queryCache.get(key);
+  if (hit) {
+    // Map ekleme sıralıdır: sil + yeniden ekle girdiyi "en son kullanılan" yapar (LRU)
+    queryCache.delete(key);
+    queryCache.set(key, hit);
+    return hit;
+  }
   const res = await embed([text], taskType);
-  return res?.[0] ?? null;
+  const vec = res?.[0] ?? null;
+  if (vec) {
+    queryCache.set(key, vec);
+    if (queryCache.size > QUERY_CACHE_MAX) queryCache.delete(queryCache.keys().next().value!);
+  }
+  return vec;
 }
 
 export function toBuffer(v: Float32Array): Buffer {

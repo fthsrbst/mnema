@@ -316,6 +316,7 @@ const dict = {
   "dashboard.usageShowList": { tr: "Listeyi göster", en: "Show list" },
   "dashboard.usageAccessCount": { tr: "erişim", en: "accesses" },
   "dashboard.usageLastAccessed": { tr: "Son erişim", en: "Last accessed" },
+  "dashboard.usageImportance": { tr: "önem", en: "importance" },
   "dashboard.heroBadge": { tr: "Canlı genel bakış", en: "Live overview" },
   "dashboard.heroTitleLine1": { tr: "Ortak hafızanın", en: "Your shared" },
   "dashboard.heroTitleLine2": { tr: "nabzı", en: "memory, live" },

@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   addDocument,
+  addRecallFeedback,
   addSessionLog,
   generateImage,
   listWorkflows,
@@ -90,6 +91,10 @@ export function buildMcpServer(): McpServer {
           .describe(
             "önem çarpanı; varsayılan 1 çoğu kayıt için doğrudur. 2'yi NADİR kullan (aylar sonra bile her recall'da öne geçmesi gereken kritik karar/tercih); 0.5=önemsiz detay"
           ),
+        related_ids: z
+          .array(z.number().int())
+          .optional()
+          .describe("Bağlantılı hafıza id'leri — bu kayıt recall'da enjekte edilirken bağlı kayıtların başlıkları 'ilgili: #x' satırı olarak gelir"),
       },
     },
     async (args) => {
@@ -148,12 +153,33 @@ export function buildMcpServer(): McpServer {
           .max(2)
           .optional()
           .describe("önem çarpanı; 2=kritik karar, 1=normal, 0.5=önemsiz detay"),
+        related_ids: z
+          .array(z.number().int())
+          .optional()
+          .describe("Bağlantılı hafıza id'leri — TAM listeyi değiştirir (ekleme değil); boş dizi bağlantıları temizler"),
       },
     },
     async ({ id, ...patch }) => {
       const updated = await updateMemory(id, patch);
       return updated ? json(updated) : json({ error: `memory #${id} bulunamadı` });
     }
+  );
+
+  server.registerTool(
+    "recall_feedback",
+    {
+      title: "Recall geri bildirimi",
+      description:
+        "Otomatik recall enjeksiyonunun (<hub-recall>) isabetini işaretler: alakasız kayıt geldiyse verdict='noisy' (memory_id ile hangisi olduğunu belirt), olması gereken kayıt gelmediyse 'missing', özellikle isabetliyse 'helpful'. Bu veri HUB_RECALL_* eşiklerinin kanıta dayalı kalibrasyonunda kullanılır — yanlış enjeksiyon gördüğünde çağırmak recall kalitesini ölçülür kılar.",
+      inputSchema: {
+        query: z.string().describe("Recall'u tetikleyen mesaj/sorgu (kısaltılmış olabilir)"),
+        verdict: z.enum(["noisy", "missing", "helpful"]),
+        memory_id: z.number().int().optional().describe("İlgili kayıt: noisy'de yanlış enjekte edilen, missing'de gelmesi gereken"),
+        note: z.string().optional().describe("Neden yanlış/eksik — kalibrasyon için bağlam"),
+        source: z.string().optional().describe("Hangi agent/cihaz bildiriyor"),
+      },
+    },
+    async (args) => json(addRecallFeedback(args))
   );
 
   server.registerTool(

@@ -8,6 +8,7 @@ process.env.HUB_DB_PATH = `./data/smoke-${Date.now()}.db`;
 import fs from "node:fs";
 const {
   addDocument,
+  addRecallFeedback,
   addSessionLog,
   extractFileText,
   applyChanges,
@@ -15,17 +16,24 @@ const {
   closeDb,
   contentFingerprint,
   deleteMemory,
+  embedOne,
+  feedbackSummary,
+  getMemory,
   listMemories,
+  listRecallFeedback,
   embeddingsEnabled,
   getProject,
   hasVec,
   recall,
   formatRecall,
   resolveProjectFromPath,
+  resolveRelated,
   saveMemory,
   searchChunks,
   searchMemories,
+  updateMemory,
   upsertProject,
+  usageStats,
 } = await import("../src/core/index.js");
 
 let failed = 0;
@@ -155,7 +163,7 @@ const mkConflict = (body: string) => ({
   uid: "smokeconflict0000000000000000001", type: "fact", title: "Sync çakışma testi", body,
   project: null, tags: "[]", source: "smoke", created_at: ts, updated_at: ts, importance: 1.0,
 });
-const fp = (body: string) => contentFingerprint(["fact", "Sync çakışma testi", body, null, "[]", "smoke", 1.0]);
+const fp = (body: string) => contentFingerprint(["fact", "Sync çakışma testi", body, null, "[]", "smoke", 1.0, "[]"]);
 const winner = fp("versiyon A") > fp("versiyon B") ? "versiyon A" : "versiyon B";
 const loser = winner === "versiyon A" ? "versiyon B" : "versiyon A";
 applyChanges({ ...emptyPayload, memories: [mkConflict(loser)] });
@@ -178,6 +186,59 @@ try {
   extRejected = true;
 }
 check("extract desteklenmeyen uzantı reddi", extRejected);
+
+// bağlantılı hafızalar: id → uid saklama, yerel çözüm, recall'da "ilgili" satırı
+const linkA = await saveMemory({ type: "fact", title: "Bağlantı hedefi A", body: "bağlantı testi hedef kaydı", source: "smoke" });
+const linkB = await saveMemory({
+  type: "fact",
+  title: "Bağlantı kaynağı B",
+  body: "bu kayıt A'ya bağlı",
+  source: "smoke",
+  related_ids: [linkA.id, 99999], // bilinmeyen id sessizce atlanmalı
+});
+const storedB = getMemory(linkB.id)!;
+const relRefs = resolveRelated(storedB);
+check(
+  "memory related: uid saklama + yerel çözüm",
+  storedB.related.length === 1 && relRefs.length === 1 && relRefs[0].id === linkA.id,
+  `related=${JSON.stringify(storedB.related.length)}, çözüm=[${relRefs.map((r) => r.id).join(",")}]`
+);
+const relText = formatRecall({ memories: [{ ...storedB, score: 1 }], chunks: [] });
+check("recall formatı 'ilgili' satırı içeriyor", relText.includes(`ilgili: #${linkA.id} Bağlantı hedefi A`));
+const cleared = await updateMemory(linkB.id, { related_ids: [] });
+check("memory_update related temizleme", cleared?.related.length === 0);
+deleteMemory(linkB.id);
+deleteMemory(linkA.id);
+
+// recall geri bildirimi: kayıt + liste + özet
+addRecallFeedback({ query: "smoke recall sorgusu", verdict: "noisy", memory_id: 1, note: "alakasız kayıt", source: "smoke" });
+addRecallFeedback({ query: "smoke recall sorgusu 2", verdict: "helpful", source: "smoke" });
+const fbList = listRecallFeedback({ verdict: "noisy" });
+const fbSum = feedbackSummary();
+check(
+  "recall_feedback kayıt + filtreli liste + özet",
+  fbList.length === 1 && fbList[0].note === "alakasız kayıt" && fbSum.reduce((a, s) => a + s.count, 0) === 2,
+  `noisy=${fbList.length}, toplam=${fbSum.reduce((a, s) => a + s.count, 0)}`
+);
+
+// bayat kayıt raporu: yeni oluşturulan (erişilmemiş) kayıt "bayat" SAYILMAMALI
+const freshMem = await saveMemory({ type: "fact", title: "Taze kayıt bayat olmamalı", body: "usage stale testi", source: "smoke" });
+const usage = usageStats();
+check(
+  "usageStats: taze kayıt bayat listesinde değil + importance alanı var",
+  usage.stale.every((it) => it.id !== freshMem.id) && usage.top.every((it) => typeof it.importance === "number"),
+  `stale=${usage.stale.length}, total=${usage.total}`
+);
+deleteMemory(freshMem.id);
+
+// sorgu embedding cache'i: aynı sorgu ikinci çağrıda aynı referansı dönmeli (API'ye gitmeden)
+if (embeddingsEnabled()) {
+  const q1 = await embedOne("smoke cache sorgusu", "RETRIEVAL_QUERY");
+  const q2 = await embedOne("  SMOKE cache sorgusu ", "RETRIEVAL_QUERY"); // normalize: trim + lowercase
+  check("sorgu embedding LRU cache (referans eşitliği)", q1 !== null && q1 === q2);
+} else {
+  check("sorgu embedding LRU cache (embedding kapalı — atlandı)", true);
+}
 
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });
