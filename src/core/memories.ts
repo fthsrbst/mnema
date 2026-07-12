@@ -138,16 +138,20 @@ export async function searchMemories(query: string, filters: SearchFilters = {})
   const now = Date.now();
   const halflifeMs = Math.max(config.decayHalflifeDays, 1) * 86_400_000;
   const candidates: ScoredMemory[] = [];
-  for (const { id, score } of ranked) {
+  for (const { id, score, channels } of ranked) {
     const mem = getMemory(id);
     if (!mem) continue;
     if (filters.type && mem.type !== filters.type) continue;
     if (filters.project && mem.project !== filters.project) continue;
     if (filters.tag && !mem.tags.includes(filters.tag)) continue;
     const ageMs = Math.max(0, now - parseSqliteUtc(mem.updated_at));
-    const decay = Math.exp(-ageMs / halflifeMs);
+    // Tabanlı decay: taze kayıt öne geçer ama eski kayıt asla decayFloor'un altına
+    // ezilmez — "1 yıl önce şu sorunu nasıl çözmüştüm" sorgusu hâlâ sonuç bulur.
+    // ln(2) çarpanı şart: onsuz ageMs=halflifeMs anında çarpan 0.5 değil e^-1≈0.368 olur
+    // (yani "yarı ömür" adı yalan çıkar, kayıtlar isimlendirildiğinden çok daha hızlı bayatlar).
+    const decay = config.decayFloor + (1 - config.decayFloor) * Math.exp(-Math.LN2 * (ageMs / halflifeMs));
     const final = score * mem.importance * decay;
-    candidates.push({ ...mem, score: final });
+    candidates.push({ ...mem, score: final, channels });
   }
   candidates.sort((a, b) => b.score - a.score);
   const out = candidates.slice(0, limit);

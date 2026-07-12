@@ -71,12 +71,15 @@ export function buildMcpServer(): McpServer {
     {
       title: "Hafızaya kaydet",
       description:
-        "Kalıcı olması gereken bilgiyi ortak hafızaya yazar: kararlar (gerekçesiyle), kullanıcı tercihleri, öğrenilen how-to'lar, proje bağlamı. Oturum bitince kaybolmaması gereken her şey buraya.",
+        "Kalıcı olması gereken bilgiyi ortak hafızaya yazar: kararlar (gerekçesiyle), kullanıcı tercihleri, öğrenilen how-to'lar, proje bağlamı. Oturum bitince kaybolmaması gereken her şey buraya. SINIR: uzun doküman/talimat/prompt/araştırma notu memory DEĞİLDİR — rag_add kullan; memory 'bir bakışta okunur tek bilgi'dir.",
       inputSchema: {
         title: z.string().describe("Kısa başlık"),
         body: z.string().describe("İçerik (markdown). Kararlar için gerekçeyi de yaz."),
         type: memoryType.optional().describe("fact | preference | decision | howto | context"),
-        project: z.string().optional().describe("İlgili proje adı"),
+        project: z
+          .string()
+          .optional()
+          .describe("project_list'teki KANONİK proje adı. Makine/cihaz/etiket proje değildir — onlar için tags kullan."),
         tags: z.array(z.string()).optional(),
         source: z.string().optional().describe("Hangi agent/cihaz yazıyor"),
         importance: z
@@ -84,7 +87,9 @@ export function buildMcpServer(): McpServer {
           .min(0.5)
           .max(2)
           .optional()
-          .describe("önem çarpanı; 2=kritik karar, 1=normal, 0.5=önemsiz detay"),
+          .describe(
+            "önem çarpanı; varsayılan 1 çoğu kayıt için doğrudur. 2'yi NADİR kullan (aylar sonra bile her recall'da öne geçmesi gereken kritik karar/tercih); 0.5=önemsiz detay"
+          ),
       },
     },
     async (args) => {
@@ -94,7 +99,16 @@ export function buildMcpServer(): McpServer {
         const warning = mem.similar
           .map((s) => `⚠ Benzer kayıt(lar) var: #${s.id} ${s.title} (${s.distance.toFixed(3)})`)
           .join("\n");
-        content.push({ type: "text" as const, text: warning });
+        content.push({
+          type: "text" as const,
+          text: warning + "\nYenisi bunlardan birini güncelliyorsa memory_update ile birleştir, bu kaydı memory_delete ile geri al.",
+        });
+      }
+      if (args.body.length > 1500) {
+        content.push({
+          type: "text" as const,
+          text: "ℹ Gövde 1500 karakteri aşıyor — bu bir doküman/talimat ise rag_add daha uygun (memory kısa ve öz kalmalı).",
+        });
       }
       return { content };
     }
@@ -172,12 +186,12 @@ export function buildMcpServer(): McpServer {
     {
       title: "Doküman indeksle",
       description:
-        "Bir metni/dokümanı RAG arşivine ekler (otomatik chunk + embed). Öğrenme notları, araştırma özetleri, önemli dokümanlar için. Aynı uri ile tekrar çağrılırsa re-index eder.",
+        "Bir metni/dokümanı RAG arşivine ekler (otomatik chunk + embed). Öğrenme notları, araştırma özetleri, önemli dokümanlar için. Aynı uri ile tekrar çağrılırsa re-index eder — güncelleme İÇİN AYNI uri'yi kullan, v2/v3 diye yeni uri açıp eski sürümü arşivde bırakma. Proje dokümanlarında kanonik uri deseni: '<proje>/<kategori>/<ad>' (örn. voiceweb/architecture/system) ve project alanına project_list'teki adı ver. Öğrenme notlarında project='learning' ve uri 'learning/<slug>' ver — web arayüzü Öğrenme sekmesinde bu projeyi listeler (uri 'learning/' ile başlayıp project verilmezse otomatik 'learning' atanır). PDF/DOCX gibi binary dosyaları buraya elle taşıma: `curl -X POST -H 'Authorization: Bearer <token>' --data-binary @dosya.pdf '<hub-url>/api/rag/upload?filename=dosya.pdf&title=...&project=...'` ile yükle veya `hub index dosya.pdf` kullan — sunucu parse edip indeksler (taranmış PDF'te metin çıkmazsa hata döner; o zaman vision/OCR ile okuyup rag_add çağır).",
       inputSchema: {
         title: z.string(),
         text: z.string().describe("Markdown içerik"),
-        uri: z.string().optional().describe("Tekil kimlik (dosya yolu/URL) — re-index için"),
-        project: z.string().optional(),
+        uri: z.string().optional().describe("Tekil kimlik (dosya yolu/URL) — re-index için; öğrenme notlarında 'learning/<slug>'"),
+        project: z.string().optional().describe("İlgili proje; öğrenme notlarında 'learning'"),
         source: z.string().optional(),
       },
     },
@@ -281,14 +295,25 @@ export function buildMcpServer(): McpServer {
     {
       title: "Oturum özeti kaydet",
       description:
-        "Oturum sonunda ne yapıldığını kaydeder: bitirilenler, yarım kalanlar, sıradaki adım. Bir sonraki oturum (hangi cihazda olursa olsun) buradan devam eder.",
+        "Oturum sonunda ne yapıldığını kaydeder: bitirilenler, yarım kalanlar, sıradaki adım. Bir sonraki oturum (hangi cihazda olursa olsun) buradan devam eder. Proje odağı değiştiyse project_update ile current_focus/next_steps'i de güncelle — bayat map bir sonraki agent'ı yanlış yönlendirir.",
       inputSchema: {
         summary: z.string().describe("Markdown özet: yapılanlar, yarım kalanlar, sıradaki adım"),
-        project: z.string().optional(),
+        project: z.string().optional().describe("project_list'teki kanonik proje adı"),
         source: z.string().optional(),
       },
     },
-    async ({ summary, project, source }) => json(addSessionLog(summary, project, source))
+    async ({ summary, project, source }) => {
+      const log = addSessionLog(summary, project, source);
+      if (project && !getProject(project)) {
+        return json({
+          ...log,
+          uyari: `'${project}' adında proje map'i YOK — log kaydedildi ama proje bağlamına bağlanamaz. Ad yanlışsa doğrusuyla tekrar dene; proje yeniyse project_update ile map aç. Mevcut projeler: ${listProjects()
+            .map((p) => p.name)
+            .join(", ")}`,
+        });
+      }
+      return json(log);
+    }
   );
 
   server.registerTool(
@@ -296,7 +321,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "İlgili hafızayı çek",
       description:
-        "Bir mesaj/görev için ilgili hafıza kayıtlarını ve doküman parçalarını tek çağrıda döner (hibrit arama). Göreve başlarken çağır.",
+        "Bir mesaj/görev için ilgili hafıza kayıtlarını ve doküman parçalarını tek çağrıda döner (hibrit arama + hassasiyet filtresi: az ve isabetli). Göreve başlarken çağır; boş dönerse 'kayıt yok' demek değildir — geniş arama için memory_search/rag_search kullan.",
       inputSchema: { query: z.string(), project: z.string().optional() },
     },
     async ({ query, project }) => json(await recall(query, project))
@@ -317,7 +342,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Makine/servis durumu",
       description:
-        "Kayıtlı makinelerdeki yerel AI servislerinin (LM Studio, ComfyUI) canlı durumunu ve yüklü modelleri döner. local_llm veya image_generate çağırmadan önce buradan kontrol et.",
+        "Kayıtlı makinelerdeki yerel AI servislerinin (LM Studio, Ollama, ComfyUI) canlı durumunu ve yüklü modelleri döner. local_llm veya media_generate çağırmadan önce buradan kontrol et.",
       inputSchema: {},
     },
     async () => json(await machinesStatus())
@@ -332,6 +357,7 @@ export function buildMcpServer(): McpServer {
         name: z.string(),
         host: z.string().describe("Tailscale IP (100.x.x.x) veya hostname"),
         lmstudio_port: z.number().int().optional().describe("LM Studio API portu (genelde 1234)"),
+        ollama_port: z.number().int().optional().describe("Ollama API portu (genelde 11434)"),
         comfyui_port: z.number().int().optional().describe("ComfyUI portu (genelde 8188)"),
         notes: z.string().optional(),
       },
@@ -340,6 +366,7 @@ export function buildMcpServer(): McpServer {
       name: args.name,
       host: args.host,
       lmstudio_port: args.lmstudio_port ?? null,
+      ollama_port: args.ollama_port ?? null,
       comfyui_port: args.comfyui_port ?? null,
       notes: args.notes ?? null,
     }))
@@ -350,10 +377,11 @@ export function buildMcpServer(): McpServer {
     {
       title: "Yerel LLM çalıştır",
       description:
-        "Fatih'in PC'sindeki LM Studio modeliyle üretim yapar (API maliyeti yok). Basit işler için uygun: özetleme, sınıflandırma, taslak, veri dönüştürme. Model belirtilmezse yüklü ilk model kullanılır.",
+        "Fatih'in makinesindeki yerel modelle (LM Studio veya Ollama) üretim yapar (API maliyeti yok). Basit işler için uygun: özetleme, sınıflandırma, taslak, veri dönüştürme. Model belirtilmezse yüklü ilk model, backend belirtilmezse LM Studio öncelikli kullanılır.",
       inputSchema: {
         prompt: z.string().describe("Kullanıcı mesajı (messages yerine kısayol)"),
         machine: z.string().optional(),
+        backend: z.enum(["lmstudio", "ollama"]).optional().describe("Yerel LLM backend'i; boşsa LM Studio öncelikli"),
         model: z.string().optional(),
         system: z.string().optional().describe("System prompt"),
         temperature: z.number().min(0).max(2).optional(),

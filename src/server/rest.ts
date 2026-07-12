@@ -1,9 +1,10 @@
-import { Router } from "express";
+import { Router, raw } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import {
   addDocument,
   addSessionLog,
+  extractFileText,
   applyChanges,
   collectChanges,
   config,
@@ -16,6 +17,7 @@ import {
   machinesStatus,
   upsertMachine,
   appendToProject,
+  bridge,
   deleteDocument,
   deleteMemory,
   formatRecall,
@@ -36,7 +38,7 @@ import {
   usageStats,
   savePrompt,
   saveSkill,
-  setDocumentEnabled,
+  updateDocumentMeta,
   getProject,
   listDocuments,
   listMemories,
@@ -96,14 +98,40 @@ export function buildRestRouter(): Router {
 
   // --- rag ---
   r.post("/rag/documents", wrap(async (req, res) => res.json(await addDocument(req.body))));
+  // Ham dosya yükleme (PDF/DOCX/metin): gövde binary, meta query-string'de.
+  // curl -X POST -H "Authorization: Bearer $HUB_TOKEN" --data-binary @dosya.pdf \
+  //   "$HUB_URL/api/rag/upload?filename=dosya.pdf&title=Başlık&project=learning"
+  r.post(
+    "/rag/upload",
+    raw({ type: () => true, limit: "50mb" }),
+    wrap(async (req, res) => {
+      const { filename, title, project, uri } = req.query as Record<string, string | undefined>;
+      if (!filename) return res.status(400).json({ error: "filename query parametresi zorunlu" });
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0)
+        return res.status(400).json({ error: "boş gövde — dosyayı --data-binary ile gönder" });
+      const text = await extractFileText(req.body, filename);
+      res.json(
+        await addDocument({
+          title: title || filename,
+          text,
+          uri: uri || `upload/${filename}`,
+          project,
+          source: `upload:${filename}`,
+        })
+      );
+    })
+  );
   r.get("/rag/documents", wrap((req, res) => res.json(listDocuments(req.query.project as string | undefined))));
   r.get("/rag/documents/:id", wrap((req, res) => {
     const doc = getDocument(Number(req.params.id));
     doc ? res.json(doc) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.patch("/rag/documents/:id", wrap((req, res) => {
-    const ok = setDocumentEnabled(Number(req.params.id), Boolean(req.body.enabled));
-    ok ? res.json({ ok: true, enabled: Boolean(req.body.enabled) }) : res.status(404).json({ error: "bulunamadı" });
+    const patch: { enabled?: boolean; project?: string | null } = {};
+    if (req.body.enabled !== undefined) patch.enabled = Boolean(req.body.enabled);
+    if (req.body.project !== undefined) patch.project = req.body.project === null ? null : String(req.body.project);
+    const ok = updateDocumentMeta(Number(req.params.id), patch);
+    ok ? res.json({ ok: true, ...patch }) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.delete("/rag/documents/:id", wrap((req, res) => res.json({ deleted: deleteDocument(Number(req.params.id)) })));
   r.get("/rag/stats", wrap((_req, res) => res.json(ragStats())));
@@ -216,13 +244,25 @@ export function buildRestRouter(): Router {
 
   // --- recall (hook'ların kullandığı uç) ---
   r.get("/recall", wrap(async (req, res) => {
-    const { q, project, format } = req.query;
-    const result = await recall(String(q ?? ""), project as string | undefined);
+    const { q, project, cwd, format } = req.query;
+    const result = await recall(
+      String(q ?? ""),
+      project as string | undefined,
+      cwd as string | undefined
+    );
     if (format === "text") {
       res.type("text/plain").send(formatRecall(result));
     } else {
       res.json(result);
     }
+  }));
+
+  // --- bridge (SessionStart hook'u: proje map'i + son oturum köprüsü) ---
+  r.get("/bridge", wrap(async (req, res) => {
+    const { cwd, project } = req.query;
+    res
+      .type("text/plain")
+      .send(bridge(cwd as string | undefined, project as string | undefined));
   }));
 
   return r;

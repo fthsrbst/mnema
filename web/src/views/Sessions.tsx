@@ -8,6 +8,7 @@ import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api, type SessionLog } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 export function Sessions() {
   const { t } = useI18n();
@@ -45,21 +46,30 @@ export function Sessions() {
       {logs.length === 0 ? (
         <EmptyState title={t("sessions.empty")} description={t("sessions.emptyDesc")} />
       ) : (
-        logs.map((log) => (
-          <Card key={log.id}>
-            <VStack gap={2}>
-              <HStack hAlign="between" vAlign="center">
-                <HStack gap={3} vAlign="center">
-                  <Text type="supporting" color="secondary">{log.created_at}</Text>
-                  {log.project && <Text type="supporting">[{log.project}]</Text>}
-                  {log.source && <Text type="supporting" color="secondary">{log.source}</Text>}
-                </HStack>
-                <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(log)} />
-              </HStack>
-              <Text style={{ whiteSpace: "pre-wrap" }}>{log.summary}</Text>
-            </VStack>
-          </Card>
-        ))
+        <Card className="glass-card">
+          <VStack gap={0}>
+            {logs.map((log, i) => {
+              const caption = [log.project, log.source].filter(Boolean).join(" · ");
+              return (
+                <VStack
+                  key={log.id}
+                  gap={2}
+                  paddingBlock={i > 0 ? 3 : undefined}
+                  style={i > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
+                >
+                  <HStack hAlign="between" vAlign="center">
+                    <HStack gap={2} vAlign="center">
+                      <Text type="supporting" color="secondary">{log.created_at}</Text>
+                      {caption && <Text type="supporting" color="secondary">· {caption}</Text>}
+                    </HStack>
+                    <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(log)} />
+                  </HStack>
+                  <Markdown>{log.summary}</Markdown>
+                </VStack>
+              );
+            })}
+          </VStack>
+        </Card>
       )}
 
       <AlertDialog

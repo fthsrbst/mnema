@@ -18,6 +18,10 @@ export function setStoredLang(lang: Lang): void {
 
 const dict = {
   // --- nav ---
+  "nav.sectionGeneral": { tr: "Genel", en: "General" },
+  "nav.sectionInfo": { tr: "Bilgi", en: "Knowledge" },
+  "nav.sectionWork": { tr: "Çalışma", en: "Work" },
+  "nav.sectionSystem": { tr: "Sistem", en: "System" },
   "nav.dashboard": { tr: "Panel", en: "Dashboard" },
   "nav.rag": { tr: "RAG Yönetimi", en: "RAG Management" },
   "nav.prompts": { tr: "Prompt'lar", en: "Prompts" },
@@ -131,6 +135,7 @@ const dict = {
   "machines.name": { tr: "Ad", en: "Name" },
   "machines.host": { tr: "Host", en: "Host" },
   "machines.lmstudioPort": { tr: "LM Studio portu", en: "LM Studio port" },
+  "machines.ollamaPort": { tr: "Ollama portu", en: "Ollama port" },
   "machines.comfyuiPort": { tr: "ComfyUI portu", en: "ComfyUI port" },
   "machines.notes": { tr: "Notlar", en: "Notes" },
   "machines.empty": { tr: "Kayıtlı makine yok", en: "No machines registered" },
@@ -311,6 +316,10 @@ const dict = {
   "dashboard.usageShowList": { tr: "Listeyi göster", en: "Show list" },
   "dashboard.usageAccessCount": { tr: "erişim", en: "accesses" },
   "dashboard.usageLastAccessed": { tr: "Son erişim", en: "Last accessed" },
+  "dashboard.heroBadge": { tr: "Canlı genel bakış", en: "Live overview" },
+  "dashboard.heroTitleLine1": { tr: "Ortak hafızanın", en: "Your shared" },
+  "dashboard.heroTitleLine2": { tr: "nabzı", en: "memory, live" },
+  "dashboard.heroCaption": { tr: "Hafıza, oturum ve doküman büyümenizi tek bakışta izleyin.", en: "Track your memory, session, and document growth at a glance." },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type TKey = keyof typeof dict;

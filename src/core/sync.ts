@@ -69,7 +69,7 @@ export interface SyncPayload {
   documents: SyncDocument[];
   projects: { name: string; data: string; updated_at: string }[];
   sessions: { uid: string; project: string | null; summary: string; source: string | null; created_at: string }[];
-  machines: { name: string; host: string; lmstudio_port: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }[];
+  machines: { name: string; host: string; lmstudio_port: number | null; ollama_port?: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }[];
   deletions: { uid: string; tbl: string; deleted_at: string }[];
 }
 
@@ -118,7 +118,7 @@ export function collectChanges(since: string): SyncPayload {
     documents,
     projects: db.prepare("SELECT name, data, updated_at FROM projects WHERE updated_at >= ?").all(since) as SyncPayload["projects"],
     sessions: db.prepare("SELECT uid, project, summary, source, created_at FROM session_logs WHERE created_at >= ?").all(since) as SyncPayload["sessions"],
-    machines: db.prepare("SELECT name, host, lmstudio_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
+    machines: db.prepare("SELECT name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
     deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at >= ?").all(since) as SyncPayload["deletions"],
   };
 }
@@ -241,18 +241,19 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   }
 
   for (const m of payload.machines ?? []) {
-    const local = db.prepare("SELECT host, lmstudio_port, comfyui_port, notes, updated_at FROM machines WHERE name = ?").get(m.name) as
-      | { host: string; lmstudio_port: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }
+    const local = db.prepare("SELECT host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE name = ?").get(m.name) as
+      | { host: string; lmstudio_port: number | null; ollama_port: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }
       | undefined;
-    const machineFp = (r: { host: string; lmstudio_port: number | null; comfyui_port: number | null; notes: string | null }) =>
-      contentFingerprint([r.host, r.lmstudio_port, r.comfyui_port, r.notes]);
+    const machineFp = (r: { host: string; lmstudio_port: number | null; ollama_port?: number | null; comfyui_port: number | null; notes: string | null }) =>
+      contentFingerprint([r.host, r.lmstudio_port, r.ollama_port ?? null, r.comfyui_port, r.notes]);
     if (local && !remoteWins(local.updated_at, m.updated_at, () => machineFp(local), () => machineFp(m))) continue;
     db.prepare(
-      `INSERT INTO machines(name, host, lmstudio_port, comfyui_port, notes, updated_at)
-       VALUES (@name, @host, @lmstudio_port, @comfyui_port, @notes, @updated_at)
+      `INSERT INTO machines(name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at)
+       VALUES (@name, @host, @lmstudio_port, @ollama_port, @comfyui_port, @notes, @updated_at)
        ON CONFLICT(name) DO UPDATE SET host=@host, lmstudio_port=@lmstudio_port,
-         comfyui_port=@comfyui_port, notes=@notes, updated_at=@updated_at`
-    ).run(m);
+         ollama_port=@ollama_port, comfyui_port=@comfyui_port, notes=@notes, updated_at=@updated_at`
+      // eski peer ollama_port göndermeyebilir → null'a normalize et
+    ).run({ ...m, ollama_port: m.ollama_port ?? null });
     result.machines++;
   }
 

@@ -12,7 +12,6 @@ import { Text, Heading } from "@astryxdesign/core/Text";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Badge } from "@astryxdesign/core/Badge";
 import { Divider } from "@astryxdesign/core/Divider";
 import { useToast } from "@astryxdesign/core/Toast";
 import { TrashIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
@@ -25,6 +24,7 @@ import {
   type ReindexResult,
 } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 interface Row extends Record<string, unknown> {
   id: string;
@@ -217,10 +217,9 @@ export function RagManagement() {
       header: t("rag.colChunk"),
       width: pixel(110),
       renderCell: (r: Row) => (
-        <Badge
-          variant={r.doc.vec_count === r.doc.chunk_count && r.doc.chunk_count > 0 ? "neutral" : "warning"}
-          label={`${r.doc.vec_count}/${r.doc.chunk_count}`}
-        />
+        <span className={`rx-tag ${r.doc.vec_count === r.doc.chunk_count && r.doc.chunk_count > 0 ? "rx-tag-forest" : "rx-tag-amber"}`}>
+          {r.doc.vec_count}/{r.doc.chunk_count}
+        </span>
       ),
     },
     { key: "created", header: t("rag.colCreated"), width: pixel(140), renderCell: (r: Row) => r.doc.created_at },
@@ -244,6 +243,8 @@ export function RagManagement() {
     },
   ];
 
+  const totalChunks = (docs ?? []).reduce((sum, d) => sum + (d.chunk_count ?? 0), 0);
+
   return (
     <VStack gap={5}>
       <VStack gap={3}>
@@ -253,6 +254,16 @@ export function RagManagement() {
             <Text type="supporting" color="secondary">{t("rag.subtitle")}</Text>
           </VStack>
           <Button label={t("rag.addDocument")} variant="primary" onClick={() => { setNewTitle(""); setNewText(""); setNewUri(""); setNewProject(""); setShowNew(true); }} />
+        </HStack>
+        <HStack gap={5}>
+          <VStack gap={0}>
+            <span className="rx-label">{t("common.title")}</span>
+            <span className="rx-display-sm">{docs?.length ?? "—"}</span>
+          </VStack>
+          <VStack gap={0}>
+            <span className="rx-label">{t("rag.colChunk")}</span>
+            <span className="rx-display-sm">{totalChunks}</span>
+          </VStack>
         </HStack>
         <HStack gap={2} wrap="wrap" vAlign="end">
           <Selector
@@ -282,7 +293,7 @@ export function RagManagement() {
       </VStack>
 
       {reindexResult && (
-        <Card variant={reindexResult.ok ? "green" : "red"}>
+        <Card variant={reindexResult.ok ? "green" : "red"} className="glass-card">
           <Text color="secondary">
             {reindexResult.ok
               ? `${reindexResult.chunks_embedded} chunk, ${reindexResult.memories_embedded} ${t("common.title").toLowerCase()}`
@@ -291,12 +302,13 @@ export function RagManagement() {
         </Card>
       )}
 
-      <Card>
+      <Card className="glass-card">
         <VStack gap={3}>
           <Heading level={4}>{t("rag.searchTestTitle")}</Heading>
           <Text type="supporting" color="secondary">{t("rag.searchTestDesc")}</Text>
           <HStack gap={2} vAlign="end">
             <TextInput
+              className="rx-search"
               label={t("common.search")}
               isLabelHidden
               placeholder={t("rag.searchPlaceholder")}
@@ -328,13 +340,13 @@ export function RagManagement() {
       </Card>
 
       {error && (
-        <Card variant="red">
+        <Card variant="red" className="glass-card">
           <Text color="secondary">{t("common.error")}: {error}</Text>
         </Card>
       )}
 
       {detail && (
-        <Card>
+        <Card className="glass-card">
           <VStack gap={3}>
             <HStack hAlign="between" vAlign="center">
               <Heading level={4}>{detail.title}</Heading>
@@ -353,7 +365,7 @@ export function RagManagement() {
                     <Text type="supporting" color="secondary">
                       Chunk #{c.seq}{c.heading ? ` — ${c.heading}` : ""}
                     </Text>
-                    <Text style={{ whiteSpace: "pre-wrap" }}>{c.text}</Text>
+                    <Markdown>{c.text}</Markdown>
                   </VStack>
                 ))}
               </VStack>

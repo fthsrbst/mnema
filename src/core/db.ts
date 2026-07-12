@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS machines(
   name TEXT PRIMARY KEY,
   host TEXT NOT NULL,
   lmstudio_port INTEGER,
+  ollama_port INTEGER,
   comfyui_port INTEGER,
   notes TEXT,
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
@@ -124,6 +125,8 @@ function migrate(database: Database.Database): void {
   addColumn("documents", "updated_at", "updated_at TEXT");
   addColumn("documents", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumn("session_logs", "uid", "uid TEXT");
+  // Yerel LLM backend'leri: LM Studio'ya ek olarak Ollama (OpenAI-uyumlu /v1)
+  addColumn("machines", "ollama_port", "ollama_port INTEGER");
   // Recall kalitesi: önem çarpanı + erişim takibi (bkz. memories.ts, search.ts)
   addColumn("memories", "importance", "importance REAL NOT NULL DEFAULT 1.0");
   addColumn("memories", "last_accessed", "last_accessed TEXT");

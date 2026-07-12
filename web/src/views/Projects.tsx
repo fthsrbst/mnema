@@ -14,6 +14,7 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api, type ProjectMap } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 const STATUS_OPTIONS = ["active", "paused", "done", "idea"];
 
@@ -138,7 +139,7 @@ export function Projects() {
           </HStack>
           <Button label={t("common.delete")} variant="destructive" onClick={() => setDeleteTarget(selected)} />
         </HStack>
-        <Card>
+        <Card className="glass-card">
           <VStack gap={3}>
             <TextArea label={t("projects.summary")} value={summary} onChange={setSummary} rows={2} />
             <HStack gap={3}>
@@ -155,11 +156,20 @@ export function Projects() {
           </VStack>
         </Card>
         {(selected.decisions?.length ?? 0) > 0 && (
-          <Card>
+          <Card className="glass-card">
             <VStack gap={2}>
               <Heading level={4}>{t("projects.decisions")}</Heading>
               {selected.decisions!.map((d, i) => (
-                <Text key={i} type="supporting">• {d}</Text>
+                <HStack
+                  key={i}
+                  gap={2}
+                  vAlign="start"
+                  style={i > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
+                  paddingBlock={i > 0 ? 2 : undefined}
+                >
+                  <Text type="supporting" color="secondary">•</Text>
+                  <Markdown headingLevelStart={6}>{d}</Markdown>
+                </HStack>
               ))}
             </VStack>
           </Card>
@@ -205,7 +215,7 @@ export function Projects() {
       ) : (
         <Grid columns={{ minWidth: 300, repeat: "fit" }} gap={4}>
           {projects.map((p) => (
-            <Card key={p.name}>
+            <Card key={p.name} className="glass-card">
               <VStack gap={2}>
                 <HStack gap={2} vAlign="center" hAlign="between">
                   <Heading level={4}>{p.name}</Heading>

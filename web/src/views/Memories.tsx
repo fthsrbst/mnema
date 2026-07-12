@@ -20,6 +20,19 @@ interface Row extends Record<string, unknown> {
 
 const MEMORY_TYPES = ["fact", "preference", "decision", "howto", "context"];
 
+// Sabit tag paleti eşlemesi — tüm görünümlerde aynı tutulmalı (bkz. Sessions/Projects/Learning).
+const MEMORY_TYPE_TAG_CLASS: Record<string, string> = {
+  decision: "rx-tag-navy",
+  howto: "rx-tag-forest",
+  preference: "rx-tag-amber",
+  context: "rx-tag-blue",
+  fact: "rx-tag-blue",
+};
+
+function memoryTypeTagClass(type: string): string {
+  return MEMORY_TYPE_TAG_CLASS[type] ?? "rx-tag-blue";
+}
+
 export function Memories() {
   const { t } = useI18n();
   const toast = useToast();
@@ -72,7 +85,12 @@ export function Memories() {
   };
 
   const columns: TableColumn<Row>[] = [
-    { key: "type", header: t("memories.colType"), width: pixel(100), renderCell: (r: Row) => r.mem.type },
+    {
+      key: "type",
+      header: t("memories.colType"),
+      width: pixel(100),
+      renderCell: (r: Row) => <span className={`rx-tag ${memoryTypeTagClass(r.mem.type)}`}>{r.mem.type}</span>,
+    },
     { key: "title", header: t("memories.colTitle"), width: proportional(1), renderCell: (r: Row) => r.mem.title },
     { key: "project", header: t("memories.colProject"), width: pixel(120), renderCell: (r: Row) => r.mem.project ?? "—" },
     { key: "updated", header: t("memories.colUpdated"), width: pixel(150), renderCell: (r: Row) => r.mem.updated_at },
@@ -159,6 +177,7 @@ export function Memories() {
       </HStack>
       <HStack gap={2} vAlign="end">
         <TextInput
+          className="rx-search"
           label={t("common.search")}
           isLabelHidden
           placeholder={t("memories.searchPlaceholder")}
@@ -179,7 +198,7 @@ export function Memories() {
       </HStack>
       {error && <Text color="secondary">{t("common.error")}: {error}</Text>}
       {editing && (
-        <Card>
+        <Card className="glass-card">
           <VStack gap={3}>
             <Heading level={4}>{selected ? `#${selected.id} ${t("memories.editTitle")}` : t("memories.newTitle")}</Heading>
             <TextInput label={t("common.title")} value={draft.title} onChange={(v: string) => setDraft({ ...draft, title: v })} isRequired />

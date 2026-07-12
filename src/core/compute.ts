@@ -10,6 +10,7 @@ export interface Machine {
   name: string;
   host: string;
   lmstudio_port: number | null;
+  ollama_port: number | null;
   comfyui_port: number | null;
   notes: string | null;
   updated_at?: string;
@@ -17,8 +18,12 @@ export interface Machine {
 
 export interface MachineStatus extends Machine {
   lmstudio: { online: boolean; models: string[] };
+  ollama: { online: boolean; models: string[] };
   comfyui: { online: boolean };
 }
+
+/** Yerel LLM backend'i — ikisi de OpenAI-uyumlu /v1 API sunar. */
+export type LlmBackend = "lmstudio" | "ollama";
 
 const OUTPUT_DIR = "./data/outputs";
 
@@ -39,15 +44,16 @@ async function fetchJson<T>(url: string, init?: RequestInit, timeoutMs = 5000): 
 export function upsertMachine(m: Omit<Machine, "updated_at">): Machine {
   getDb()
     .prepare(
-      `INSERT INTO machines(name, host, lmstudio_port, comfyui_port, notes, updated_at)
-       VALUES (@name, @host, @lmstudio_port, @comfyui_port, @notes, ${NOW_MS})
+      `INSERT INTO machines(name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at)
+       VALUES (@name, @host, @lmstudio_port, @ollama_port, @comfyui_port, @notes, ${NOW_MS})
        ON CONFLICT(name) DO UPDATE SET host=@host, lmstudio_port=@lmstudio_port,
-         comfyui_port=@comfyui_port, notes=@notes, updated_at=${NOW_MS}`
+         ollama_port=@ollama_port, comfyui_port=@comfyui_port, notes=@notes, updated_at=${NOW_MS}`
     )
     .run({
       name: m.name,
       host: m.host,
       lmstudio_port: m.lmstudio_port ?? null,
+      ollama_port: m.ollama_port ?? null,
       comfyui_port: m.comfyui_port ?? null,
       notes: m.notes ?? null,
     });
@@ -79,6 +85,7 @@ export async function machinesStatus(): Promise<MachineStatus[]> {
       const status: MachineStatus = {
         ...m,
         lmstudio: { online: false, models: [] },
+        ollama: { online: false, models: [] },
         comfyui: { online: false },
       };
       if (m.lmstudio_port) {
@@ -87,6 +94,14 @@ export async function machinesStatus(): Promise<MachineStatus[]> {
             `http://${m.host}:${m.lmstudio_port}/v1/models`, undefined, 3000
           );
           status.lmstudio = { online: true, models: res.data.map((d) => d.id) };
+        } catch { /* offline */ }
+      }
+      if (m.ollama_port) {
+        try {
+          const res = await fetchJson<{ data: { id: string }[] }>(
+            `http://${m.host}:${m.ollama_port}/v1/models`, undefined, 3000
+          );
+          status.ollama = { online: true, models: res.data.map((d) => d.id) };
         } catch { /* offline */ }
       }
       if (m.comfyui_port) {
@@ -100,10 +115,11 @@ export async function machinesStatus(): Promise<MachineStatus[]> {
   );
 }
 
-// --- LM Studio (OpenAI-uyumlu) ---
+// --- Yerel LLM (LM Studio / Ollama — ikisi de OpenAI-uyumlu /v1) ---
 
 export interface LocalLlmResult {
   machine: string;
+  backend: LlmBackend;
   model: string;
   content: string;
   usage?: unknown;
@@ -111,22 +127,52 @@ export interface LocalLlmResult {
 
 export async function localLlm(opts: {
   machine?: string;
+  backend?: LlmBackend;
   model?: string;
   messages?: { role: string; content: string }[];
   prompt?: string;
   temperature?: number;
   max_tokens?: number;
 }): Promise<LocalLlmResult> {
-  const candidates = listMachines().filter((m) => m.lmstudio_port);
-  if (candidates.length === 0) throw new Error("LM Studio portu tanımlı makine yok (machine_register ile ekle)");
-  const machine = opts.machine ? candidates.find((m) => m.name === opts.machine) : candidates[0];
-  if (!machine) throw new Error(`'${opts.machine}' makinesi yok veya LM Studio portu tanımsız`);
+  const hasBackend = (m: Machine, b?: LlmBackend) =>
+    b === "lmstudio" ? !!m.lmstudio_port : b === "ollama" ? !!m.ollama_port : !!(m.lmstudio_port || m.ollama_port);
+  const candidates = listMachines().filter((m) => hasBackend(m, opts.backend));
+  if (candidates.length === 0) {
+    throw new Error(
+      opts.backend
+        ? `${opts.backend} portu tanımlı makine yok (machine_register ile ekle)`
+        : "LM Studio/Ollama portu tanımlı makine yok (machine_register ile ekle)"
+    );
+  }
+  let machine: Machine | undefined;
+  if (opts.machine) {
+    machine = candidates.find((m) => m.name === opts.machine);
+    if (!machine) throw new Error(`'${opts.machine}' makinesi yok veya istenen yerel LLM portu tanımsız`);
+  } else {
+    // Makine belirtilmediyse erişilebilir ilk makineyi seç — kayıt sırası alfabetik
+    // olduğundan kapalı bir makine (örn. uyuyan laptop) listede önce gelebilir.
+    for (const c of candidates) {
+      const b: LlmBackend = opts.backend ?? (c.lmstudio_port ? "lmstudio" : "ollama");
+      const p = b === "lmstudio" ? c.lmstudio_port : c.ollama_port;
+      try {
+        await fetchJson(`http://${c.host}:${p}/v1/models`, undefined, 2500);
+        machine = c;
+        break;
+      } catch {
+        /* erişilemiyor, sıradakine geç */
+      }
+    }
+    if (!machine) throw new Error("Erişilebilir yerel LLM makinesi yok (hepsi offline — machine_status ile kontrol et)");
+  }
 
-  const base = `http://${machine.host}:${machine.lmstudio_port}/v1`;
+  // Backend seçimi: istenen backend, yoksa LM Studio öncelikli
+  const backend: LlmBackend = opts.backend ?? (machine.lmstudio_port ? "lmstudio" : "ollama");
+  const port = backend === "lmstudio" ? machine.lmstudio_port : machine.ollama_port;
+  const base = `http://${machine.host}:${port}/v1`;
   let model = opts.model;
   if (!model) {
     const res = await fetchJson<{ data: { id: string }[] }>(`${base}/models`, undefined, 4000);
-    if (res.data.length === 0) throw new Error(`${machine.name}: LM Studio'da yüklü model yok`);
+    if (res.data.length === 0) throw new Error(`${machine.name}: ${backend} üzerinde yüklü model yok`);
     model = res.data[0].id;
   }
   let messages = opts.messages ?? [{ role: "user", content: opts.prompt ?? "" }];
@@ -150,7 +196,7 @@ export async function localLlm(opts: {
     },
     180000 // yerel model yavaş olabilir
   );
-  return { machine: machine.name, model, content: res.choices[0]?.message?.content ?? "", usage: res.usage };
+  return { machine: machine.name, backend, model, content: res.choices[0]?.message?.content ?? "", usage: res.usage };
 }
 
 // --- ComfyUI ---

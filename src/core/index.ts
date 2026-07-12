@@ -6,6 +6,7 @@ export * from "./types.js";
 export * from "./events.js";
 export * from "./memories.js";
 export * from "./documents.js";
+export * from "./extract.js";
 export * from "./projects.js";
 export * from "./sessions.js";
 export * from "./recall.js";

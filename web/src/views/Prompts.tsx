@@ -10,7 +10,6 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Banner } from "@astryxdesign/core/Banner";
 import { TabList, Tab } from "@astryxdesign/core/TabList";
 import { Markdown } from "@astryxdesign/core/Markdown";
-import { Badge } from "@astryxdesign/core/Badge";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api, type PromptList } from "../api";
@@ -113,7 +112,7 @@ export function Prompts() {
           <HStack gap={3} vAlign="center">
             <Button label={t("common.back")} variant="secondary" onClick={() => setSelected(null)} />
             <Heading level={3}>{selected}</Heading>
-            {isMaster && <Badge variant="purple" label={t("prompts.master")} />}
+            {isMaster && <span className="rx-tag rx-tag-navy">{t("prompts.master")}</span>}
           </HStack>
           <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} isDisabled={saving || !isDirty} />
         </HStack>
@@ -153,12 +152,12 @@ export function Prompts() {
               />
             )}
             {tab === "preview" && (
-              <Card>
+              <Card className="glass-card">
                 <Markdown headingLevelStart={4}>{draft || "*Boş*"}</Markdown>
               </Card>
             )}
             {tab === "composed" && !isMaster && (
-              <Card>
+              <Card className="glass-card">
                 <Markdown headingLevelStart={4}>{composed || "*Boş*"}</Markdown>
               </Card>
             )}
@@ -193,12 +192,12 @@ export function Prompts() {
           {list.master && (
             <VStack gap={2}>
               <Heading level={4}>{t("prompts.master")}</Heading>
-              <Card>
+              <Card className="glass-card">
                 <HStack hAlign="between" vAlign="center">
                   <VStack gap={1}>
                     <HStack gap={2} vAlign="center">
                       <Text>{list.master.name}</Text>
-                      <Badge variant="purple" label={t("prompts.master")} />
+                      <span className="rx-tag rx-tag-navy">{t("prompts.master")}</span>
                     </HStack>
                     <Text type="supporting" color="secondary">{list.master.description || t("prompts.noDescription")}</Text>
                   </VStack>
@@ -215,7 +214,7 @@ export function Prompts() {
             ) : (
               <Grid columns={{ minWidth: 280, repeat: "fit" }} gap={3}>
                 {list.roles.map((r) => (
-                  <Card key={r.name}>
+                  <Card key={r.name} className="glass-card">
                     <VStack gap={2}>
                       <Text>{r.name}</Text>
                       <Text type="supporting" color="secondary">{r.description || t("prompts.noDescription")}</Text>

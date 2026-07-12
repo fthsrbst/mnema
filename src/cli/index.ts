@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
-import { api, loadCliConfig, saveCliConfig } from "./client.js";
+import { api, apiUpload, loadCliConfig, saveCliConfig } from "./client.js";
 import { sync } from "./sync.js";
 import { connectAgents, detectAgents, printAgentsTable } from "./agents.js";
 import type { Memory, ProjectMap, ScoredChunk, ScoredMemory, SessionLog } from "../core/types.js";
@@ -82,19 +82,22 @@ program
   .action(async (words: string[] | undefined, opts: { hook?: boolean; project?: string }) => {
     let query = (words ?? []).join(" ");
     if (opts.hook) {
+      let cwd = "";
       try {
         const stdin = fs.readFileSync(0, "utf8");
-        const parsed = JSON.parse(stdin) as { prompt?: string };
+        const parsed = JSON.parse(stdin) as { prompt?: string; cwd?: string };
         query = parsed.prompt ?? "";
+        cwd = parsed.cwd ?? "";
       } catch {
         process.exit(0);
       }
       // Kısa mesajlar ve slash komutları için arama yapma
       if (query.trim().length < 8 || query.trim().startsWith("/")) process.exit(0);
       try {
+        const cwdParam = cwd ? `&cwd=${encodeURIComponent(cwd)}` : "";
         const text = await api<string>(
           "GET",
-          `/api/recall?q=${encodeURIComponent(query)}&format=text`,
+          `/api/recall?q=${encodeURIComponent(query)}${cwdParam}&format=text`,
           undefined,
           { timeoutMs: 2500 }
         );
@@ -108,6 +111,44 @@ program
     try {
       const proj = opts.project ? `&project=${encodeURIComponent(opts.project)}` : "";
       console.log(await api<string>("GET", `/api/recall?q=${encodeURIComponent(query)}${proj}&format=text`));
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("bridge")
+  .description("Oturum köprüsü: aktif projenin map'i + son oturum özeti. --hook: SessionStart için stdin JSON okur")
+  .option("--hook", "Claude Code hook modu (stdin JSON, sessiz hata)")
+  .option("-p, --project <name>")
+  .action(async (opts: { hook?: boolean; project?: string }) => {
+    let cwd = process.cwd();
+    let project = opts.project ?? "";
+    if (opts.hook) {
+      try {
+        const stdin = fs.readFileSync(0, "utf8");
+        const parsed = JSON.parse(stdin) as { cwd?: string };
+        cwd = parsed.cwd ?? cwd;
+      } catch {
+        process.exit(0);
+      }
+      try {
+        const proj = project ? `&project=${encodeURIComponent(project)}` : "";
+        const text = await api<string>(
+          "GET",
+          `/api/bridge?cwd=${encodeURIComponent(cwd)}${proj}`,
+          undefined,
+          { timeoutMs: 2500 }
+        );
+        if (text.trim()) console.log(text);
+      } catch {
+        /* hub kapalıysa oturumu bloklama */
+      }
+      process.exit(0);
+    }
+    try {
+      const proj = project ? `&project=${encodeURIComponent(project)}` : "";
+      console.log(await api<string>("GET", `/api/bridge?cwd=${encodeURIComponent(cwd)}${proj}`) || "(köprü boş: cwd bir proje map'ine çözülemedi)");
     } catch (err) {
       fail(err);
     }
@@ -156,6 +197,8 @@ program
   });
 
 const INDEXABLE = new Set([".md", ".txt", ".mdx", ".rst", ".adoc"]);
+// Binary formatlar sunucuda parse edilir (/api/rag/upload) — metin dosyaları JSON ile gider.
+const BINARY_INDEXABLE = new Set([".pdf", ".docx"]);
 
 function collectFiles(target: string): string[] {
   const stat = fs.statSync(target);
@@ -165,26 +208,38 @@ function collectFiles(target: string): string[] {
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const full = path.join(target, entry.name);
     if (entry.isDirectory()) out.push(...collectFiles(full));
-    else if (INDEXABLE.has(path.extname(entry.name).toLowerCase())) out.push(full);
+    else if (
+      INDEXABLE.has(path.extname(entry.name).toLowerCase()) ||
+      BINARY_INDEXABLE.has(path.extname(entry.name).toLowerCase())
+    )
+      out.push(full);
   }
   return out;
 }
 
 program
   .command("index <paths...>")
-  .description("Dosya/klasörleri RAG'e indeksle (.md .txt .mdx .rst .adoc)")
+  .description("Dosya/klasörleri RAG'e indeksle (.md .txt .mdx .rst .adoc + .pdf .docx)")
   .option("-p, --project <name>")
   .action(async (paths: string[], opts: { project?: string }) => {
     try {
       const files = paths.flatMap((p) => collectFiles(path.resolve(p)));
       if (files.length === 0) return console.log("indekslenecek dosya yok");
       for (const file of files) {
-        const text = fs.readFileSync(file, "utf8");
-        const res = await api<{ document_id: number; chunk_count: number; embedded: boolean }>(
-          "POST",
-          "/api/rag/documents",
-          { title: path.basename(file), text, uri: file, project: opts.project, source: "hub-cli" }
-        );
+        const name = path.basename(file);
+        let res: { document_id: number; chunk_count: number; embedded: boolean };
+        if (BINARY_INDEXABLE.has(path.extname(file).toLowerCase())) {
+          const q = new URLSearchParams({ filename: name, title: name, uri: file });
+          if (opts.project) q.set("project", opts.project);
+          res = await apiUpload(`/api/rag/upload?${q}`, fs.readFileSync(file));
+        } else {
+          const text = fs.readFileSync(file, "utf8");
+          res = await api(
+            "POST",
+            "/api/rag/documents",
+            { title: name, text, uri: file, project: opts.project, source: "hub-cli" }
+          );
+        }
         console.log(`${file} → doc #${res.document_id} (${res.chunk_count} chunk${res.embedded ? ", embed edildi" : ", FTS-only"})`);
       }
     } catch (err) {
@@ -280,12 +335,14 @@ program
   .description("Kayıtlı makineler ve yerel AI servislerinin canlı durumu")
   .action(async () => {
     try {
-      const machines = await api<{ name: string; host: string; lmstudio: { online: boolean; models: string[] }; comfyui: { online: boolean } }[]>("GET", "/api/machines/status");
+      const machines = await api<{ name: string; host: string; lmstudio: { online: boolean; models: string[] }; ollama: { online: boolean; models: string[] }; comfyui: { online: boolean } }[]>("GET", "/api/machines/status");
       if (machines.length === 0) return console.log("kayıtlı makine yok");
       for (const m of machines) {
         console.log(`${m.name} (${m.host})`);
         console.log(`  LM Studio: ${m.lmstudio.online ? `açık — ${m.lmstudio.models.length} model` : "kapalı/tanımsız"}`);
         if (m.lmstudio.models.length) console.log(`    ${m.lmstudio.models.join("\n    ")}`);
+        console.log(`  Ollama:    ${m.ollama?.online ? `açık — ${m.ollama.models.length} model` : "kapalı/tanımsız"}`);
+        if (m.ollama?.models.length) console.log(`    ${m.ollama.models.join("\n    ")}`);
         console.log(`  ComfyUI:   ${m.comfyui.online ? "açık" : "kapalı/tanımsız"}`);
       }
     } catch (err) {
@@ -295,14 +352,15 @@ program
 
 program
   .command("llm <prompt...>")
-  .description("Yerel LM Studio modeliyle üretim (API maliyeti yok)")
+  .description("Yerel modelle üretim — LM Studio veya Ollama (API maliyeti yok)")
   .option("-m, --model <model>")
   .option("--machine <name>")
-  .action(async (words: string[], opts: { model?: string; machine?: string }) => {
+  .option("--backend <backend>", "lmstudio | ollama (boşsa LM Studio öncelikli)")
+  .action(async (words: string[], opts: { model?: string; machine?: string; backend?: string }) => {
     try {
       const res = await api<{ machine: string; model: string; content: string }>(
         "POST", "/api/llm",
-        { prompt: words.join(" "), model: opts.model, machine: opts.machine },
+        { prompt: words.join(" "), model: opts.model, machine: opts.machine, backend: opts.backend },
         { timeoutMs: 180000 }
       );
       console.log(`[${res.machine} / ${res.model}]\n${res.content}`);

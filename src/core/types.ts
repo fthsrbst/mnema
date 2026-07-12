@@ -35,6 +35,8 @@ export interface SearchFilters {
 
 export interface ScoredMemory extends Memory {
   score: number;
+  /** Hangi arama kanalları buldu ("fts"/"vec"). Recall'un anlamsal kanıt kapısı kullanır. */
+  channels?: ("fts" | "vec")[];
 }
 
 /** Kayıt anında bulunan olası benzer/tekrar (dedup) hafıza. */
@@ -66,6 +68,8 @@ export interface ScoredChunk {
   heading: string | null;
   text: string;
   score: number;
+  /** Hangi arama kanalları buldu ("fts"/"vec"). Recall'un anlamsal kanıt kapısı kullanır. */
+  channels?: ("fts" | "vec")[];
 }
 
 export interface ProjectMap {

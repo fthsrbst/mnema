@@ -32,6 +32,31 @@ export function saveCliConfig(patch: Partial<CliConfig>): CliConfig {
   return merged;
 }
 
+/** Binary dosya yükleme (PDF/DOCX): gövde ham bayt, meta query-string'de. */
+export async function apiUpload<T = unknown>(
+  route: string,
+  data: Buffer,
+  opts: { timeoutMs?: number } = {}
+): Promise<T> {
+  const cfg = loadCliConfig();
+  const headers: Record<string, string> = { "Content-Type": "application/octet-stream" };
+  if (cfg.token) headers.Authorization = `Bearer ${cfg.token}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 60000);
+  try {
+    const res = await fetch(`${cfg.url}${route}`, {
+      method: "POST",
+      headers,
+      body: new Uint8Array(data),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`POST ${route} → ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function api<T = unknown>(
   method: string,
   route: string,
