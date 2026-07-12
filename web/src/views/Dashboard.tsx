@@ -288,7 +288,14 @@ function UsageSection({ usage, formatRelative }: { usage: UsageStats; formatRela
                     label={it.title}
                     labelLines={1}
                     description={it.project ? `${it.type} · ${it.project}` : it.type}
-                    endContent={<Text type="supporting" color="secondary">{formatRelative(it.last_accessed)}</Text>}
+                    endContent={
+                      <HStack gap={2} vAlign="center">
+                        {it.importance >= 1.5 && (
+                          <Badge variant="warning" label={`${t("dashboard.usageImportance")} ${it.importance}`} />
+                        )}
+                        <Text type="supporting" color="secondary">{formatRelative(it.last_accessed)}</Text>
+                      </HStack>
+                    }
                   />
                 ))
               )}

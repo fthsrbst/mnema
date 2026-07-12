@@ -68,6 +68,7 @@ export interface UsageMemoryItem {
   project: string | null;
   access_count: number;
   last_accessed: string | null;
+  importance: number;
 }
 
 export interface UsageStats {
@@ -78,20 +79,25 @@ export interface UsageStats {
 }
 
 /**
- * Hafıza kullanım istatistikleri: en çok erişilenler + bayatlamış (90+ gün dokunulmamış
- * veya hiç erişilmemiş) kayıtlar. Web admin paneli için — kontrat frontend'le sabit, değiştirme.
+ * Hafıza kullanım istatistikleri: en çok erişilenler + bayatlamış kayıtlar.
+ * Web admin paneli için — kontrat frontend'le sabit, değiştirme.
+ * Bayat tanımı: 90+ gündür erişilmemiş VEYA hiç erişilmemiş ama 90+ gün önce
+ * oluşturulmuş — taze kayıt daha şansını bulamadığı için "ölü" sayılmaz.
+ * Sıralama importance-öncelikli: yüksek önemli bayat kayıt recall'u en çok
+ * çarpıtandır (importance çarpanı skoru şişirir), önce o gözden geçirilmeli.
  */
 export function usageStats(): UsageStats {
   const db = getDb();
-  const fields = "id, title, type, project, access_count, last_accessed";
-  const staleCond = "(last_accessed IS NULL OR last_accessed < datetime('now', '-90 days'))";
+  const fields = "id, title, type, project, access_count, last_accessed, importance";
+  const staleCond = `((last_accessed IS NULL AND created_at < datetime('now', '-90 days'))
+    OR last_accessed < datetime('now', '-90 days'))`;
   const top = db
     .prepare(`SELECT ${fields} FROM memories ORDER BY access_count DESC LIMIT 10`)
     .all() as UsageMemoryItem[];
   const stale = db
     .prepare(
       `SELECT ${fields} FROM memories WHERE ${staleCond}
-       ORDER BY last_accessed IS NOT NULL, last_accessed ASC LIMIT 20`
+       ORDER BY importance DESC, last_accessed IS NOT NULL, last_accessed ASC LIMIT 20`
     )
     .all() as UsageMemoryItem[];
   const stale_count = (db.prepare(`SELECT COUNT(*) AS n FROM memories WHERE ${staleCond}`).get() as { n: number }).n;

@@ -41,6 +41,7 @@ export interface SyncMemory {
   created_at: string;
   updated_at: string;
   importance?: number; // eski peer göndermezse 1.0 varsayılır
+  related?: string; // JSON uid listesi; eski peer göndermezse '[]'
   embedding?: string; // base64 float32
 }
 
@@ -96,6 +97,7 @@ export function collectChanges(since: string): SyncPayload {
     uid: m.uid, type: m.type, title: m.title, body: m.body, project: m.project,
     tags: m.tags, source: m.source, created_at: m.created_at, updated_at: m.updated_at,
     importance: m.importance ?? 1.0,
+    related: m.related ?? "[]",
     // last_accessed/access_count kasıtlı olarak taşınmaz — cihaz-yerel istatistik
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
@@ -145,27 +147,27 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   const result: ApplyResult = { memories: 0, documents: 0, projects: 0, sessions: 0, machines: 0, deletions: 0 };
 
   for (const raw of payload.memories ?? []) {
-    // eski peer importance göndermezse 1.0 varsay
-    const m = { ...raw, importance: raw.importance ?? 1.0 };
+    // eski peer importance/related göndermezse varsayılanla doldur
+    const m = { ...raw, importance: raw.importance ?? 1.0, related: raw.related ?? "[]" };
     // Bu uid bizde daha yeni silinmişse alma
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE uid = ?").get(m.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= m.updated_at) continue;
     const local = db.prepare("SELECT * FROM memories WHERE uid = ?").get(m.uid) as
-      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance: number }
+      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance: number; related: string | null }
       | undefined;
     if (local) {
-      const memFp = (r: { type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance?: number }) =>
-        contentFingerprint([r.type, r.title, r.body, r.project, r.tags, r.source, r.importance ?? 1.0]);
+      const memFp = (r: { type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance?: number; related?: string | null }) =>
+        contentFingerprint([r.type, r.title, r.body, r.project, r.tags, r.source, r.importance ?? 1.0, r.related ?? "[]"]);
       if (!remoteWins(local.updated_at, m.updated_at, () => memFp(local), () => memFp(m))) continue;
       db.prepare(
         `UPDATE memories SET type=@type, title=@title, body=@body, project=@project, tags=@tags,
-         source=@source, importance=@importance, updated_at=@updated_at WHERE uid=@uid`
+         source=@source, importance=@importance, related=@related, updated_at=@updated_at WHERE uid=@uid`
       ).run(m);
       insertVec("memories_vec", local.id, m.embedding);
     } else {
       const info = db.prepare(
-        `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, created_at, updated_at)
-         VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, @created_at, @updated_at)`
+        `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, related, created_at, updated_at)
+         VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, @related, @created_at, @updated_at)`
       ).run(m);
       insertVec("memories_vec", Number(info.lastInsertRowid), m.embedding);
     }

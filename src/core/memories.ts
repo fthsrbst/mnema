@@ -5,7 +5,7 @@ import { embedOne, toBuffer } from "./embeddings.js";
 import { notifyWrite } from "./events.js";
 import { hybridSearch } from "./search.js";
 import { recordDeletion } from "./sync.js";
-import type { Memory, MemoryInput, SavedMemory, ScoredMemory, SearchFilters, SimilarHit } from "./types.js";
+import type { Memory, MemoryInput, RelatedRef, SavedMemory, ScoredMemory, SearchFilters, SimilarHit } from "./types.js";
 
 /** Önem çarpanını 0.5–2.0 aralığına kelepçeler. */
 function clampImportance(v: number | undefined): number {
@@ -14,7 +14,40 @@ function clampImportance(v: number | undefined): number {
 }
 
 function rowToMemory(row: Record<string, unknown>): Memory {
-  return { ...(row as unknown as Memory), tags: JSON.parse((row.tags as string) ?? "[]") };
+  return {
+    ...(row as unknown as Memory),
+    tags: JSON.parse((row.tags as string) ?? "[]"),
+    related: JSON.parse((row.related as string) ?? "[]"),
+  };
+}
+
+/**
+ * Yerel id listesini uid listesine çevirir (bağlantı saklama için). Bilinmeyen id'ler
+ * ve kendine bağlantı sessizce atlanır — agent'ın elindeki id bayat olabilir,
+ * bu yüzden hata yerine daralt.
+ */
+function idsToUids(ids: number[] | undefined, selfId?: number): string[] {
+  if (!ids || ids.length === 0) return [];
+  const stmt = getDb().prepare("SELECT uid FROM memories WHERE id = ?");
+  const uids: string[] = [];
+  for (const id of new Set(ids)) {
+    if (id === selfId) continue;
+    const row = stmt.get(id) as { uid: string } | undefined;
+    if (row?.uid) uids.push(row.uid);
+  }
+  return uids;
+}
+
+/** Bağlantılı uid'leri bu cihazdaki id + başlığa çözer (silinmiş/henüz sync olmamışlar atlanır). */
+export function resolveRelated(mem: Pick<Memory, "related">): RelatedRef[] {
+  if (!mem.related || mem.related.length === 0) return [];
+  const stmt = getDb().prepare("SELECT id, title FROM memories WHERE uid = ?");
+  const out: RelatedRef[] = [];
+  for (const uid of mem.related) {
+    const row = stmt.get(uid) as RelatedRef | undefined;
+    if (row) out.push(row);
+  }
+  return out;
 }
 
 /**
@@ -54,8 +87,8 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, created_at, updated_at)
-       VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, ${NOW_MS}, ${NOW_MS})`
+      `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, related, created_at, updated_at)
+       VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, @related, ${NOW_MS}, ${NOW_MS})`
     )
     .run({
       uid: randomUUID().replaceAll("-", ""),
@@ -66,6 +99,7 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
       tags: JSON.stringify(input.tags ?? []),
       source: input.source ?? null,
       importance: clampImportance(input.importance),
+      related: JSON.stringify(idsToUids(input.related_ids)),
     });
   const id = Number(info.lastInsertRowid);
   const similar = await upsertVector(id, input.title, input.body);
@@ -91,12 +125,14 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
     project: patch.project === undefined ? existing.project : patch.project,
     tags: JSON.stringify(patch.tags ?? existing.tags),
     importance: patch.importance === undefined ? existing.importance : clampImportance(patch.importance),
+    // related_ids verilirse TAM listeyi değiştirir (ekleme değil) — memory_update sözleşmesiyle tutarlı
+    related: patch.related_ids === undefined ? JSON.stringify(existing.related) : JSON.stringify(idsToUids(patch.related_ids, id)),
     id,
   };
   getDb()
     .prepare(
       `UPDATE memories SET type=@type, title=@title, body=@body, project=@project,
-       tags=@tags, importance=@importance, updated_at=${NOW_MS} WHERE id=@id`
+       tags=@tags, importance=@importance, related=@related, updated_at=${NOW_MS} WHERE id=@id`
     )
     .run(merged);
   if (patch.title !== undefined || patch.body !== undefined) {

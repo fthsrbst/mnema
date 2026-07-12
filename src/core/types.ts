@@ -11,6 +11,8 @@ export interface Memory {
   importance: number;
   last_accessed: string | null;
   access_count: number;
+  /** Bağlantılı hafızaların uid'leri (id değil — id'ler cihaz-yerel, uid sync'te sabit). */
+  related: string[];
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +26,27 @@ export interface MemoryInput {
   source?: string;
   /** Önem çarpanı; 0.5–2.0 aralığına kelepçelenir. 2=kritik karar, 1=normal, 0.5=önemsiz detay. */
   importance?: number;
+  /** Bağlantılı hafıza id'leri (yerel) — uid'e çevrilerek saklanır; bilinmeyen id sessizce atlanır. */
+  related_ids?: number[];
+}
+
+/** Bağlantılı hafızanın yerel çözümü (uid → bu cihazdaki id + başlık). */
+export interface RelatedRef {
+  id: number;
+  title: string;
+}
+
+export type FeedbackVerdict = "noisy" | "missing" | "helpful";
+
+/** Agent'lardan gelen recall kalite geri bildirimi — eşik kalibrasyonu verisi (cihaz-yerel). */
+export interface RecallFeedback {
+  id: number;
+  query: string;
+  verdict: FeedbackVerdict;
+  memory_id: number | null;
+  note: string | null;
+  source: string | null;
+  created_at: string;
 }
 
 export interface SearchFilters {

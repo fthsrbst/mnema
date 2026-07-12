@@ -1,7 +1,7 @@
 import { config } from "./config.js";
 import { hasVec } from "./db.js";
 import { embeddingsEnabled } from "./embeddings.js";
-import { searchMemories } from "./memories.js";
+import { resolveRelated, searchMemories } from "./memories.js";
 import { searchChunks } from "./documents.js";
 import { getProject, resolveProjectFromPath } from "./projects.js";
 import { recentSessionLogs } from "./sessions.js";
@@ -86,6 +86,9 @@ export function formatRecall(result: RecallResult): string {
   for (const m of result.memories) {
     const body = m.body.length > 400 ? m.body.slice(0, 400) + "…" : m.body;
     lines.push(`- [memory #${m.id} | ${m.type}${m.project ? ` | ${m.project}` : ""}] ${m.title}: ${body}`);
+    // Bağlantılı kayıtlar tek satır başlık olarak gelir — agent derine inmek isterse id ile çeker
+    const rel = resolveRelated(m).slice(0, 3);
+    if (rel.length > 0) lines.push(`  ilgili: ${rel.map((r) => `#${r.id} ${r.title}`).join(" · ")}`);
   }
   for (const c of result.chunks) {
     const text = c.text.length > 400 ? c.text.slice(0, 400) + "…" : c.text;

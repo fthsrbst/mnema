@@ -5,6 +5,7 @@ export { chunkMarkdown } from "./chunker.js";
 export * from "./types.js";
 export * from "./events.js";
 export * from "./memories.js";
+export * from "./feedback.js";
 export * from "./documents.js";
 export * from "./extract.js";
 export * from "./projects.js";
