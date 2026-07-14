@@ -1,15 +1,25 @@
 # Mnema
 
-<p align="center"><img src="docs/assets/logo.png" width="160" alt="Mnema logo"/></p>
+<p align="center">
+  <img src="docs/assets/site-hero.png" width="100%" alt="Mnema — one memory for every AI agent"/>
+</p>
 
 <p align="center"><strong>One memory for every AI agent.</strong></p>
 
-
 <p align="center">
+  <a href="https://fthsrbst.github.io/mnema/"><img src="https://img.shields.io/badge/site-fthsrbst.github.io%2Fmnema-39ff14?logo=github&logoColor=white&labelColor=000" alt="Live site"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="package.json"><img src="https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white" alt="Node >=22"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-6b46c1" alt="MCP"></a>
   <a href="deploy/setup-pi.sh"><img src="https://img.shields.io/badge/deploy-self--hosted-orange" alt="Self-hosted"></a>
+</p>
+
+<p align="center">
+  <a href="https://fthsrbst.github.io/mnema/">Live site</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#connecting-agents">Connect an agent</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="PLAN.md">Full architecture</a>
 </p>
 
 Claude Code, Cursor, opencode, Codex CLI, and custom agents each keep their own
@@ -24,14 +34,12 @@ across every machine and every agent.
 
 Multi-agent workflows have a context problem:
 
-- A decision made while pairing with Claude Code isn't visible to Cursor an
-  hour later.
-- Switching from your desktop to your laptop (or your phone) means re-explaining
-  what you were doing.
-- Every agent re-derives project context from scratch instead of reading a
-  shared, structured map.
-- "I learned X yesterday" has no durable home — it either lives in scrollback
-  or nowhere.
+| Without a hub | With Mnema |
+|---|---|
+| A decision made while pairing with Claude Code isn't visible to Cursor an hour later | Decisions saved once, with rationale, retrievable by any agent |
+| Switching desktop → laptop means re-explaining everything | Project maps follow you across every machine on your mesh |
+| Every agent re-derives project context from scratch | Relevant memory is auto-injected into each message — precisely filtered |
+| "I learned X yesterday" lives in scrollback — or nowhere | Notes and research live in a searchable RAG store, forever |
 
 Mnema is a deliberately small answer to that: one server, one SQLite file,
 one protocol (MCP) that every agent already speaks, plus REST for anything
@@ -40,6 +48,10 @@ just enough infrastructure to make memory persistent and searchable across
 tools and devices.
 
 ## Features
+
+<p align="center">
+  <img src="docs/assets/site-modules.png" width="100%" alt="Mnema system modules: memory, RAG store, auto-recall, project maps, MCP + REST, local AI orchestration, relationship graph, cross-device sync, web UI"/>
+</p>
 
 - **Shared memory** — facts, preferences, decisions (with rationale), and
   how-tos, saved by any agent and retrievable by any other. Hybrid search
@@ -74,6 +86,10 @@ tools and devices.
   (`architecture`, `modules`, `entry_points`, `commands`, `conventions`,
   `data_model`), injected automatically at session start so any agent gets
   oriented instantly.
+
+24 MCP tools cover all of the above — same set, every agent, every device.
+See the full [tool tracklist](https://fthsrbst.github.io/mnema/#tools) on the
+live site or [`src/server/mcp.ts`](src/server/mcp.ts) in source.
 
 ## Architecture
 
@@ -119,9 +135,11 @@ For the full data model and phased build plan, see [`PLAN.md`](PLAN.md).
 
 ## Screenshots
 
-| Dashboard | RAG search | Prompts | Mobile |
-|---|---|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![RAG](docs/screenshots/rag.png) | ![Prompts](docs/screenshots/prompts.png) | ![Mobile](docs/screenshots/mobile.png) |
+| Dashboard | Memories | RAG search | Prompts | Mobile |
+|---|---|---|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Memories](docs/screenshots/memories.png) | ![RAG](docs/screenshots/rag.png) | ![Prompts](docs/screenshots/prompts.png) | ![Mobile](docs/screenshots/mobile.png) |
+
+More at the live site: **[fthsrbst.github.io/mnema](https://fthsrbst.github.io/mnema/)**
 
 ## Quick start
 
@@ -129,12 +147,12 @@ For the full data model and phased build plan, see [`PLAN.md`](PLAN.md).
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/master/scripts/install.sh | bash
 ```
 
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/fthsrbst/mnema/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/fthsrbst/mnema/master/scripts/install.ps1 | iex
 ```
 
 The installer clones the repo, installs dependencies, builds, and writes a
@@ -158,7 +176,7 @@ recall until you add a key.
 ### Raspberry Pi deploy
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/main/deploy/setup-pi.sh | bash
+curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/master/deploy/setup-pi.sh | bash
 ```
 
 This installs Node 22, clones the repo, builds server + web UI, generates a
