@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Grid } from "@astryxdesign/core/Grid";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { TextArea } from "@astryxdesign/core/TextArea";
-import { Text, Heading } from "@astryxdesign/core/Text";
+import { VStack, HStack, Grid } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { TextArea } from "../components/ui/Field";
+import { Heading, Text } from "../components/ui/Typography";
 import { api, assetUrl, type OutputFile } from "../api";
 import { useI18n } from "../i18n";
 
@@ -37,11 +36,7 @@ export function Media() {
     setBusy(true);
     setMessage(t("media.generatingNote"));
     try {
-      const res = await api<{ files: string[] }>("POST", "/api/media", {
-        workflow,
-        inputs: { prompt },
-        timeoutSec: 600,
-      });
+      const res = await api<{ files: string[] }>("POST", "/api/media", { workflow, inputs: { prompt }, timeoutSec: 600 });
       setMessage(`${t("media.done")}: ${res.files.length}`);
       await load();
     } catch (err) {
@@ -54,43 +49,31 @@ export function Media() {
   return (
     <VStack gap={4}>
       <Heading level={3}>{t("media.title")}</Heading>
-      <Card className="glass-card">
+      <Panel>
         <VStack gap={3}>
           <HStack gap={2} wrap="wrap">
             {workflows.map((w) => (
-              <Button
-                key={w}
-                label={w}
-                size="sm"
-                variant={w === workflow ? "primary" : "secondary"}
-                onClick={() => setWorkflow(w)}
-              />
+              <Button key={w} label={w} size="sm" variant={w === workflow ? "primary" : "secondary"} onClick={() => setWorkflow(w)} />
             ))}
           </HStack>
-          <TextArea
-            label={t("media.promptLabel")}
-            value={prompt}
-            onChange={setPrompt}
-            rows={3}
-            placeholder={t("media.placeholder")}
-          />
+          <TextArea label={t("media.promptLabel")} value={prompt} onChange={setPrompt} rows={3} placeholder={t("media.placeholder")} />
           <HStack gap={3} vAlign="center">
-            <Button label={busy ? t("media.generating") : t("media.generate")} variant="primary" onClick={generate} isDisabled={busy || !prompt.trim()} />
+            <Button label={busy ? t("media.generating") : t("media.generate")} variant="primary" onClick={generate} disabled={busy || !prompt.trim()} />
             {message && <Text type="supporting" color="secondary">{message}</Text>}
           </HStack>
         </VStack>
-      </Card>
+      </Panel>
       <Heading level={4}>{t("media.outputs")}</Heading>
-      <Grid columns={{ minWidth: 240, repeat: "fit" }} gap={4}>
+      <Grid minWidth={220} gap={4}>
         {outputs.map((f) => (
-          <Card key={f.name} padding={2} className="glass-card">
+          <Panel key={f.name} padded={false} style={{ padding: 8 }}>
             <VStack gap={2}>
               {isImage(f.name) ? (
                 <a href={assetUrl(f.url)} target="_blank" rel="noreferrer">
-                  <img src={assetUrl(f.url)} alt={f.name} style={{ width: "100%", borderRadius: "var(--radius-inner)" }} />
+                  <img src={assetUrl(f.url)} alt={f.name} style={{ width: "100%", display: "block" }} />
                 </a>
               ) : isVideo(f.name) ? (
-                <video src={assetUrl(f.url)} controls style={{ width: "100%", borderRadius: "var(--radius-inner)" }} />
+                <video src={assetUrl(f.url)} controls style={{ width: "100%" }} />
               ) : isAudio(f.name) ? (
                 <audio src={assetUrl(f.url)} controls style={{ width: "100%" }} />
               ) : (
@@ -98,7 +81,7 @@ export function Media() {
               )}
               <Text type="supporting" color="secondary">{f.name}</Text>
             </VStack>
-          </Card>
+          </Panel>
         ))}
       </Grid>
     </VStack>

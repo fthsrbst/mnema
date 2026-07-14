@@ -1,0 +1,167 @@
+/* Uygulama kabuğu — icon rail + üstte sekme çubuğu + içerik. Köşesiz, tam ekran. */
+
+.app-shell {
+  height: 100dvh;
+  display: flex;
+  background: var(--bg);
+}
+
+.app-rail-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  background: var(--bg-raised);
+  width: 56px;
+  flex-shrink: 0;
+}
+
+.app-rail-logo {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  color: var(--fg);
+}
+
+.icon-rail {
+  border-right: none;
+  flex: 1;
+}
+
+.app-rail-foot {
+  padding-block: var(--sp-3);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding-inline: var(--sp-5);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 52px;
+}
+
+.app-topbar-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--fg);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.app-topbar .tabs {
+  border-bottom: none;
+  flex: 1;
+}
+
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5);
+}
+
+.app-content-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* Graf gibi tuval tabanlı view'lar: padding yok, iç scroll yok — alanın tamamı.
+   (Çift sınıf: mobil media query'deki .app-content padding'ini de ezmek için.) */
+.app-content.app-content--fill {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.app-content--fill > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+}
+
+.lang-toggle button {
+  padding: 5px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  background: transparent;
+  color: var(--fg-dim);
+  border: none;
+  cursor: pointer;
+}
+
+.lang-toggle button[data-active="true"] {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+/* --- Hero paneli (Dashboard) --- */
+.hero-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  padding: var(--sp-6) var(--sp-5);
+  background: var(--bg-panel);
+}
+
+.hero-panel-content {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3.4vw, 34px);
+  line-height: 1.15;
+  color: var(--fg);
+}
+
+/* --- Token gate --- */
+.token-gate {
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.token-gate-box {
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+@media (max-width: 720px) {
+  .app-rail-col {
+    width: 44px;
+  }
+  .app-content {
+    padding: var(--sp-3);
+  }
+  .app-topbar {
+    padding-inline: var(--sp-3);
+  }
+}

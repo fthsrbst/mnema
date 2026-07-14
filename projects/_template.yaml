@@ -12,3 +12,20 @@ decisions:
 next_steps:
   - "somut sıradaki adım"
 links: []
+# --- Kod haritası: agent'ın "nereye bakacağım" sorusunun cevabı ---
+architecture: >
+  3-5 cümle: katmanlar, veri akışı, sınırlar.
+modules:
+  - name: core/ornek
+    path: src/core/ornek.ts
+    purpose: "Tek cümle: ne yapar, sınırı ne"
+    key_files: [src/core/ornek.ts]
+    depends_on: []
+entry_points:
+  server: src/index.ts
+commands:
+  dev: npm run dev
+  test: npm test
+conventions:
+  - "koddan okunamayan yazılı kural"
+data_model: "ana tablolar/varlıklar ve ilişkileri (kısa)"

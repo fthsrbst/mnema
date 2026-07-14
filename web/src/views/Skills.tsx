@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { TextArea } from "@astryxdesign/core/TextArea";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { Item } from "@astryxdesign/core/Item";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useToast } from "@astryxdesign/core/Toast";
+import { VStack, HStack } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { TextField, TextArea } from "../components/ui/Field";
+import { Heading, Text } from "../components/ui/Typography";
+import { EmptyState } from "../components/ui/EmptyState";
+import { ListRow } from "../components/ui/ListRow";
+import { AlertDialog, Dialog } from "../components/ui/Dialog";
+import { useToast } from "../components/ui/useToast";
 import { api, type Skill } from "../api";
 import { useI18n } from "../i18n";
 
@@ -104,10 +102,7 @@ export function Skills() {
     if (!aiPrompt.trim()) return;
     setAiBusy(true);
     try {
-      const res = await api<{ content: string }>("POST", "/api/llm", {
-        prompt: aiPrompt,
-        system: SKILL_MD_SYSTEM_PROMPT,
-      });
+      const res = await api<{ content: string }>("POST", "/api/llm", { prompt: aiPrompt, system: SKILL_MD_SYSTEM_PROMPT });
       setNewContent(res.content);
       setShowAiDraft(false);
       setAiPrompt("");
@@ -129,11 +124,11 @@ export function Skills() {
           </HStack>
           <HStack gap={2}>
             <Button label={t("common.delete")} variant="destructive" onClick={() => setDeleteTarget(selected)} />
-            <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} isDisabled={saving} />
+            <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} disabled={saving} />
           </HStack>
         </HStack>
         {message && <Text type="supporting" color="secondary">{message}</Text>}
-        <TextArea label="SKILL.md" isLabelHidden value={content} onChange={setContent} rows={28} hasSpellCheck={false} />
+        <textarea className="textarea" value={content} onChange={(e) => setContent(e.target.value)} rows={28} spellCheck={false} aria-label="SKILL.md" />
 
         <AlertDialog
           isOpen={deleteTarget !== null}
@@ -142,8 +137,7 @@ export function Skills() {
           description={`"${deleteTarget?.name}" ${t("skills.confirmDeleteDesc")}`}
           actionLabel={t("skills.deleteAction")}
           cancelLabel={t("common.cancel")}
-          actionVariant="destructive"
-          isActionLoading={deleting}
+          loading={deleting}
           onAction={confirmDelete}
         />
       </VStack>
@@ -154,61 +148,51 @@ export function Skills() {
     <VStack gap={4}>
       <HStack hAlign="between" vAlign="center">
         <Heading level={3}>{t("skills.title")}</Heading>
-        <Button
-          label={t("skills.newSkill")}
-          variant="primary"
-          onClick={() => { setNewName(""); setNewContent(""); setShowNew(true); }}
-        />
+        <Button label={t("skills.newSkill")} variant="primary" onClick={() => { setNewName(""); setNewContent(""); setShowNew(true); }} />
       </HStack>
       <Text type="supporting" color="secondary">{t("skills.sourceNote")}</Text>
       {skills.length === 0 ? (
         <EmptyState title={t("skills.empty")} description={t("skills.emptyDesc")} />
       ) : (
-        <Card className="glass-card" padding={0}>
+        <Panel padded={false}>
           <VStack gap={0}>
             {skills.map((s, i) => (
-              <div key={s.name} style={i > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}>
-                <Item
-                  label={s.name}
-                  description={s.description}
-                  endContent={
-                    <HStack gap={1}>
-                      <Button label={t("common.edit")} variant="secondary" size="sm" onClick={() => { setSelected(s); setContent(s.content); setMessage(""); }} />
-                      <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(s)} />
-                    </HStack>
-                  }
-                />
-              </div>
+              <ListRow
+                key={s.name}
+                bordered={i > 0}
+                title={s.name}
+                description={s.description}
+                end={
+                  <HStack gap={1}>
+                    <Button label={t("common.edit")} variant="secondary" size="sm" onClick={() => { setSelected(s); setContent(s.content); setMessage(""); }} />
+                    <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(s)} />
+                  </HStack>
+                }
+              />
             ))}
           </VStack>
-        </Card>
+        </Panel>
       )}
 
-      <Dialog isOpen={showNew} onOpenChange={setShowNew} purpose="form" width={640}>
-        <DialogHeader title={t("skills.newDialogTitle")} />
-        <VStack gap={3} paddingInline={5} paddingBlock={4}>
-          <TextInput label={t("skills.name")} value={newName} onChange={setNewName} isRequired />
-          <HStack hAlign="between" vAlign="center">
-            <Text type="supporting" color="secondary">SKILL.md</Text>
-            <Button label={t("skills.aiDraft")} variant="secondary" size="sm" onClick={() => setShowAiDraft(true)} />
-          </HStack>
-          <TextArea label="SKILL.md" isLabelHidden value={newContent} onChange={setNewContent} rows={16} hasSpellCheck={false} />
-          <HStack gap={2}>
-            <Button label={saving ? t("common.saving") : t("common.create")} variant="primary" onClick={createSkill} isDisabled={saving || !newName.trim() || !newContent.trim()} />
-            <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
-          </HStack>
-        </VStack>
+      <Dialog isOpen={showNew} onOpenChange={setShowNew} width={640} title={t("skills.newDialogTitle")}>
+        <TextField label={t("skills.name")} value={newName} onChange={setNewName} />
+        <HStack hAlign="between" vAlign="center">
+          <Text type="supporting" color="secondary">SKILL.md</Text>
+          <Button label={t("skills.aiDraft")} variant="secondary" size="sm" onClick={() => setShowAiDraft(true)} />
+        </HStack>
+        <textarea className="textarea" value={newContent} onChange={(e) => setNewContent(e.target.value)} rows={16} spellCheck={false} aria-label="SKILL.md" />
+        <HStack gap={2}>
+          <Button label={saving ? t("common.saving") : t("common.create")} variant="primary" onClick={createSkill} disabled={saving || !newName.trim() || !newContent.trim()} />
+          <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
+        </HStack>
       </Dialog>
 
-      <Dialog isOpen={showAiDraft} onOpenChange={setShowAiDraft} purpose="form" width={480}>
-        <DialogHeader title={t("skills.aiDraftDialogTitle")} />
-        <VStack gap={3} paddingInline={5} paddingBlock={4}>
-          <TextArea label={t("skills.aiDraftPrompt")} value={aiPrompt} onChange={setAiPrompt} rows={4} isRequired />
-          <HStack gap={2}>
-            <Button label={aiBusy ? t("skills.aiDraftGenerating") : t("skills.aiDraftGenerate")} variant="primary" onClick={generateDraft} isDisabled={aiBusy || !aiPrompt.trim()} />
-            <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowAiDraft(false)} isDisabled={aiBusy} />
-          </HStack>
-        </VStack>
+      <Dialog isOpen={showAiDraft} onOpenChange={setShowAiDraft} width={480} title={t("skills.aiDraftDialogTitle")}>
+        <TextArea label={t("skills.aiDraftPrompt")} value={aiPrompt} onChange={setAiPrompt} rows={4} />
+        <HStack gap={2}>
+          <Button label={aiBusy ? t("skills.aiDraftGenerating") : t("skills.aiDraftGenerate")} variant="primary" onClick={generateDraft} disabled={aiBusy || !aiPrompt.trim()} />
+          <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowAiDraft(false)} disabled={aiBusy} />
+        </HStack>
       </Dialog>
 
       <AlertDialog
@@ -218,8 +202,7 @@ export function Skills() {
         description={`"${deleteTarget?.name}" ${t("skills.confirmDeleteDesc")}`}
         actionLabel={t("skills.deleteAction")}
         cancelLabel={t("common.cancel")}
-        actionVariant="destructive"
-        isActionLoading={deleting}
+        loading={deleting}
         onAction={confirmDelete}
       />
     </VStack>

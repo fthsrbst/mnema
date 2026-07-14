@@ -23,3 +23,4 @@ Detaylı mimari ve fazlar: PLAN.md.
 - Vektör tabloları (memories_vec, chunks_vec) rowid üzerinden ana tablolara eşlenir; ana tablodan silerken vec tablosunu da temizle.
 - EMBEDDING_DIM değişirse mevcut vektörler geçersiz olur → re-index gerekir.
 - Kullanıcıya görünen metinler Türkçe, kod/identifier'lar İngilizce.
+- Proje map'leri kod haritası taşır (`architecture`, `modules`, `entry_points`, `commands`, `conventions`, `data_model` — bkz. `src/core/types.ts` ProjectMap). `bridge()` bu alanları oturum başında enjekte eder; şema değişikliğinde `projects/_template.yaml` + MCP `project_update` şemasını birlikte güncelle.

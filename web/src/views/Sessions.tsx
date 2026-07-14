@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import { useToast } from "@astryxdesign/core/Toast";
+import { VStack, HStack } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { Heading, Text } from "../components/ui/Typography";
+import { EmptyState } from "../components/ui/EmptyState";
+import { AlertDialog } from "../components/ui/Dialog";
+import { useToast } from "../components/ui/useToast";
 import { api, type SessionLog } from "../api";
 import { useI18n } from "../i18n";
 import { Markdown } from "../components/Markdown";
@@ -46,17 +46,12 @@ export function Sessions() {
       {logs.length === 0 ? (
         <EmptyState title={t("sessions.empty")} description={t("sessions.emptyDesc")} />
       ) : (
-        <Card className="glass-card">
+        <Panel>
           <VStack gap={0}>
             {logs.map((log, i) => {
               const caption = [log.project, log.source].filter(Boolean).join(" · ");
               return (
-                <VStack
-                  key={log.id}
-                  gap={2}
-                  paddingBlock={i > 0 ? 3 : undefined}
-                  style={i > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
-                >
+                <VStack key={log.id} gap={2} paddingBlock={i > 0 ? 3 : undefined} style={i > 0 ? { borderTop: "1px solid var(--border)" } : undefined}>
                   <HStack hAlign="between" vAlign="center">
                     <HStack gap={2} vAlign="center">
                       <Text type="supporting" color="secondary">{log.created_at}</Text>
@@ -69,7 +64,7 @@ export function Sessions() {
               );
             })}
           </VStack>
-        </Card>
+        </Panel>
       )}
 
       <AlertDialog
@@ -79,8 +74,7 @@ export function Sessions() {
         description={t("sessions.confirmDeleteDesc")}
         actionLabel={t("sessions.deleteAction")}
         cancelLabel={t("common.cancel")}
-        actionVariant="destructive"
-        isActionLoading={deleting}
+        loading={deleting}
         onAction={confirmDelete}
       />
     </VStack>

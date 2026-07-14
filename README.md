@@ -66,7 +66,14 @@ tools and devices.
   (for agents that speak MCP over Streamable HTTP) and as a REST endpoint
   (for scripts, custom agents, and the web UI) — one implementation, two doors.
 - **Web UI** — a small React dashboard for browsing memory, RAG documents,
-  projects, and prompts from a browser, including your phone.
+  projects, and prompts from a browser, including your phone. Redesigned with
+  a high-contrast, 1-bit-inspired visual language, a relationship graph view
+  for exploring how memories/projects/documents connect, and optimized RAG
+  search (faster, more relevant hybrid retrieval).
+- **Code-map project maps** — project maps now carry a structured code map
+  (`architecture`, `modules`, `entry_points`, `commands`, `conventions`,
+  `data_model`), injected automatically at session start so any agent gets
+  oriented instantly.
 
 ## Architecture
 

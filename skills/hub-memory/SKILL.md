@@ -12,7 +12,7 @@ Hub, tüm cihazlardaki tüm agentların paylaştığı hafızadır. Sen kapanın
 - `<hub-recall>` (mesaj başı): mesajla yüksek benzerlikli az sayıda kayıt. Sistem bilinçli olarak az ve isabetli enjekte eder; **boş olması "hafızada yok" demek değildir** — şüphen varsa Katman 2'ye in.
 
 ## Katman 2 — Görev başında sen çek
-1. Projede çalışıyorsan ve bridge gelmediyse `project_get(name)`: özet, stack, kararlar, odak, sıradaki adımlar.
+1. Projede çalışıyorsan ve bridge gelmediyse `project_get(name)`: özet, stack, kararlar, odak, sıradaki adımlar + kod haritası (architecture/modules/entry_points/commands).
 2. "Neden X kullanıyoruz", "bunu daha önce nasıl çözmüştük" → `memory_search(query)`.
 3. Doküman/öğrenme notu/araştırma arşivi → `rag_search(query)`.
 4. "Nerede kalmıştım" → `session_recent(project)`.
@@ -38,3 +38,4 @@ Hub, tüm cihazlardaki tüm agentların paylaştığı hafızadır. Sen kapanın
 ## Oturum sonunda
 1. `session_log`: yapılanlar, yarım kalanlar, sıradaki adım — project alanına kanonik adı ver ("proje map'i yok" uyarısı dönerse adı düzelt veya map aç).
 2. Odak/adımlar değiştiyse `project_update` ile `current_focus` ve `next_steps` güncelle. **Map'i güncellemeden kapatma:** bayat map bir sonraki agent'ı aktif olarak yanıltır — sonraki oturum "profil yok" diyen 2 gün önceki map'e güvenip yanlış yola girebilir (yaşanmış vaka: jobpilot).
+3. **Kod haritası:** Bu oturumda projenin kod yapısını keşfettiysen (yeni modül, taşınan dosya, değişen giriş noktası) `project_update` ile `modules`/`architecture`/`entry_points`/`commands`/`conventions` alanlarını güncelle. Modül başına: `{name, path, purpose, key_files?, depends_on?}`. Amaç: bir sonraki agent kodu sıfırdan keşfetmesin — bridge bu haritayı oturum başında enjekte eder. `modules` TAM listedir (üzerine yazar): önce `project_get` ile mevcutları al, değiştirip geri yaz.

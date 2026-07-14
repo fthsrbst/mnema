@@ -187,6 +187,11 @@ export function getDb(): Database.Database {
   db = new Database(config.dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  // Eşzamanlı yazma (sync + hook + web) SQLITE_BUSY üretebilir — kısa bekleme çökme yerine sıraya sokar.
+  db.pragma("busy_timeout = 5000");
+  // Vektör/FTS aramaları sayfa-yoğun: daha büyük page cache (negatif = KiB, ~64MB) + mmap okuma.
+  db.pragma("cache_size = -65536");
+  db.pragma("mmap_size = 268435456");
 
   try {
     // require: sqlite-vec CJS dağıtılıyor
@@ -223,6 +228,14 @@ export function vecError(): string | null {
 }
 
 export function closeDb(): void {
+  if (db) {
+    // Sorgu planlayıcı istatistiklerini güncel tut (ANALYZE'ın hafif, artımlı hali).
+    try {
+      db.pragma("optimize");
+    } catch {
+      /* kapatmayı engelleme */
+    }
+  }
   db?.close();
   db = null;
 }

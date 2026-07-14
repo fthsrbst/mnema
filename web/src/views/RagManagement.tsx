@@ -1,35 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { IconButton } from "@astryxdesign/core/IconButton";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { TextArea } from "@astryxdesign/core/TextArea";
-import { Switch } from "@astryxdesign/core/Switch";
-import { Selector } from "@astryxdesign/core/Selector";
-import { Table, pixel, proportional, type TableColumn } from "@astryxdesign/core/Table";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Divider } from "@astryxdesign/core/Divider";
-import { useToast } from "@astryxdesign/core/Toast";
-import { TrashIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
-import {
-  api,
-  type ProjectMap,
-  type RagDocument,
-  type RagDocumentDetail,
-  type RagSearchResult,
-  type ReindexResult,
-} from "../api";
+import { VStack, HStack } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button, IconButton } from "../components/ui/Button";
+import { TextField, TextArea, Switch, Select } from "../components/ui/Field";
+import { Heading, Text } from "../components/ui/Typography";
+import { EmptyState } from "../components/ui/EmptyState";
+import { AlertDialog, Dialog } from "../components/ui/Dialog";
+import { Divider } from "../components/ui/Divider";
+import { Tag } from "../components/ui/Tag";
+import { DataTable, type Column } from "../components/ui/DataTable";
+import { Icon } from "../components/icons/Icons";
+import { useToast } from "../components/ui/useToast";
+import { Ticker } from "../components/ui/Ticker";
+import { api, type ProjectMap, type RagDocument, type RagDocumentDetail, type RagSearchResult, type ReindexResult } from "../api";
 import { useI18n } from "../i18n";
 import { Markdown } from "../components/Markdown";
-
-interface Row extends Record<string, unknown> {
-  id: string;
-  doc: RagDocument;
-}
 
 export function RagManagement() {
   const { t } = useI18n();
@@ -72,12 +57,9 @@ export function RagManagement() {
   }, [load]);
 
   useEffect(() => {
-    api<ProjectMap[]>("GET", "/api/projects")
-      .then((list) => setProjects(list.map((p) => p.name)))
-      .catch(() => {});
+    api<ProjectMap[]>("GET", "/api/projects").then((list) => setProjects(list.map((p) => p.name))).catch(() => {});
   }, []);
 
-  // Dropdown seçenekleri: /api/projects listesi + yüklü dokümanlarda geçen proje adları birleşimi.
   const projectOptions = useMemo(() => {
     const set = new Set<string>(projects);
     for (const d of docs ?? []) if (d.project) set.add(d.project);
@@ -88,8 +70,7 @@ export function RagManagement() {
     setDetailLoading(true);
     setDetail(null);
     try {
-      const full = await api<RagDocumentDetail>("GET", `/api/rag/documents/${doc.id}`);
-      setDetail(full);
+      setDetail(await api<RagDocumentDetail>("GET", `/api/rag/documents/${doc.id}`));
     } catch (err) {
       toast({ body: `${t("common.loadFailed")}: ${(err as Error).message}`, type: "error" });
     } finally {
@@ -148,8 +129,7 @@ export function RagManagement() {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      const results = await api<RagSearchResult[]>("GET", `/api/rag/search?q=${encodeURIComponent(searchQuery)}&limit=10`);
-      setSearchResults(results);
+      setSearchResults(await api<RagSearchResult[]>("GET", `/api/rag/search?q=${encodeURIComponent(searchQuery)}&limit=10`));
     } catch (err) {
       toast({ body: `${t("common.error")}: ${(err as Error).message}`, type: "error" });
       setSearchResults([]);
@@ -162,12 +142,7 @@ export function RagManagement() {
     if (!newTitle.trim() || !newText.trim()) return;
     setCreating(true);
     try {
-      await api("POST", "/api/rag/documents", {
-        title: newTitle.trim(),
-        text: newText,
-        uri: newUri.trim() || undefined,
-        project: newProject.trim() || undefined,
-      });
+      await api("POST", "/api/rag/documents", { title: newTitle.trim(), text: newText, uri: newUri.trim() || undefined, project: newProject.trim() || undefined });
       toast({ body: t("common.createdToast"), type: "info" });
       setShowNew(false);
       setNewTitle("");
@@ -182,62 +157,39 @@ export function RagManagement() {
     }
   };
 
-  const columns: TableColumn<Row>[] = [
+  const columns: Column<RagDocument>[] = [
     {
       key: "enabled",
       header: "",
-      width: pixel(60),
-      renderCell: (r: Row) => (
-        <Switch
-          label={r.doc.enabled ? t("rag.docActive") : t("rag.docDisabled")}
-          isLabelHidden
-          value={r.doc.enabled}
-          changeAction={(checked) => toggleEnabled(r.doc, checked)}
-        />
-      ),
+      width: "56px",
+      render: (d) => <Switch checked={d.enabled} onChange={(v) => toggleEnabled(d, v)} label={d.enabled ? t("rag.docActive") : t("rag.docDisabled")} />,
     },
     {
       key: "title",
       header: t("rag.docTitle"),
-      width: proportional(2),
-      renderCell: (r: Row) => (
+      render: (d) => (
         <VStack gap={0}>
-          <Text style={r.doc.enabled ? undefined : { opacity: 0.5 }}>{r.doc.title}</Text>
-          {r.doc.uri && (
-            <Text type="supporting" color="secondary" style={{ opacity: r.doc.enabled ? 1 : 0.5 }}>
-              {r.doc.uri}
-            </Text>
-          )}
+          <Text style={d.enabled ? undefined : { opacity: 0.5 }}>{d.title}</Text>
+          {d.uri && <Text type="supporting" color="secondary" style={{ opacity: d.enabled ? 1 : 0.5 }}>{d.uri}</Text>}
         </VStack>
       ),
     },
-    { key: "project", header: t("common.project"), width: pixel(130), renderCell: (r: Row) => r.doc.project ?? "—" },
+    { key: "project", header: t("common.project"), width: "130px", render: (d) => d.project ?? "—" },
     {
       key: "chunks",
       header: t("rag.colChunk"),
-      width: pixel(110),
-      renderCell: (r: Row) => (
-        <span className={`rx-tag ${r.doc.vec_count === r.doc.chunk_count && r.doc.chunk_count > 0 ? "rx-tag-forest" : "rx-tag-amber"}`}>
-          {r.doc.vec_count}/{r.doc.chunk_count}
-        </span>
-      ),
+      width: "100px",
+      render: (d) => <Tag variant={d.vec_count === d.chunk_count && d.chunk_count > 0 ? "accent" : "warn"}>{d.vec_count}/{d.chunk_count}</Tag>,
     },
-    { key: "created", header: t("rag.colCreated"), width: pixel(140), renderCell: (r: Row) => r.doc.created_at },
+    { key: "created", header: t("rag.colCreated"), width: "140px", render: (d) => d.created_at },
     {
       key: "actions",
       header: "",
-      width: pixel(110),
-      renderCell: (r: Row) => (
+      width: "100px",
+      render: (d) => (
         <HStack gap={1}>
-          <Button label={t("common.open")} variant="ghost" size="sm" onClick={() => openDetail(r.doc)} />
-          <IconButton
-            label={t("rag.deleteDoc")}
-            tooltip={t("common.delete")}
-            variant="ghost"
-            size="sm"
-            icon={<TrashIcon width={16} height={16} />}
-            onClick={() => setDeleteTarget(r.doc)}
-          />
+          <Button label={t("common.open")} variant="ghost" size="sm" onClick={() => openDetail(d)} />
+          <IconButton label={t("rag.deleteDoc")} icon={<Icon name="trash" size={14} />} onClick={() => setDeleteTarget(d)} size="sm" />
         </HStack>
       ),
     },
@@ -255,71 +207,51 @@ export function RagManagement() {
           </VStack>
           <Button label={t("rag.addDocument")} variant="primary" onClick={() => { setNewTitle(""); setNewText(""); setNewUri(""); setNewProject(""); setShowNew(true); }} />
         </HStack>
-        <HStack gap={5}>
+        <HStack gap={6}>
           <VStack gap={0}>
-            <span className="rx-label">{t("common.title")}</span>
-            <span className="rx-display-sm">{docs?.length ?? "—"}</span>
+            <span className="u-label">{t("common.title")}</span>
+            <Ticker value={docs?.length ?? 0} size="sm" />
           </VStack>
           <VStack gap={0}>
-            <span className="rx-label">{t("rag.colChunk")}</span>
-            <span className="rx-display-sm">{totalChunks}</span>
+            <span className="u-label">{t("rag.colChunk")}</span>
+            <Ticker value={totalChunks} size="sm" />
           </VStack>
         </HStack>
         <HStack gap={2} wrap="wrap" vAlign="end">
-          <Selector
+          <Select
             label={t("common.project")}
-            isLabelHidden
+            hideLabel
             value={projectFilter}
             onChange={setProjectFilter}
-            options={[{ value: "", label: t("common.all") }, ...projectOptions.map((p) => ({ value: p, label: p }))]}
+            options={projectOptions.map((p) => ({ value: p, label: p }))}
             placeholder={t("common.all")}
-            width={180}
           />
           <Button label={t("common.refresh")} variant="secondary" onClick={load} />
-          <Button
-            label={reindexing ? t("rag.reindexing") : t("rag.reindexDone")}
-            variant="secondary"
-            icon={<ArrowPathIcon width={16} height={16} />}
-            isDisabled={reindexing}
-            onClick={() => runReindex(false)}
-          />
-          <Button
-            label={t("rag.forceReindex")}
-            variant="primary"
-            isDisabled={reindexing}
-            onClick={() => setReindexConfirm(true)}
-          />
+          <Button label={reindexing ? t("rag.reindexing") : t("rag.reindexDone")} variant="secondary" icon={<Icon name="refresh" size={13} />} disabled={reindexing} onClick={() => runReindex(false)} />
+          <Button label={t("rag.forceReindex")} variant="primary" disabled={reindexing} onClick={() => setReindexConfirm(true)} />
         </HStack>
       </VStack>
 
       {reindexResult && (
-        <Card variant={reindexResult.ok ? "green" : "red"} className="glass-card">
+        <Panel variant={reindexResult.ok ? "default" : "danger"}>
           <Text color="secondary">
             {reindexResult.ok
               ? `${reindexResult.chunks_embedded} chunk, ${reindexResult.memories_embedded} ${t("common.title").toLowerCase()}`
               : `${t("common.error")}: ${reindexResult.error ?? "?"}`}
           </Text>
-        </Card>
+        </Panel>
       )}
 
-      <Card className="glass-card">
+      <Panel>
         <VStack gap={3}>
           <Heading level={4}>{t("rag.searchTestTitle")}</Heading>
           <Text type="supporting" color="secondary">{t("rag.searchTestDesc")}</Text>
           <HStack gap={2} vAlign="end">
-            <TextInput
-              className="rx-search"
-              label={t("common.search")}
-              isLabelHidden
-              placeholder={t("rag.searchPlaceholder")}
-              value={searchQuery}
-              onChange={setSearchQuery}
-              hasClear
-            />
-            <Button label={searching ? t("common.searching") : t("common.search")} variant="secondary" onClick={runSearch} isDisabled={searching || !searchQuery.trim()} />
+            <TextField label={t("common.search")} hideLabel placeholder={t("rag.searchPlaceholder")} value={searchQuery} onChange={setSearchQuery} hasClear />
+            <Button label={searching ? t("common.searching") : t("common.search")} variant="secondary" onClick={runSearch} disabled={searching || !searchQuery.trim()} />
           </HStack>
-          {searchResults !== null && (
-            searchResults.length === 0 ? (
+          {searchResults !== null &&
+            (searchResults.length === 0 ? (
               <Text type="supporting" color="secondary">{t("rag.noResults")}</Text>
             ) : (
               <VStack gap={2}>
@@ -334,27 +266,24 @@ export function RagManagement() {
                   </VStack>
                 ))}
               </VStack>
-            )
-          )}
+            ))}
         </VStack>
-      </Card>
+      </Panel>
 
       {error && (
-        <Card variant="red" className="glass-card">
+        <Panel variant="danger">
           <Text color="secondary">{t("common.error")}: {error}</Text>
-        </Card>
+        </Panel>
       )}
 
       {detail && (
-        <Card className="glass-card">
+        <Panel>
           <VStack gap={3}>
             <HStack hAlign="between" vAlign="center">
               <Heading level={4}>{detail.title}</Heading>
               <Button label={t("common.close")} variant="ghost" size="sm" onClick={() => setDetail(null)} />
             </HStack>
-            <Text type="supporting" color="secondary">
-              {detail.uri ?? t("rag.uriMissing")} · {detail.project ?? t("rag.projectMissing")} · {detail.chunk_count} chunk
-            </Text>
+            <Text type="supporting" color="secondary">{detail.uri ?? t("rag.uriMissing")} · {detail.project ?? t("rag.projectMissing")} · {detail.chunk_count} chunk</Text>
             <Divider />
             {detail.chunks.length === 0 ? (
               <Text type="supporting" color="secondary">{t("rag.noChunks")}</Text>
@@ -362,16 +291,14 @@ export function RagManagement() {
               <VStack gap={3}>
                 {detail.chunks.map((c) => (
                   <VStack key={c.id} gap={1}>
-                    <Text type="supporting" color="secondary">
-                      Chunk #{c.seq}{c.heading ? ` — ${c.heading}` : ""}
-                    </Text>
+                    <Text type="supporting" color="secondary">Chunk #{c.seq}{c.heading ? ` — ${c.heading}` : ""}</Text>
                     <Markdown>{c.text}</Markdown>
                   </VStack>
                 ))}
               </VStack>
             )}
           </VStack>
-        </Card>
+        </Panel>
       )}
       {detailLoading && <Text color="secondary">{t("common.loading")}</Text>}
 
@@ -380,30 +307,20 @@ export function RagManagement() {
       ) : docs.length === 0 ? (
         <EmptyState title={t("rag.empty")} description={t("rag.emptyDesc")} />
       ) : (
-        <Table<Row>
-          data={docs.map((d) => ({ id: String(d.id), doc: d }))}
-          columns={columns}
-          idKey="id"
-          density="compact"
-          dividers="rows"
-          hasHover
-        />
+        <DataTable data={docs} columns={columns} rowKey={(d) => String(d.id)} />
       )}
 
-      <Dialog isOpen={showNew} onOpenChange={setShowNew} purpose="form" width={560}>
-        <DialogHeader title={t("rag.addDialogTitle")} />
-        <VStack gap={3} paddingInline={5} paddingBlock={4}>
-          <TextInput label={t("rag.docTitle")} value={newTitle} onChange={setNewTitle} isRequired />
-          <HStack gap={3}>
-            <TextInput label={t("rag.docUri")} value={newUri} onChange={setNewUri} isOptional />
-            <TextInput label={t("common.project")} value={newProject} onChange={setNewProject} isOptional />
-          </HStack>
-          <TextArea label={t("rag.docText")} value={newText} onChange={setNewText} rows={10} isRequired />
-          <HStack gap={2}>
-            <Button label={creating ? t("common.saving") : t("common.create")} variant="primary" onClick={createDocument} isDisabled={creating || !newTitle.trim() || !newText.trim()} />
-            <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
-          </HStack>
-        </VStack>
+      <Dialog isOpen={showNew} onOpenChange={setShowNew} width={560} title={t("rag.addDialogTitle")}>
+        <TextField label={t("rag.docTitle")} value={newTitle} onChange={setNewTitle} />
+        <HStack gap={3}>
+          <TextField label={t("rag.docUri")} value={newUri} onChange={setNewUri} optional />
+          <TextField label={t("common.project")} value={newProject} onChange={setNewProject} optional />
+        </HStack>
+        <TextArea label={t("rag.docText")} value={newText} onChange={setNewText} rows={10} />
+        <HStack gap={2}>
+          <Button label={creating ? t("common.saving") : t("common.create")} variant="primary" onClick={createDocument} disabled={creating || !newTitle.trim() || !newText.trim()} />
+          <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
+        </HStack>
       </Dialog>
 
       <AlertDialog
@@ -413,8 +330,7 @@ export function RagManagement() {
         description={`"${deleteTarget?.title}" ${t("rag.docDeleteDesc")}`}
         actionLabel={t("rag.deleteDoc")}
         cancelLabel={t("common.cancel")}
-        actionVariant="destructive"
-        isActionLoading={deleting}
+        loading={deleting}
         onAction={confirmDelete}
       />
 
@@ -424,7 +340,6 @@ export function RagManagement() {
         title={t("rag.forceReindexConfirmTitle")}
         description={t("rag.forceReindexConfirmDesc")}
         actionLabel={t("rag.forceReindex")}
-        actionVariant="destructive"
         cancelLabel={t("common.cancel")}
         onAction={() => runReindex(true)}
       />

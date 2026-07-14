@@ -114,7 +114,22 @@ export function bridge(cwd?: string, projectName?: string): string {
   const lines: string[] = ["<hub-bridge>", `Aktif proje (hub map): **${proj.name}**${proj.status ? ` [${proj.status}]` : ""}`];
   if (proj.summary) lines.push(`Özet: ${proj.summary}`);
   if (proj.current_focus) lines.push(`Mevcut odak: ${proj.current_focus}`);
-  // Map verisi serbest JSON'dan gelir — next_steps dizi olmayabilir; hook'u düşürme.
+  if (typeof proj.architecture === "string" && proj.architecture) lines.push(`Mimari: ${proj.architecture}`);
+  // Map verisi serbest JSON'dan gelir — diziler dizi olmayabilir; hook'u düşürme.
+  const modules = Array.isArray(proj.modules) ? proj.modules.slice(0, 12) : [];
+  if (modules.length > 0) {
+    lines.push(
+      `Kod haritası:\n${modules
+        .map((m) => `  - ${m?.name ?? "?"} (${m?.path ?? "?"}): ${m?.purpose ?? ""}`)
+        .join("\n")}`
+    );
+  }
+  const entries = proj.entry_points && typeof proj.entry_points === "object" ? Object.entries(proj.entry_points) : [];
+  if (entries.length > 0) lines.push(`Giriş noktaları: ${entries.map(([k, v]) => `${k}=${v}`).join(" · ")}`);
+  const cmds = proj.commands && typeof proj.commands === "object" ? Object.entries(proj.commands) : [];
+  if (cmds.length > 0) lines.push(`Komutlar: ${cmds.map(([k, v]) => `${k}: \`${v}\``).join(" · ")}`);
+  const conventions = Array.isArray(proj.conventions) ? proj.conventions.slice(0, 6) : [];
+  if (conventions.length > 0) lines.push(`Konvansiyonlar:\n${conventions.map((c) => `  - ${c}`).join("\n")}`);
   const steps = Array.isArray(proj.next_steps) ? proj.next_steps.slice(0, 5) : [];
   if (steps.length > 0) lines.push(`Sıradaki adımlar:\n${steps.map((s) => `  - ${s}`).join("\n")}`);
   const [last] = recentSessionLogs({ project: proj.name, limit: 1 });

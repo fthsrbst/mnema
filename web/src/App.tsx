@@ -1,31 +1,14 @@
-import { useEffect, useState } from "react";
-import { AppShell } from "@astryxdesign/core/AppShell";
-import { SideNav, SideNavItem, SideNavHeading, SideNavSection } from "@astryxdesign/core/SideNav";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Center } from "@astryxdesign/core/Center";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { LayerProvider } from "@astryxdesign/core/Layer";
-import { Theme } from "@astryxdesign/core";
-import { revenueXTheme } from "./theme";
-import {
-  Squares2X2Icon,
-  ServerStackIcon,
-  CircleStackIcon,
-  BookOpenIcon,
-  AcademicCapIcon,
-  FolderIcon,
-  ClockIcon,
-  QueueListIcon,
-  ComputerDesktopIcon,
-  PhotoIcon,
-  SparklesIcon,
-  Cog6ToothIcon,
-} from "@heroicons/react/24/outline";
+import { useEffect, useMemo, useState } from "react";
+import { IconRail, type RailItem } from "./components/ui/IconRail";
+import { Icon } from "./components/icons/Icons";
+import { Tabs } from "./components/ui/Tabs";
+import { Reveal } from "./components/ui/Reveal";
+import { Panel } from "./components/ui/Panel";
+import { Button } from "./components/ui/Button";
+import { TextField } from "./components/ui/Field";
+import { VStack } from "./components/ui/Stack";
+import { Heading, Text } from "./components/ui/Typography";
+import { ToastProvider } from "./components/ui/Toast";
 import { Dashboard } from "./views/Dashboard";
 import { RagManagement } from "./views/RagManagement";
 import { Prompts } from "./views/Prompts";
@@ -33,75 +16,83 @@ import { Memories } from "./views/Memories";
 import { Projects } from "./views/Projects";
 import { Sessions } from "./views/Sessions";
 import { Timeline } from "./views/Timeline";
+import { Graph } from "./views/Graph";
 import { Learning } from "./views/Learning";
 import { Machines } from "./views/Machines";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
 import { getToken, setToken, setUnauthorizedHandler } from "./api";
-import { I18nContext, useI18n, useProvideI18n, type Lang } from "./i18n";
-import logo from "./assets/logo.png";
+import { I18nContext, useI18n, useProvideI18n, type Lang, type TKey } from "./i18n";
 
-type View =
-  | "dashboard"
-  | "timeline"
-  | "rag"
-  | "prompts"
-  | "memories"
-  | "learning"
-  | "projects"
-  | "sessions"
-  | "machines"
-  | "media"
-  | "skills"
-  | "settings";
+type SectionId = "overview" | "memory" | "projects" | "system";
 
-type NavItem = { id: View; labelKey: Parameters<ReturnType<typeof useI18n>["t"]>[0]; icon: React.ComponentType };
+interface TabDef {
+  id: string;
+  labelKey: TKey;
+}
 
-const NAV_SECTIONS: { titleKey: Parameters<ReturnType<typeof useI18n>["t"]>[0]; items: NavItem[] }[] = [
+const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: TabDef[] }[] = [
   {
-    titleKey: "nav.sectionGeneral",
-    items: [
-      { id: "dashboard", labelKey: "nav.dashboard", icon: Squares2X2Icon },
-      { id: "timeline", labelKey: "nav.timeline", icon: QueueListIcon },
+    id: "overview",
+    labelKey: "nav.sectionOverview",
+    icon: "overview",
+    tabs: [
+      { id: "dashboard", labelKey: "nav.dashboard" },
+      { id: "timeline", labelKey: "nav.timeline" },
+      { id: "graph", labelKey: "nav.graph" },
     ],
   },
   {
-    titleKey: "nav.sectionInfo",
-    items: [
-      { id: "rag", labelKey: "nav.rag", icon: ServerStackIcon },
-      { id: "prompts", labelKey: "nav.prompts", icon: BookOpenIcon },
-      { id: "memories", labelKey: "nav.memories", icon: CircleStackIcon },
-      { id: "learning", labelKey: "nav.learning", icon: AcademicCapIcon },
+    id: "memory",
+    labelKey: "nav.sectionMemory",
+    icon: "memory",
+    tabs: [
+      { id: "memories", labelKey: "nav.memories" },
+      { id: "rag", labelKey: "nav.rag" },
+      { id: "learning", labelKey: "nav.learning" },
+      { id: "prompts", labelKey: "nav.prompts" },
     ],
   },
   {
-    titleKey: "nav.sectionWork",
-    items: [
-      { id: "projects", labelKey: "nav.projects", icon: FolderIcon },
-      { id: "sessions", labelKey: "nav.sessions", icon: ClockIcon },
+    id: "projects",
+    labelKey: "nav.sectionProjects",
+    icon: "projects",
+    tabs: [
+      { id: "projects", labelKey: "nav.projects" },
+      { id: "sessions", labelKey: "nav.sessions" },
     ],
   },
   {
-    titleKey: "nav.sectionSystem",
-    items: [
-      { id: "machines", labelKey: "nav.machines", icon: ComputerDesktopIcon },
-      { id: "media", labelKey: "nav.media", icon: PhotoIcon },
-      { id: "skills", labelKey: "nav.skills", icon: SparklesIcon },
-      { id: "settings", labelKey: "nav.settings", icon: Cog6ToothIcon },
+    id: "system",
+    labelKey: "nav.sectionSystem",
+    icon: "system",
+    tabs: [
+      { id: "machines", labelKey: "nav.machines" },
+      { id: "media", labelKey: "nav.media" },
+      { id: "skills", labelKey: "nav.skills" },
+      { id: "settings", labelKey: "nav.settings" },
     ],
   },
 ];
 
+/** Timeline satırına tıklandığında hangi (bölüm, sekme) çiftine gidileceğini eşler. */
+const TIMELINE_TARGETS: Record<"memories" | "sessions" | "rag", { section: SectionId; tab: string }> = {
+  memories: { section: "memory", tab: "memories" },
+  rag: { section: "memory", tab: "rag" },
+  sessions: { section: "projects", tab: "sessions" },
+};
+
 function LanguageToggle() {
-  const { lang, setLang, t } = useI18n();
+  const { lang, setLang } = useI18n();
   return (
-    <VStack gap={1} paddingInline={3} paddingBlock={2}>
-      <Text type="supporting" color="secondary">{t("settings.language")}</Text>
-      <SegmentedControl label={t("settings.language")} value={lang} onChange={(v) => setLang(v as Lang)} layout="fill" size="sm">
-        <SegmentedControlItem value="tr" label="TR" />
-        <SegmentedControlItem value="en" label="EN" />
-      </SegmentedControl>
-    </VStack>
+    <div className="lang-toggle">
+      <button type="button" data-active={lang === "tr"} onClick={() => setLang("tr")}>
+        TR
+      </button>
+      <button type="button" data-active={lang === "en"} onClick={() => setLang("en")}>
+        EN
+      </button>
+    </div>
   );
 }
 
@@ -112,20 +103,36 @@ function Settings() {
   return (
     <VStack gap={4}>
       <Heading level={3}>{t("settings.title")}</Heading>
-      <Card className="glass-card">
+      <Panel>
         <VStack gap={3}>
-          <TextInput
+          <TextField
             label={t("settings.tokenLabel")}
             type="password"
             value={token}
-            onChange={(v: string) => { setTokenValue(v); setSaved(false); }}
+            onChange={(v) => {
+              setTokenValue(v);
+              setSaved(false);
+            }}
           />
-          <HStack gap={2} vAlign="center">
-            <Button label={t("common.save")} variant="primary" onClick={() => { setToken(token); setSaved(true); }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Button
+              label={t("common.save")}
+              variant="primary"
+              onClick={() => {
+                setToken(token);
+                setSaved(true);
+              }}
+            />
             {saved && <Text type="supporting" color="secondary">{t("settings.saved")}</Text>}
-          </HStack>
+          </div>
         </VStack>
-      </Card>
+      </Panel>
+      <Panel>
+        <VStack gap={2}>
+          <span className="u-label">{t("settings.language")}</span>
+          <LanguageToggle />
+        </VStack>
+      </Panel>
     </VStack>
   );
 }
@@ -135,44 +142,43 @@ function TokenGate({ onSubmit }: { onSubmit: (token: string) => void }) {
   const { t } = useI18n();
   const [token, setTokenValue] = useState("");
   return (
-    <Center axis="horizontal">
-      <VStack gap={5} maxWidth={420} paddingBlock={10}>
+    <div className="token-gate">
+      <div className="token-gate-box">
         <VStack gap={1}>
-          <Heading level={3}>{t("tokenGate.title")}</Heading>
+          <Heading level={2}>{t("tokenGate.title")}</Heading>
           <Text type="supporting" color="secondary">
             {t("tokenGate.description")}
           </Text>
         </VStack>
-        <Card className="glass-card">
+        <Panel raised>
           <VStack gap={3}>
-            <TextInput
+            <TextField
               label={t("tokenGate.tokenLabel")}
               type="password"
               value={token}
               onChange={setTokenValue}
-              isRequired
               placeholder={t("tokenGate.placeholder")}
             />
-            <Button
-              label={t("tokenGate.connect")}
-              variant="primary"
-              onClick={() => onSubmit(token)}
-              isDisabled={!token.trim()}
-            />
+            <Button label={t("tokenGate.connect")} variant="primary" onClick={() => onSubmit(token)} disabled={!token.trim()} />
           </VStack>
-        </Card>
-        <EmptyState
-          title={t("tokenGate.whereTitle")}
-          description={t("tokenGate.whereDesc")}
-        />
-      </VStack>
-    </Center>
+        </Panel>
+        <Text type="supporting" color="secondary">
+          {t("tokenGate.whereTitle")} — {t("tokenGate.whereDesc")}
+        </Text>
+      </div>
+    </div>
   );
 }
 
 function AppInner() {
   const { t } = useI18n();
-  const [view, setView] = useState<View>("dashboard");
+  const [section, setSection] = useState<SectionId>("overview");
+  const [tabBySection, setTabBySection] = useState<Record<SectionId, string>>({
+    overview: "dashboard",
+    memory: "memories",
+    projects: "projects",
+    system: "machines",
+  });
   const [needsToken, setNeedsToken] = useState(false);
 
   useEffect(() => {
@@ -180,82 +186,105 @@ function AppInner() {
     return () => setUnauthorizedHandler(null);
   }, []);
 
+  const activeSection = useMemo(() => SECTIONS.find((s) => s.id === section)!, [section]);
+  const activeTab = tabBySection[section];
+
+  const goTo = (target: SectionId, tab: string) => {
+    setSection(target);
+    setTabBySection((prev) => ({ ...prev, [target]: tab }));
+  };
+
   if (needsToken) {
     return (
-      <AppShell height="fill" contentPadding={6}>
-        <TokenGate
-          onSubmit={(token) => {
-            setToken(token);
-            setNeedsToken(false);
-          }}
-        />
-      </AppShell>
+      <TokenGate
+        onSubmit={(token) => {
+          setToken(token);
+          setNeedsToken(false);
+        }}
+      />
     );
   }
 
+  const railItems: RailItem[] = SECTIONS.map((s) => ({ id: s.id, label: t(s.labelKey), icon: s.icon }));
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case "dashboard":
+        return <Dashboard />;
+      case "timeline":
+        return <Timeline onNavigate={(target) => { const dest = TIMELINE_TARGETS[target]; goTo(dest.section, dest.tab); }} />;
+      case "graph":
+        return <Graph />;
+      case "memories":
+        return <Memories />;
+      case "rag":
+        return <RagManagement />;
+      case "learning":
+        return <Learning />;
+      case "prompts":
+        return <Prompts />;
+      case "projects":
+        return <Projects />;
+      case "sessions":
+        return <Sessions />;
+      case "machines":
+        return <Machines />;
+      case "media":
+        return <Media />;
+      case "skills":
+        return <Skills />;
+      case "settings":
+        return <Settings />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <AppShell
-      height="fill"
-      contentPadding={6}
-      sideNav={
-        <SideNav
-          header={
-            <SideNavHeading
-              heading="AI Hub"
-              icon={
-                <img
-                  src={logo}
-                  alt=""
-                  width={20}
-                  height={20}
-                  style={{ height: "var(--spacing-6)", width: "var(--spacing-6)", borderRadius: "var(--radius-inner)", objectFit: "cover" }}
-                />
-              }
-            />
-          }
-          footer={<LanguageToggle />}
-        >
-          {NAV_SECTIONS.map((section) => (
-            <SideNavSection key={section.titleKey} title={t(section.titleKey)}>
-              {section.items.map((item) => (
-                <SideNavItem
-                  key={item.id}
-                  label={t(item.labelKey)}
-                  icon={item.icon}
-                  isSelected={view === item.id}
-                  onClick={() => setView(item.id)}
-                />
-              ))}
-            </SideNavSection>
-          ))}
-        </SideNav>
-      }
-    >
-      {view === "dashboard" && <Dashboard />}
-      {view === "timeline" && <Timeline onNavigate={(target) => setView(target)} />}
-      {view === "rag" && <RagManagement />}
-      {view === "prompts" && <Prompts />}
-      {view === "memories" && <Memories />}
-      {view === "learning" && <Learning />}
-      {view === "projects" && <Projects />}
-      {view === "sessions" && <Sessions />}
-      {view === "machines" && <Machines />}
-      {view === "media" && <Media />}
-      {view === "skills" && <Skills />}
-      {view === "settings" && <Settings />}
-    </AppShell>
+    <div className="app-shell">
+      <div className="app-rail-col">
+        <div className="app-rail-logo" title="AI Hub">
+          <Icon name="hub" size={18} />
+        </div>
+        <IconRail items={railItems} active={section} onSelect={(id) => setSection(id as SectionId)} />
+        <div className="app-rail-foot">
+          <Icon name="chevronRight" size={10} className="u-mono-dim" />
+        </div>
+      </div>
+      <div className="app-main">
+        <header className="app-topbar">
+          <span className="app-topbar-title">{t(activeSection.labelKey)}</span>
+          <Tabs
+            value={activeTab}
+            onChange={(tab) => setTabBySection((prev) => ({ ...prev, [section]: tab }))}
+            items={activeSection.tabs.map((tb) => ({ value: tb.id, label: t(tb.labelKey) }))}
+          />
+          <LanguageToggle />
+        </header>
+        {/* Graf sekmesi viewport'u komple kaplar — padding'li scroll konteynerinin dışında kalır. */}
+        <div className={`app-content${activeTab === "graph" ? " app-content--fill" : ""}`}>
+          {activeTab === "graph" ? (
+            renderTab()
+          ) : (
+            <div className="app-content-inner">
+              <Reveal trigger={`${section}-${activeTab}`}>{renderTab()}</Reveal>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
 export default function App() {
   const i18n = useProvideI18n();
   return (
-    <Theme theme={revenueXTheme}>
-      <I18nContext.Provider value={i18n}>
-        <LayerProvider>
-          <AppInner />
-        </LayerProvider>
-      </I18nContext.Provider>
-    </Theme>
+    <I18nContext.Provider value={i18n}>
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
+    </I18nContext.Provider>
   );
 }
+
+export type { Lang };

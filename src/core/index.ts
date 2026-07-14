@@ -11,6 +11,7 @@ export * from "./extract.js";
 export * from "./projects.js";
 export * from "./sessions.js";
 export * from "./recall.js";
+export * from "./graph.js";
 export * from "./compute.js";
 export * from "./sync.js";
 export * from "./admin.js";

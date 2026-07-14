@@ -25,6 +25,10 @@ import {
   deleteMemory,
   formatRecall,
   composePrompt,
+  graphNeighbors,
+  graphNode,
+  graphSeed,
+  type GraphNodeKind,
   deleteProject,
   deleteSessionLog,
   deleteSkill,
@@ -168,6 +172,30 @@ export function buildRestRouter(): Router {
     proj ? res.json(proj) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.delete("/projects/:name", wrap((req, res) => res.json({ deleted: deleteProject(req.params.name) })));
+
+  // --- graph (ilişki grafiği) ---
+  r.get("/graph/seed", wrap((req, res) => {
+    const tagLimit = req.query.tags ? Number(req.query.tags) : undefined;
+    res.json(graphSeed(tagLimit));
+  }));
+  r.get("/graph/node", wrap((req, res) => {
+    const { kind, key } = req.query as Record<string, string | undefined>;
+    if (!kind || !key) return void res.status(400).json({ error: "kind ve key zorunlu" });
+    const node = graphNode(kind as GraphNodeKind, key);
+    node ? res.json(node) : res.status(404).json({ error: "bulunamadı" });
+  }));
+  r.get("/graph/neighbors", wrap((req, res) => {
+    const { kind, key, offset, limit } = req.query as Record<string, string | undefined>;
+    if (!kind || !key) return void res.status(400).json({ error: "kind ve key zorunlu" });
+    res.json(
+      graphNeighbors(
+        kind as GraphNodeKind,
+        key,
+        offset ? Number(offset) : undefined,
+        limit ? Math.min(Number(limit), 100) : undefined
+      )
+    );
+  }));
 
   // --- sessions ---
   r.post("/sessions", wrap((req, res) =>

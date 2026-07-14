@@ -6,7 +6,7 @@
 # Idempotent: ikinci çalıştırma güvenlidir (mevcut .env/servis dosyalarını korur).
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/fthsrbst/mnema.git}"
+REPO_URL="${REPO_URL:-https://github.com/fthsrbst/ai-hub.git}"
 
 log() { echo -e "\n== $1 =="; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -26,14 +26,14 @@ ask_yn() {
 
 # ---------------------------------------------------------------------------
 # 0) Repo kökünü bul: script zaten klonlanmış bir repo içindeyse onu kullan,
-#    değilse ~/mnema'ya klonla.
+#    değilse ~/ai-hub'a klonla.
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
-if [[ -f "$SCRIPT_DIR/../package.json" ]] && grep -q '"name": "mnema"' "$SCRIPT_DIR/../package.json" 2>/dev/null; then
+if [[ -f "$SCRIPT_DIR/../package.json" ]] && grep -q '"name": "ai-hub"' "$SCRIPT_DIR/../package.json" 2>/dev/null; then
   APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
   log "Mevcut repo kullanılıyor: $APP_DIR"
 else
-  APP_DIR="${APP_DIR:-$HOME/mnema}"
+  APP_DIR="${APP_DIR:-$HOME/ai-hub}"
   log "Repo"
   if [[ -d "$APP_DIR/.git" ]]; then
     echo "zaten klonlanmış: $APP_DIR (güncelleniyor)"

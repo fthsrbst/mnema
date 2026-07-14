@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Grid } from "@astryxdesign/core/Grid";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { TextArea } from "@astryxdesign/core/TextArea";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useToast } from "@astryxdesign/core/Toast";
+import { VStack, HStack, Grid } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { TextField, TextArea } from "../components/ui/Field";
+import { Heading, Text } from "../components/ui/Typography";
+import { StatusDot, LivePill } from "../components/ui/Tag";
+import { EmptyState } from "../components/ui/EmptyState";
+import { AlertDialog, Dialog } from "../components/ui/Dialog";
+import { useToast } from "../components/ui/useToast";
 import { api, type MachineStatus } from "../api";
 import { useI18n } from "../i18n";
 
@@ -114,9 +111,9 @@ export function Machines() {
       ) : machines.length === 0 ? (
         <EmptyState title={t("machines.empty")} description={t("machines.emptyDesc")} />
       ) : (
-        <Grid columns={{ minWidth: 300, repeat: "fit" }} gap={4}>
+        <Grid minWidth={280} gap={4}>
           {machines.map((m) => (
-            <Card key={m.name} className="glass-card">
+            <Panel key={m.name}>
               <VStack gap={3}>
                 <HStack hAlign="between" vAlign="center">
                   <Heading level={4}>{m.name}</Heading>
@@ -128,69 +125,48 @@ export function Machines() {
                 <Text type="supporting" color="secondary">{m.host}</Text>
 
                 {m.lmstudio.online ? (
-                  <span className="rx-live-pill">
-                    <span className="rx-live-dot" />
-                    LM Studio — {m.lmstudio.models.length} {t("machines.models")}
-                  </span>
+                  <LivePill>LM Studio — {m.lmstudio.models.length} {t("machines.models")}</LivePill>
                 ) : (
-                  <HStack gap={2} vAlign="center">
-                    <StatusDot variant="neutral" label="LM Studio" />
-                    <Text type="supporting">LM Studio: {t("machines.lmstudioOffline")}</Text>
-                  </HStack>
+                  <StatusDot variant="neutral" label={`LM Studio: ${t("machines.lmstudioOffline")}`} />
                 )}
                 {m.lmstudio.models.map((model) => (
-                  <Text key={model} type="supporting" color="secondary">  {model}</Text>
+                  <Text key={model} type="supporting" color="secondary">{"  " + model}</Text>
                 ))}
 
                 {m.ollama?.online ? (
-                  <span className="rx-live-pill">
-                    <span className="rx-live-dot" />
-                    Ollama — {m.ollama.models.length} {t("machines.models")}
-                  </span>
+                  <LivePill>Ollama — {m.ollama.models.length} {t("machines.models")}</LivePill>
                 ) : (
-                  <HStack gap={2} vAlign="center">
-                    <StatusDot variant="neutral" label="Ollama" />
-                    <Text type="supporting">Ollama: {t("machines.lmstudioOffline")}</Text>
-                  </HStack>
+                  <StatusDot variant="neutral" label={`Ollama: ${t("machines.lmstudioOffline")}`} />
                 )}
                 {(m.ollama?.models ?? []).map((model) => (
-                  <Text key={model} type="supporting" color="secondary">  {model}</Text>
+                  <Text key={model} type="supporting" color="secondary">{"  " + model}</Text>
                 ))}
 
                 {m.comfyui.online ? (
-                  <span className="rx-live-pill">
-                    <span className="rx-live-dot" />
-                    ComfyUI — {t("machines.lmstudioOnline")}
-                  </span>
+                  <LivePill>ComfyUI — {t("machines.lmstudioOnline")}</LivePill>
                 ) : (
-                  <HStack gap={2} vAlign="center">
-                    <StatusDot variant="neutral" label="ComfyUI" />
-                    <Text type="supporting">ComfyUI: {t("machines.lmstudioOffline")}</Text>
-                  </HStack>
+                  <StatusDot variant="neutral" label={`ComfyUI: ${t("machines.lmstudioOffline")}`} />
                 )}
                 {m.notes && <Text type="supporting" color="secondary">{m.notes}</Text>}
               </VStack>
-            </Card>
+            </Panel>
           ))}
         </Grid>
       )}
 
-      <Dialog isOpen={showForm} onOpenChange={setShowForm} purpose="form" width={480}>
-        <DialogHeader title={editing ? editing.name : t("machines.newDialogTitle")} />
-        <VStack gap={3} paddingInline={5} paddingBlock={4}>
-          <TextInput label={t("machines.name")} value={name} onChange={setName} isRequired isDisabled={!!editing} />
-          <TextInput label={t("machines.host")} value={host} onChange={setHost} isRequired placeholder="192.168.1.10" />
-          <HStack gap={3}>
-            <TextInput label={t("machines.lmstudioPort")} value={lmstudioPort} onChange={setLmstudioPort} isOptional placeholder="1234" />
-            <TextInput label={t("machines.ollamaPort")} value={ollamaPort} onChange={setOllamaPort} isOptional placeholder="11434" />
-            <TextInput label={t("machines.comfyuiPort")} value={comfyuiPort} onChange={setComfyuiPort} isOptional placeholder="8188" />
-          </HStack>
-          <TextArea label={t("machines.notes")} value={notes} onChange={setNotes} rows={3} isOptional />
-          <HStack gap={2}>
-            <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} isDisabled={saving || !name.trim() || !host.trim()} />
-            <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowForm(false)} />
-          </HStack>
-        </VStack>
+      <Dialog isOpen={showForm} onOpenChange={setShowForm} width={480} title={editing ? editing.name : t("machines.newDialogTitle")}>
+        <TextField label={t("machines.name")} value={name} onChange={setName} disabled={!!editing} />
+        <TextField label={t("machines.host")} value={host} onChange={setHost} placeholder="192.168.1.10" />
+        <HStack gap={3}>
+          <TextField label={t("machines.lmstudioPort")} value={lmstudioPort} onChange={setLmstudioPort} optional placeholder="1234" />
+          <TextField label={t("machines.ollamaPort")} value={ollamaPort} onChange={setOllamaPort} optional placeholder="11434" />
+          <TextField label={t("machines.comfyuiPort")} value={comfyuiPort} onChange={setComfyuiPort} optional placeholder="8188" />
+        </HStack>
+        <TextArea label={t("machines.notes")} value={notes} onChange={setNotes} rows={3} optional />
+        <HStack gap={2}>
+          <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} disabled={saving || !name.trim() || !host.trim()} />
+          <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowForm(false)} />
+        </HStack>
       </Dialog>
 
       <AlertDialog
@@ -200,8 +176,7 @@ export function Machines() {
         description={`"${deleteTarget?.name}" ${t("machines.confirmDeleteDesc")}`}
         actionLabel={t("machines.deleteAction")}
         cancelLabel={t("common.cancel")}
-        actionVariant="destructive"
-        isActionLoading={deleting}
+        loading={deleting}
         onAction={confirmDelete}
       />
     </VStack>

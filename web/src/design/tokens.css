@@ -1,0 +1,81 @@
+/*
+ * AI Hub — 1-bit / bitmap tasarım sistemi.
+ * Kimlik: near-black zemin, kırık beyaz metin, tek "canlı" accent (fosfor yeşili),
+ * tek "sinyal" rengi (kırmızı — sadece yıkıcı/hata durumları için). Yuvarlak köşe yok.
+ * Fontlar self-host (@fontsource) — Tailscale arkasında offline çalışır, CDN yok.
+ */
+
+@font-face {
+  font-family: "Silkscreen";
+  src: local("Silkscreen");
+}
+
+:root {
+  color-scheme: dark;
+
+  /* --- zemin / yüzeyler --- */
+  --bg: #0a0a0a;
+  --bg-raised: #111110;
+  --bg-panel: #141412;
+  --bg-inset: #060605;
+  --bg-hover: rgba(238, 238, 231, 0.05);
+  --bg-active: rgba(238, 238, 231, 0.09);
+
+  /* --- metin --- */
+  --fg: #ececE4;
+  --fg-dim: #8d8d86;
+  --fg-faint: #55554f;
+  --fg-on-accent: #0a0a0a;
+
+  /* --- kenarlık --- */
+  --border: rgba(236, 236, 228, 0.14);
+  --border-strong: rgba(236, 236, 228, 0.30);
+  --border-hairline: rgba(236, 236, 228, 0.08);
+
+  /* --- accent (tek canlı renk: fosfor yeşili — "online/live/success") --- */
+  --accent: #a6ff6b;
+  --accent-dim: rgba(166, 255, 107, 0.16);
+  --accent-strong: #c4ff9c;
+
+  /* --- sinyal: kırmızı — sadece hata / yıkıcı işlem, dekoratif değil --- */
+  --danger: #ff5c47;
+  --danger-dim: rgba(255, 92, 71, 0.16);
+
+  /* --- uyarı: kısık amber — nötr-yakın, dekoratif kullanılmaz --- */
+  --warn: #d9b34c;
+  --warn-dim: rgba(217, 179, 76, 0.14);
+
+  /* --- tipografi --- */
+  --font-display: "Silkscreen", "Courier New", monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-numeric: "VT323", var(--font-mono);
+
+  /* --- boşluk ölçeği (8px ızgara) --- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* --- köşe: sıfır. bilinçli tasarım kararı --- */
+  --radius: 0px;
+
+  /* --- gölge: yumuşak blur yok; sert offset "basılı buton" hissi --- */
+  --shadow-hard: 3px 3px 0 0 var(--border-strong);
+  --shadow-hard-sm: 2px 2px 0 0 var(--border-strong);
+
+  /* --- geçiş süreleri --- */
+  --dur-fast: 90ms;
+  --dur-med: 180ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-med: 0ms;
+  }
+}
