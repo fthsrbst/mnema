@@ -28,6 +28,14 @@
   --mono:'IBM Plex Mono',monospace;
   --pix:'Silkscreen',monospace;
   --crt:'VT323',monospace;
+  /* IBM Plex Mono has no box-drawing/block glyphs (U+2500-259F), so the
+     browser silently substitutes a fallback font for just those characters —
+     and that fallback's advance width doesn't match Plex's, which shifts
+     every row of box-drawing ASCII art out of grid alignment. The system
+     "monospace" generic keyword resolves to one real terminal font (Consolas /
+     Menlo / DejaVu Sans Mono / …) with every glyph, ASCII art or not, drawn at
+     an identical fixed width, so grids stay aligned everywhere. */
+  --ascii:ui-monospace,Consolas,'Cascadia Mono','DejaVu Sans Mono','Liberation Mono',monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -93,7 +101,7 @@ section{position:relative}
 .hero__meta b{color:var(--phos);font-weight:400}
 .asciiwrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
 .asciilogo{
-  font-family:var(--mono);
+  font-family:var(--ascii);
   font-size:clamp(9px,2.05vw,22px);
   line-height:1.12;
   color:var(--phos);
@@ -202,6 +210,7 @@ section{position:relative}
   background:var(--phos);
 }
 .fcard pre.icon{
+  font-family:var(--ascii);
   font-size:11px;line-height:1.15;color:var(--phos);margin-bottom:14px;
   text-shadow:0 0 10px rgba(166,255,107,.3);
 }
@@ -224,6 +233,7 @@ section{position:relative}
   -webkit-overflow-scrolling:touch;
 }
 .arch__pre{
+  font-family:var(--ascii);
   font-size:clamp(10px,1.15vw,13px);line-height:1.18;color:var(--paper);
   padding:clamp(16px,3vw,34px);white-space:pre;min-width:max-content;
 }
@@ -315,7 +325,7 @@ footer{padding:clamp(40px,7vh,72px) 0 90px;position:relative}
   font-family:var(--pix);font-size:9px;letter-spacing:.3em;color:var(--grey);
   text-align:center;margin-top:6px;text-transform:uppercase;
 }
-.foot__ascii{color:var(--phos-dim);font-size:10px;line-height:1.25;margin-bottom:26px;overflow-x:auto;white-space:pre}
+.foot__ascii{font-family:var(--ascii);color:var(--phos-dim);font-size:10px;line-height:1.25;margin-bottom:26px;overflow-x:auto;white-space:pre}
 
 /* focus */
 a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
@@ -360,7 +370,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:
       one protocol (MCP), your own hardware.
     </p>
     <nav class="cta" aria-label="Primary">
-      <a class="btn btn--solid" href="https://github.com/fthsrbst/mnema">View on GitHub</a>
+      <a class="btn btn--solid" href="https://github.com/fthsrbst/mnema">Star on GitHub</a>
       <a class="btn" href="#quickstart">Quick start</a>
     </nav>
     <div class="hero__stamps" aria-hidden="true">
