@@ -13,7 +13,13 @@
   },
   "scripts": {
     "build": "tsc",
+    "backup:copy": "tsx scripts/backup-copy.ts",
     "dev": "tsx src/server/index.ts",
+    "eval:context": "tsx scripts/context-eval.ts",
+    "eval:context:release": "tsx scripts/context-eval.ts --release",
+    "migration:audit": "tsx scripts/migration-audit.ts",
+    "smoke:security": "tsx scripts/security-smoke.ts",
+    "smoke:generation": "tsx scripts/generation-smoke.ts",
     "smoke": "tsx scripts/smoke.ts",
     "hub": "tsx src/cli/index.ts"
   },

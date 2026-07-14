@@ -1,22 +1,36 @@
 #!/usr/bin/env node
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   config,
+  assertDeploymentSafety,
   embeddingsDisabledReason,
   embeddingsEnabled,
   getDb,
   hasVec,
   onWrite,
+  recordAuditEvent,
   runDigest,
   syncWithPrimary,
   vecError,
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
+import {
+  authenticate,
+  authenticationEnabled,
+  authorizeMcp,
+  consumeRateLimit,
+  hasProjectAccess,
+  hasScope,
+  requestProject,
+  restScope,
+  type Principal,
+} from "./auth.js";
 
 const app = express();
+assertDeploymentSafety();
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => {
@@ -30,6 +44,8 @@ app.get("/health", (_req, res) => {
     vec: hasVec(),
     embeddings: embeddingsEnabled(),
     version: "0.1.0",
+    deployment_profile: config.deploymentProfile,
+    vector_backend: config.vectorBackend,
     degraded,
   });
 });
@@ -39,30 +55,126 @@ app.get("/health", (_req, res) => {
 // içerdiğinden auth'un ARKASINDA servis edilir (aşağıda) — Funnel açıkken internete sızmasın.
 app.use("/", express.static("./web/dist"));
 
-// Bearer token auth (health hariç). Token boşsa auth kapalı (lokal dev).
+// Bearer/scoped-token auth (health and static UI shell excluded).
 // ?token= desteği: claude.ai/ChatGPT/Gemini connector'ları özel header koyamıyor —
 // token URL'de taşınır (https zorunlu, Funnel/Serve bunu sağlar).
-const tokenMatches = (candidate: string): boolean => {
-  const a = Buffer.from(candidate);
-  const b = Buffer.from(config.token);
-  return a.length === b.length && timingSafeEqual(a, b); // zamanlama sızıntısına karşı
-};
 app.use((req, res, next) => {
-  if (!config.token) return next();
   const header = req.headers.authorization ?? "";
-  if (header.startsWith("Bearer ") && tokenMatches(header.slice(7))) return next();
-  if (typeof req.query.token === "string" && tokenMatches(req.query.token)) return next();
-  res.status(401).json({ error: "unauthorized" });
+  const headerToken = header.startsWith("Bearer ") ? header.slice(7) : null;
+  const queryToken = config.allowQueryToken && typeof req.query.token === "string" ? req.query.token : null;
+  const principal = authenticate(headerToken ?? queryToken);
+  if (!principal) {
+    const anonymousRate = consumeRateLimit("anonymous");
+    const requestId = randomUUID();
+    res.setHeader("X-Request-Id", requestId);
+    if (!anonymousRate.allowed) {
+      res.setHeader("Retry-After", String(anonymousRate.retryAfterSec));
+      return void res.status(429).json({ error: "rate_limited", retry_after_seconds: anonymousRate.retryAfterSec });
+    }
+    try {
+      recordAuditEvent({
+        request_id: requestId,
+        actor: "anonymous",
+        action: "authentication_denied",
+        resource: req.path,
+        status: 401,
+        metadata: { method: req.method },
+      });
+    } catch (err) {
+      console.error(`[hub] audit write failed: ${(err as Error).message}`);
+    }
+    return void res.status(401).json({ error: "unauthorized" });
+  }
+  if (queryToken) res.setHeader("X-Hub-Token-Transport", "query-parameter-deprecated");
+  res.locals.principal = principal;
+  const requestId = randomUUID();
+  res.locals.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  const action = (() => {
+    if (req.path !== "/mcp") return `${req.method} ${req.path}`;
+    const messages = Array.isArray(req.body) ? req.body : [req.body];
+    const tools = messages
+      .map((message) => message?.params?.name)
+      .filter((name): name is string => typeof name === "string")
+      .slice(0, 20);
+    return tools.length > 0 ? `mcp:${tools.join(",")}` : "mcp:protocol";
+  })();
+  const auditProject = requestProject(req) ?? null;
+  res.on("finish", () => {
+    try {
+      recordAuditEvent({
+        request_id: requestId,
+        actor: principal.id,
+        action,
+        resource: req.path,
+        project: auditProject,
+        status: res.statusCode,
+        metadata: { method: req.method, auth_mode: principal.auth_mode },
+      });
+    } catch (err) {
+      console.error(`[hub] audit write failed: ${(err as Error).message}`);
+    }
+  });
+  next();
+});
+
+app.use((_req, res, next) => {
+  const principal = res.locals.principal as Principal;
+  const rate = consumeRateLimit(principal.id);
+  res.setHeader("X-RateLimit-Limit", String(Math.max(1, Math.trunc(config.rateLimitPerMinute))));
+  if (!rate.allowed) {
+    res.setHeader("Retry-After", String(rate.retryAfterSec));
+    return void res.status(429).json({ error: "rate_limited", retry_after_seconds: rate.retryAfterSec });
+  }
+  next();
 });
 
 // Üretilen medya: auth middleware'inden sonra — tarayıcı/istemci ?token= ile erişir.
+app.use("/outputs", (_req, res, next) => {
+  const principal = res.locals.principal as Principal;
+  if (!hasScope(principal, "knowledge:read")) return void res.status(403).json({ error: "forbidden" });
+  next();
+});
 app.use("/outputs", express.static("./data/outputs"));
 
+app.use("/api", (req, res, next) => {
+  const principal = res.locals.principal as Principal;
+  const required = restScope(req.method, req.path);
+  if (!hasScope(principal, required)) {
+    return void res.status(403).json({ error: "forbidden", required_scope: required });
+  }
+  const project = requestProject(req);
+  const restricted = !principal.projects.includes("*");
+  const requiresExplicitProject =
+    req.path === "/context" ||
+    req.path === "/timeline" ||
+    req.path.startsWith("/memory") ||
+    req.path.startsWith("/rag/search") ||
+    req.path === "/rag/documents" ||
+    req.path.startsWith("/sessions") ||
+    req.path.startsWith("/graph");
+  if (restricted && requiresExplicitProject && project === undefined) {
+    return void res.status(403).json({ error: "forbidden", reason: "explicit project required for this principal" });
+  }
+  if (project !== undefined && !hasProjectAccess(principal, project)) {
+    return void res.status(403).json({ error: "forbidden", reason: "project access denied" });
+  }
+  next();
+});
 app.use("/api", buildRestRouter());
 
 // MCP: stateless Streamable HTTP — her istek için taze server+transport
 app.post("/mcp", async (req, res) => {
   try {
+    const principal = res.locals.principal as Principal;
+    const authz = authorizeMcp(principal, req.body);
+    if (!authz.ok) {
+      return void res.status(403).json({
+        jsonrpc: "2.0",
+        error: { code: -32003, message: "Forbidden", data: { reason: authz.reason } },
+        id: (req.body as { id?: unknown })?.id ?? null,
+      });
+    }
     const server = buildMcpServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
@@ -96,7 +208,8 @@ getDb(); // şemayı baştan kur, sorun varsa açılışta patlasın
 
 app.listen(config.port, config.host, () => {
   console.log(`[hub] http://${config.host}:${config.port}  (MCP: /mcp, REST: /api, health: /health)`);
-  console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${config.token ? "açık" : "KAPALI"}`);
+  console.log(`[hub] deployment profile: ${config.deploymentProfile}, vector backend: ${config.vectorBackend}`);
+  console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${authenticationEnabled() ? "açık" : "KAPALI (local-dev)"}`);
 
   if (config.primaryUrls.length > 0) {
     console.log(`[hub] eşitleme: ${config.primaryUrls.join(", ")} ile her ${config.syncIntervalSec}sn (+ yazımda anında push)`);
@@ -115,8 +228,8 @@ app.listen(config.port, config.host, () => {
         const res = await syncWithPrimary(config.primaryUrls, config.primaryToken);
         if (res.ok) {
           const p = res.pulled!, q = res.pushed!;
-          const total = p.memories + p.documents + p.projects + p.sessions + p.machines + p.deletions +
-                        q.memories + q.documents + q.projects + q.sessions + q.machines + q.deletions;
+          const total = p.memories + p.documents + (p.relations ?? 0) + p.projects + p.sessions + p.machines + p.deletions +
+                        q.memories + q.documents + (q.relations ?? 0) + q.projects + q.sessions + q.machines + q.deletions;
           if (total > 0) console.log(`[hub] sync (${res.url}): alınan ${JSON.stringify(p)}, gönderilen ${JSON.stringify(q)}`);
         } else {
           // Erişilemezse sessizce devam — local-first, primary dönünce kaldığı yerden sürer.

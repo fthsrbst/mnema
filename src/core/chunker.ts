@@ -3,6 +3,9 @@ export interface Chunk {
   text: string;
 }
 
+/** Increment whenever chunk boundaries or normalization semantics change. */
+export const CHUNKER_VERSION = "markdown-characters-v1";
+
 const TARGET = 1800; // ~450 token
 const MAX = 2400;
 const OVERLAP = 200;

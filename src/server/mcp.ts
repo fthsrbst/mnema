@@ -11,25 +11,49 @@ import {
   upsertMachine,
   appendToProject,
   composePrompt,
+  consolidateMemories,
+  contextGet,
+  graphNeighbors,
+  graphNode,
   deleteMemory,
+  deleteMemoryRelation,
   deleteProject,
   listPrompts,
+  knowledgeIntegrity,
+  listAuditEvents,
   listSkills,
   saveSkill,
   getProject,
   listProjects,
+  listMemoryRelations,
   recall,
   recentSessionLogs,
   saveMemory,
+  saveMemoryRelation,
   searchChunks,
   searchMemories,
   updateMemory,
+  updateMemoryRelation,
   upsertProject,
   type MemoryType,
   type ProjectMap,
+  type GraphNodeKind,
+  migrateProjectReferences,
+  verifyAuditChain,
+  contextGetSchema,
+  documentInputSchema,
+  feedbackInputBaseSchema,
+  memoryInputBaseSchema,
+  memoryConsolidateBaseSchema,
+  memoryPatchBaseSchema,
+  memoryTypeSchema,
+  memoryRelationInputBaseSchema,
+  memoryRelationPatchBaseSchema,
+  memoryRelationTypeSchema,
+  sessionInputSchema,
 } from "../core/index.js";
 
-const memoryType = z.enum(["fact", "preference", "decision", "howto", "context"]);
+const memoryType = memoryTypeSchema;
 
 function json(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -37,6 +61,55 @@ function json(data: unknown) {
 
 export function buildMcpServer(): McpServer {
   const server = new McpServer({ name: "ai-hub", version: "0.1.0" });
+
+  server.registerTool(
+    "integrity_check",
+    {
+      title: "Check knowledge-base integrity",
+      description:
+        "Read-only operational audit for unknown project references, document lifecycle conflicts, missing/orphan vectors, duplicate URIs, invalid JSON metadata, and dangling relations. Run before strict-project enforcement, migrations, reindexing, or deployment.",
+      inputSchema: {},
+    },
+    async () => json(knowledgeIntegrity())
+  );
+
+  server.registerTool(
+    "audit_list",
+    {
+      title: "List security audit events",
+      description:
+        "Read redacted, node-local request audit events. Prompts, tokens, request bodies, and document text are never stored in this log.",
+      inputSchema: {
+        actor: z.string().max(100).optional(),
+        action: z.string().max(500).optional(),
+        project: z.string().max(100).optional(),
+        before: z.string().max(64).optional(),
+        limit: z.number().int().min(1).max(1000).optional(),
+      },
+    },
+    async (args) => json(listAuditEvents(args))
+  );
+
+  server.registerTool(
+    "audit_verify",
+    {
+      title: "Verify the audit hash chain",
+      description: "Verify that the node-local audit event chain has not been modified or reordered.",
+      inputSchema: {},
+    },
+    async () => json(verifyAuditChain())
+  );
+
+  server.registerTool(
+    "context_get",
+    {
+      title: "Get authoritative agent context",
+      description:
+        "Preferred context entry point for a task. The server combines the current project map, latest session, durable memories, and RAG evidence with intent-aware authority ordering, provenance, an explicit untrusted-evidence policy, and a token budget. Use this instead of manually concatenating recall/project/session results. For current status or 'where did we leave off', pass the canonical project and use intent='current_status'; project map and latest session outrank semantic matches.",
+      inputSchema: contextGetSchema.omit({ cwd: true, record_usage: true }).shape,
+    },
+    async (args) => json(await contextGet(args))
+  );
 
   server.registerTool(
     "prompt_list",
@@ -73,29 +146,7 @@ export function buildMcpServer(): McpServer {
       title: "Hafızaya kaydet",
       description:
         "Kalıcı olması gereken bilgiyi ortak hafızaya yazar: kararlar (gerekçesiyle), kullanıcı tercihleri, öğrenilen how-to'lar, proje bağlamı. Oturum bitince kaybolmaması gereken her şey buraya. SINIR: uzun doküman/talimat/prompt/araştırma notu memory DEĞİLDİR — rag_add kullan; memory 'bir bakışta okunur tek bilgi'dir.",
-      inputSchema: {
-        title: z.string().describe("Kısa başlık"),
-        body: z.string().describe("İçerik (markdown). Kararlar için gerekçeyi de yaz."),
-        type: memoryType.optional().describe("fact | preference | decision | howto | context"),
-        project: z
-          .string()
-          .optional()
-          .describe("project_list'teki KANONİK proje adı. Makine/cihaz/etiket proje değildir — onlar için tags kullan."),
-        tags: z.array(z.string()).optional(),
-        source: z.string().optional().describe("Hangi agent/cihaz yazıyor"),
-        importance: z
-          .number()
-          .min(0.5)
-          .max(2)
-          .optional()
-          .describe(
-            "önem çarpanı; varsayılan 1 çoğu kayıt için doğrudur. 2'yi NADİR kullan (aylar sonra bile her recall'da öne geçmesi gereken kritik karar/tercih); 0.5=önemsiz detay"
-          ),
-        related_ids: z
-          .array(z.number().int())
-          .optional()
-          .describe("Bağlantılı hafıza id'leri — bu kayıt recall'da enjekte edilirken bağlı kayıtların başlıkları 'ilgili: #x' satırı olarak gelir"),
-      },
+      inputSchema: memoryInputBaseSchema.shape,
     },
     async (args) => {
       const mem = await saveMemory(args);
@@ -140,24 +191,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Hafıza kaydını güncelle",
       description: "Var olan hafıza kaydını günceller (eskiyen/yanlışlanan bilgiyi düzelt).",
-      inputSchema: {
-        id: z.number().int(),
-        title: z.string().optional(),
-        body: z.string().optional(),
-        type: memoryType.optional(),
-        project: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-        importance: z
-          .number()
-          .min(0.5)
-          .max(2)
-          .optional()
-          .describe("önem çarpanı; 2=kritik karar, 1=normal, 0.5=önemsiz detay"),
-        related_ids: z
-          .array(z.number().int())
-          .optional()
-          .describe("Bağlantılı hafıza id'leri — TAM listeyi değiştirir (ekleme değil); boş dizi bağlantıları temizler"),
-      },
+      inputSchema: { id: z.number().int().positive(), ...memoryPatchBaseSchema.shape },
     },
     async ({ id, ...patch }) => {
       const updated = await updateMemory(id, patch);
@@ -170,14 +204,8 @@ export function buildMcpServer(): McpServer {
     {
       title: "Recall geri bildirimi",
       description:
-        "Otomatik recall enjeksiyonunun (<hub-recall>) isabetini işaretler: alakasız kayıt geldiyse verdict='noisy' (memory_id ile hangisi olduğunu belirt), olması gereken kayıt gelmediyse 'missing', özellikle isabetliyse 'helpful'. Bu veri HUB_RECALL_* eşiklerinin kanıta dayalı kalibrasyonunda kullanılır — yanlış enjeksiyon gördüğünde çağırmak recall kalitesini ölçülür kılar.",
-      inputSchema: {
-        query: z.string().describe("Recall'u tetikleyen mesaj/sorgu (kısaltılmış olabilir)"),
-        verdict: z.enum(["noisy", "missing", "helpful"]),
-        memory_id: z.number().int().optional().describe("İlgili kayıt: noisy'de yanlış enjekte edilen, missing'de gelmesi gereken"),
-        note: z.string().optional().describe("Neden yanlış/eksik — kalibrasyon için bağlam"),
-        source: z.string().optional().describe("Hangi agent/cihaz bildiriyor"),
-      },
+        "context_get veya otomatik recall sonucunun isabetini ölçer. Memory, RAG chunk, document ya da tüm context hedeflenebilir; context_get çıktısındaki delivery_id, rank ve channels alanlarını geri gönder. Alakasız için noisy, eksik kanıt için missing, özellikle isabetli kanıt için helpful kullan. memory_id yalnızca eski istemciler için uyumluluk alanıdır.",
+      inputSchema: feedbackInputBaseSchema.shape,
     },
     async (args) => json(addRecallFeedback(args))
   );
@@ -202,6 +230,8 @@ export function buildMcpServer(): McpServer {
         query: z.string(),
         project: z.string().optional(),
         limit: z.number().int().min(1).max(20).optional(),
+        include_archived: z.boolean().optional().describe("Search archived/superseded documents too; defaults to false"),
+        kind: z.enum(["reference", "status", "decision", "runbook", "research", "learning", "source"]).optional(),
       },
     },
     async ({ query, ...opts }) => json(await searchChunks(query, opts))
@@ -213,15 +243,112 @@ export function buildMcpServer(): McpServer {
       title: "Doküman indeksle",
       description:
         "Bir metni/dokümanı RAG arşivine ekler (otomatik chunk + embed). Öğrenme notları, araştırma özetleri, önemli dokümanlar için. Aynı uri ile tekrar çağrılırsa re-index eder — güncelleme İÇİN AYNI uri'yi kullan, v2/v3 diye yeni uri açıp eski sürümü arşivde bırakma. Proje dokümanlarında kanonik uri deseni: '<proje>/<kategori>/<ad>' (örn. voiceweb/architecture/system) ve project alanına project_list'teki adı ver. Öğrenme notlarında project='learning' ve uri 'learning/<slug>' ver — web arayüzü Öğrenme sekmesinde bu projeyi listeler (uri 'learning/' ile başlayıp project verilmezse otomatik 'learning' atanır). PDF/DOCX gibi binary dosyaları buraya elle taşıma: `curl -X POST -H 'Authorization: Bearer <token>' --data-binary @dosya.pdf '<hub-url>/api/rag/upload?filename=dosya.pdf&title=...&project=...'` ile yükle veya `hub index dosya.pdf` kullan — sunucu parse edip indeksler (taranmış PDF'te metin çıkmazsa hata döner; o zaman vision/OCR ile okuyup rag_add çağır).",
-      inputSchema: {
-        title: z.string(),
-        text: z.string().describe("Markdown içerik"),
-        uri: z.string().optional().describe("Tekil kimlik (dosya yolu/URL) — re-index için; öğrenme notlarında 'learning/<slug>'"),
-        project: z.string().optional().describe("İlgili proje; öğrenme notlarında 'learning'"),
-        source: z.string().optional(),
-      },
+      inputSchema: documentInputSchema.shape,
     },
     async (args) => json(await addDocument(args))
+  );
+
+  server.registerTool(
+    "project_migrate_references",
+    {
+      title: "Migrate project references",
+      description:
+        "Administrative integrity repair: atomically move memory, document, and session references from a stale/alias project name to an existing canonical project map, including vector partition metadata. Does not delete either project map.",
+      inputSchema: {
+        from: z.string().min(1).max(100),
+        to: z.string().min(1).max(100),
+      },
+    },
+    async ({ from, to }) => json(migrateProjectReferences(from, to))
+  );
+
+  server.registerTool(
+    "memory_relation_add",
+    {
+      title: "Add a typed memory relation",
+      description:
+        "Create or upsert a directional, temporal knowledge-graph edge between two memories. Use related for a symmetric loose link; use supports, contradicts, supersedes, caused_by, derived_from, or applies_to when the semantics are known. valid_from/valid_to must be ISO timestamps. Do not invent relationships without evidence.",
+      inputSchema: memoryRelationInputBaseSchema.shape,
+    },
+    async (args) => json(saveMemoryRelation(args))
+  );
+
+  server.registerTool(
+    "memory_consolidate",
+    {
+      title: "Consolidate duplicate memories",
+      description:
+        "Explicitly merge duplicate source memories into a chosen target. You must provide a complete merged body; Mnema rewires typed/legacy relations and tombstones sources but never asks an LLM to destructively summarize them automatically. Review every source first.",
+      inputSchema: memoryConsolidateBaseSchema.shape,
+    },
+    async (args) => json(await consolidateMemories(args))
+  );
+
+  server.registerTool(
+    "memory_relation_list",
+    {
+      title: "List typed memory relations",
+      description:
+        "Inspect typed knowledge-graph edges, optionally around one local memory ID, by relation type, or active at a specific ISO timestamp.",
+      inputSchema: {
+        memory_id: z.number().int().positive().optional(),
+        relation_type: memoryRelationTypeSchema.optional(),
+        active_at: z.string().datetime({ offset: true }).optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+      },
+    },
+    async (args) => json(listMemoryRelations(args))
+  );
+
+  server.registerTool(
+    "memory_relation_update",
+    {
+      title: "Update a typed memory relation",
+      description:
+        "Update confidence, temporal validity, source, or metadata on a relation. To retire a fact without erasing history, set valid_to instead of deleting it.",
+      inputSchema: { id: z.string().regex(/^[a-f0-9]{32}$/i), ...memoryRelationPatchBaseSchema.shape },
+    },
+    async ({ id, ...patch }) => {
+      const relation = updateMemoryRelation(id, patch);
+      return relation ? json(relation) : json({ error: `relation ${id} not found` });
+    }
+  );
+
+  server.registerTool(
+    "memory_relation_delete",
+    {
+      title: "Delete a typed memory relation",
+      description: "Delete a provably incorrect relation. Prefer valid_to for relations that were historically true.",
+      inputSchema: { id: z.string().regex(/^[a-f0-9]{32}$/i) },
+    },
+    async ({ id }) => json({ deleted: deleteMemoryRelation(id) })
+  );
+
+  const graphKind = z.enum(["project", "memory", "document", "session", "tag"]);
+  server.registerTool(
+    "graph_node",
+    {
+      title: "Get one knowledge-graph node",
+      description: "Resolve a project, memory, document, session, or tag node and its degree without loading the graph.",
+      inputSchema: { kind: graphKind, key: z.string().min(1).max(300) },
+    },
+    async ({ kind, key }) => json(graphNode(kind as GraphNodeKind, key))
+  );
+
+  server.registerTool(
+    "graph_neighbors",
+    {
+      title: "Traverse knowledge-graph neighbors",
+      description:
+        "Page through immediate graph neighbors. Typed memory edges preserve direction, confidence, and validity; project/tag membership edges are navigational.",
+      inputSchema: {
+        kind: graphKind,
+        key: z.string().min(1).max(300),
+        offset: z.number().int().nonnegative().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    async ({ kind, key, offset, limit }) => json(graphNeighbors(kind as GraphNodeKind, key, offset, limit))
   );
 
   server.registerTool(
@@ -339,11 +466,7 @@ export function buildMcpServer(): McpServer {
       title: "Oturum özeti kaydet",
       description:
         "Oturum sonunda ne yapıldığını kaydeder: bitirilenler, yarım kalanlar, sıradaki adım. Bir sonraki oturum (hangi cihazda olursa olsun) buradan devam eder. Proje odağı değiştiyse project_update ile current_focus/next_steps'i de güncelle — bayat map bir sonraki agent'ı yanlış yönlendirir.",
-      inputSchema: {
-        summary: z.string().describe("Markdown özet: yapılanlar, yarım kalanlar, sıradaki adım"),
-        project: z.string().optional().describe("project_list'teki kanonik proje adı"),
-        source: z.string().optional(),
-      },
+      inputSchema: sessionInputSchema.shape,
     },
     async ({ summary, project, source }) => {
       const log = addSessionLog(summary, project, source);

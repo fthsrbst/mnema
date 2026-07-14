@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "description": "Seed regression suite for context orchestration. Expand to 50-100 held-out cases before retrieval tuning.",
+  "cases": [
+    {
+      "id": "ai-hub-current-status-authority",
+      "query": "What is the current status and next step of ai-hub?",
+      "project": "ai-hub",
+      "intent": "current_status",
+      "expect": {
+        "intent": "current_status",
+        "authority_project": "ai-hub",
+        "latest_session": true,
+        "max_memories": 0,
+        "max_chunks": 2
+      }
+    },
+    {
+      "id": "ai-hub-current-status-turkish-auto-intent",
+      "query": "Bu projede şu an nerede kaldık ve sıradaki adım ne?",
+      "project": "ai-hub",
+      "intent": "auto",
+      "expect": {
+        "intent": "current_status",
+        "authority_project": "ai-hub",
+        "latest_session": true,
+        "max_memories": 0,
+        "max_chunks": 2
+      }
+    },
+    {
+      "id": "voiceweb-current-status-no-stale-v01",
+      "query": "VoiceWeb'in güncel sürümü ve şu anki durumu nedir?",
+      "project": "bitirme-projesi",
+      "intent": "current_status",
+      "expect": {
+        "intent": "current_status",
+        "authority_project": "bitirme-projesi",
+        "authority_focus_any": ["v0.5"],
+        "max_memories": 0,
+        "max_chunks": 2,
+        "forbidden_chunk_title_any": ["v0.1"]
+      }
+    },
+    {
+      "id": "mnema-kit-plugin-decision",
+      "query": "Why was mnema-kit designed with a plugin architecture?",
+      "project": "mnema-kit",
+      "intent": "decision",
+      "expect": {
+        "intent": "decision",
+        "authority_project": "mnema-kit",
+        "memory_title_any": ["plugin tabanlı hub sürümü"]
+      }
+    },
+    {
+      "id": "ai-hub-ssh-history",
+      "query": "How was the persistent Pi and Mac git origin and SSH access problem fixed?",
+      "project": "ai-hub",
+      "intent": "technical_history",
+      "expect": {
+        "intent": "technical_history",
+        "authority_project": "ai-hub",
+        "memory_title_any": ["Pi/Mac git origin"]
+      }
+    },
+    {
+      "id": "negative-gibberish",
+      "query": "xyzzy qqqwww zzzyyy impossible-nebula-7391",
+      "intent": "general",
+      "expect": {
+        "intent": "general",
+        "empty_evidence": true
+      }
+    },
+    {
+      "id": "unknown-project-status-warning",
+      "query": "What is the current status?",
+      "project": "project-that-does-not-exist",
+      "intent": "current_status",
+      "expect": {
+        "intent": "current_status",
+        "authority_project": null,
+        "max_memories": 0,
+        "max_chunks": 2,
+        "warning_any": ["Unknown project map"]
+      }
+    }
+  ]
+}

@@ -2,9 +2,29 @@ import { getDb, NOW_MS } from "./db.js";
 import { notifyWrite } from "./events.js";
 import { recordDeletion } from "./sync.js";
 import type { ProjectMap } from "./types.js";
+import { config } from "./config.js";
+import { projectMapSchema } from "./schemas.js";
+import { projectNameSchema } from "./schemas.js";
+import { vectorStore } from "./vector-store.js";
+
+const RESERVED_PROJECT_NAMES = new Set(["global", "learning"]);
+
+export function isKnownProjectName(name: string): boolean {
+  return RESERVED_PROJECT_NAMES.has(name) || getProject(name) !== null;
+}
+
+export function assertProjectReference(project: string | null | undefined, entity: string): void {
+  if (!project || isKnownProjectName(project)) return;
+  if (config.strictProjects) {
+    throw new Error(`${entity} references unknown project '${project}'; create it with project_update first`);
+  }
+}
 
 export function upsertProject(map: ProjectMap): ProjectMap {
   if (!map.name) throw new Error("Proje adı (name) zorunlu");
+  const candidate = { ...map };
+  delete candidate.updated_at;
+  map = projectMapSchema.parse(candidate) as ProjectMap;
   const db = getDb();
   const existing = getProject(map.name);
   const merged: ProjectMap = { ...(existing ?? {}), ...map, name: map.name };
@@ -77,4 +97,56 @@ export function appendToProject(
   if (!proj) return null;
   const list = Array.isArray(proj[field]) ? (proj[field] as string[]) : [];
   return upsertProject({ ...proj, [field]: [...list, entry] });
+}
+
+export interface ProjectReferenceMigrationResult {
+  from: string;
+  to: string;
+  memories: number;
+  documents: number;
+  sessions: number;
+}
+
+/**
+ * Atomically rewrites project references and vec partition metadata. This is an
+ * administrative data migration, not a project-map rename/delete operation.
+ */
+export function migrateProjectReferences(fromRaw: string, toRaw: string): ProjectReferenceMigrationResult {
+  const from = projectNameSchema.parse(fromRaw);
+  const to = projectNameSchema.parse(toRaw);
+  if (from === to) return { from, to, memories: 0, documents: 0, sessions: 0 };
+  if (!isKnownProjectName(to)) throw new Error(`target project '${to}' has no canonical project map`);
+  const db = getDb();
+  const memoryVectors = vectorStore.available()
+    ? (db.prepare("SELECT id FROM memories WHERE project = ?").all(from) as { id: number }[])
+        .map((row) => ({ ...row, embedding: vectorStore.get("memory", row.id) }))
+        .filter((row): row is { id: number; embedding: Buffer } => Boolean(row.embedding))
+    : [];
+  const chunkVectors = vectorStore.available()
+    ? (db
+        .prepare(
+          `SELECT c.id, d.enabled, d.is_current, d.kind
+           FROM chunks c JOIN documents d ON d.id = c.document_id WHERE d.project = ?`
+        )
+        .all(from) as { id: number; enabled: number; is_current: number; kind: string }[])
+        .map((row) => ({ ...row, embedding: vectorStore.get("chunk", row.id) }))
+        .filter((row): row is { id: number; enabled: number; is_current: number; kind: string; embedding: Buffer } => Boolean(row.embedding))
+    : [];
+
+  const result = db.transaction(() => {
+    const memories = db
+      .prepare(`UPDATE memories SET project = ?, updated_at = ${NOW_MS} WHERE project = ?`)
+      .run(to, from).changes;
+    const documents = db
+      .prepare(`UPDATE documents SET project = ?, updated_at = ${NOW_MS} WHERE project = ?`)
+      .run(to, from).changes;
+    const sessions = db
+      .prepare(`UPDATE session_logs SET project = ?, updated_at = ${NOW_MS} WHERE project = ?`)
+      .run(to, from).changes;
+    for (const row of memoryVectors) vectorStore.putMemory(row.id, to, row.embedding);
+    for (const row of chunkVectors) vectorStore.putChunk(row.id, to, row.enabled, row.is_current, row.kind, row.embedding);
+    return { from, to, memories, documents, sessions };
+  })();
+  if (result.memories + result.documents + result.sessions > 0) notifyWrite();
+  return result;
 }

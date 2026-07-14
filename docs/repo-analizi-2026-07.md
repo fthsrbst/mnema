@@ -1,5 +1,11 @@
 # Repo Analizi — ai-hub vs 4 Açık Kaynak Proje (Temmuz 2026)
 
+> 2026-07-07 tarihli tarihsel snapshot. Sonraki sürüm authoritative
+> `context_get`, document lifecycle, scoped auth, typed temporal relations,
+> generation-aware sync, audit/integrity kontrolleri ve VectorStore sınırı
+> ekledi. Güncel mimari için `architecture/enterprise-context-platform.md`
+> kullanılmalı; bu dosya yalnız tarihli rakip gözlemleri içindir.
+
 Bu rapor, ai-hub'ı (Raspberry Pi 5 üzerinde çalışan, tek kullanıcılı ortak hafıza + RAG + proje map sunucusu) dört açık kaynak projeyle karşılaştırır: **avenoxbeyin**, **raold/second-brain**, **M0nkeyFl0wer/second-brain-hybrid-graph** ve **crewAI**. Amaç övgü değil eksik listesi: hangi fikirler ai-hub'a taşınmaya değer, hangileri tek kullanıcılı Pi kurulumuna uymaz. Analiz tarihi: 2026-07-07. ai-hub'ın mevcut durumu: Faz 1 tamam (memory CRUD, Gemini embedding, hibrit arama RRF, MCP+REST, auto-recall hook, FTS-only fallback), sync (LWW + tombstone + embedding taşıma) ve machines registry (LM Studio/ComfyUI) kodda mevcut.
 
 ---

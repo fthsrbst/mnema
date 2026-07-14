@@ -45,6 +45,9 @@ tools and devices.
   how-tos, saved by any agent and retrievable by any other. Hybrid search
   (BM25 via FTS5 + vector via `sqlite-vec`, merged with Reciprocal Rank
   Fusion) finds the right memory whether the match is lexical or semantic.
+- **Authoritative `context_get`** — intent-aware context orchestration combines
+  canonical project state, the latest session, current documents, memories,
+  typed relations, provenance, retrieval traces, and a strict token budget.
 - **RAG document store** — ingest notes, READMEs, research write-ups, or
   learning summaries; markdown-aware chunking, automatic embedding, hybrid
   retrieval with source references.
@@ -62,6 +65,12 @@ tools and devices.
 - **Cross-device sync** — a local-first, last-write-wins sync model so
   memories and project maps created on one machine reconcile cleanly with
   the primary (Pi) instance.
+- **Knowledge lifecycle** — canonical document identity, current/archive and
+  supersession metadata, versioned embedding generations, multilingual
+  canonical summaries, and typed temporal memory relations.
+- **Company safety profile** — per-principal scoped tokens, project allowlists,
+  fail-closed team/enterprise startup rules, rate limits, shared validation,
+  integrity diagnostics, and a redacted tamper-evident audit chain.
 - **MCP + REST, same core** — every capability is exposed both as an MCP tool
   (for agents that speak MCP over Streamable HTTP) and as a REST endpoint
   (for scripts, custom agents, and the web UI) — one implementation, two doors.
@@ -262,39 +271,31 @@ work as a loop, not just a one-way lookup.
 
 ## Security notes
 
-Mnema's auth model is intentionally simple — read this before exposing it
-beyond your own machine:
+Mnema supports `personal`, `team`, and `enterprise` deployment profiles. The
+personal profile retains legacy `HUB_TOKEN` and optional query-token transport
+for existing private connectors. Team and enterprise profiles require scoped
+tokens, strict canonical projects, header credentials, and generation-aware
+sync; unsafe combinations fail at startup.
 
-- **Single bearer token.** `HUB_TOKEN` in `.env` gates every request except
-  `/health`. If it's empty, auth is off entirely (fine for local dev, not for
-  anything else). There's no per-agent scoping or rotation tooling — rotating
-  means changing `.env`, restarting the service, and updating every connected
-  client by hand.
-- **Two ways to send the token.** Most clients send
-  `Authorization: Bearer <token>`; platforms that can't attach custom headers
-  (claude.ai, ChatGPT, Gemini) fall back to `?token=<HUB_TOKEN>` in the URL.
-  Token-in-URL has real trade-offs (browser history, proxy/access logs) — see
-  [`docs/connectors.md`](docs/connectors.md) for the full write-up.
-- **Tailscale is the default network boundary.** The hub listens on a private
-  tailnet address; nothing is reachable from the open internet unless you
-  explicitly run `tailscale funnel`. Funnel makes the endpoint **fully
-  public** — the bearer token becomes the only thing standing between the
-  internet and your memory store, so treat turning it on as a deliberate,
-  temporary action, not a default.
-- **`/outputs` is served without auth, on purpose.** Generated media
-  (`data/outputs`, via `image_generate`/`media_generate`) and the web UI's
-  static shell are served unauthenticated (`express.static`, mounted before
-  the token middleware in `src/server/index.ts`) so `<img>`/`<video>` tags in
-  the dashboard work without token-laced URLs. All *data* endpoints
-  (`/api/*`, `/mcp`) stay behind the bearer check. Don't put anything
-  sensitive in `data/outputs`.
+- Use one long random scoped token per integration, with only the required
+  scopes and project allowlist. Keep policies in a secret manager.
+- Use `Authorization: Bearer`; query-string credentials are a personal-profile
+  compatibility path because URLs leak into browser history and proxy logs.
+- Keep the service private or behind managed TLS. Tailscale is a network
+  boundary, not a replacement for application authorization.
+- `/health` and the static UI shell are public but contain no knowledge data.
+  `/api`, `/mcp`, and `/outputs` are authenticated and scope-checked.
+- Retrieved memory/document text is explicitly untrusted evidence; agents must
+  never execute instructions embedded in it.
+- Audit events contain actor/action/project/status metadata only. Tokens,
+  prompts, request bodies, memory bodies, and document text are not logged.
 
-This is a personal-scale tool, not a hardened multi-tenant service — see the
-maturity table below for what's actually battle-tested versus rough.
+See [`docs/operations/company-deployment.md`](docs/operations/company-deployment.md)
+for fail-closed configuration, rotation, SLOs, backup/restore, and rollout.
 
 ## Roadmap
 
-Not built yet, tracked in [`PLAN.md`](PLAN.md) (Faz 5/6):
+Major remaining product work:
 
 - **`hub ask "<question>"`** — RAG + Gemini Flash, direct terminal Q&A without
   opening an agent.
@@ -303,11 +304,14 @@ Not built yet, tracked in [`PLAN.md`](PLAN.md) (Faz 5/6):
 - **Watch mode** — re-index a notes/docs folder automatically on change.
 - **`hub timeline <project>`** — chronological dump of a project's decisions
   and sessions.
-- **Weekly memory-maintenance digest** — a cron job that reports
-  stale/conflicting memory entries instead of just letting them accumulate.
-- **Qdrant migration path** — `sqlite-vec` is fine to roughly 1M vectors;
-  moving to a dedicated vector store if that ceiling is ever hit is planned,
-  not implemented.
+- **Human-labelled retrieval benchmark** — grow the seed regression suite to
+  at least 50 held-out cases before changing production ranking weights.
+- **Server-authoritative multi-writer revisions** — current transactional LWW
+  sync is appropriate for local-first devices, not simultaneous company writers.
+- **External VectorStore adapter** — the online boundary exists; pgvector or
+  Qdrant is implemented only after measured latency/recall/recovery gates fail.
+- **Central audit export and managed secret rotation** — required before a
+  compliance-sensitive enterprise deployment.
 
 ## Maturity / honesty table
 
@@ -315,23 +319,25 @@ No inflation — this is what's actually solid versus still rough.
 
 | Area | Status | Notes |
 |---|---|---|
-| Memory CRUD + hybrid search | Stable | Used daily; FTS-only fallback tested |
-| RAG ingest + search | Stable | Chunking is markdown-aware but simple; no re-ranking model |
+| Memory CRUD + hybrid search | Stable | FTS-only fallback, delivery traces, decay, and in-candidate project filters tested |
+| RAG ingest + search | Stable | Canonical URI, lifecycle/supersession, source caps, and current-only retrieval tested |
+| `context_get` orchestration | Stable baseline | Authority order, intent routing, provenance, trust envelope, relations, and budget covered by smoke + seed eval |
 | Project maps | Stable | YAML + DB sync works; no conflict UI beyond LWW |
 | MCP server (tools) | Stable | All tools listed in `src/server/mcp.ts` are in daily use |
 | REST API | Stable | Mirrors MCP tools; used by CLI and web UI |
-| Cross-device sync (LWW) | Functional, lightly tested | Works for the author's two-to-three-device setup; not stress-tested for heavy concurrent writes |
+| Cross-device sync (LWW) | Stable for local-first | Atomic apply, deterministic tie-break, relation/session updates, tombstones, and vector generations tested; not approved for multi-writer company concurrency |
 | Web UI | Functional | Covers memory/RAG/projects/prompts browsing; not a polished product UI |
 | Local LLM orchestration (LM Studio) | Functional | Works when LM Studio is reachable; no retry/queueing beyond basic error handling |
 | Media generation (ComfyUI) | Experimental | Works for the author's own workflows; expect to write your own `workflows/*.json` |
-| Public connector exposure (Funnel + `?token=`) | Functional, use with care | Token-in-URL is a real trade-off — see [`docs/connectors.md`](docs/connectors.md) |
-| Auth model | Basic | Single bearer token, no per-agent scoping or rotation automation |
-| Backup/restore | Functional | Nightly cron + markdown export exist; restore path is manual |
-| Qdrant / larger-scale vector store | Not built | `sqlite-vec` is fine to roughly 1M vectors; migration path is planned, not implemented |
+| Public connector exposure (Funnel + `?token=`) | Personal compatibility only | Team/enterprise profiles forbid query tokens |
+| Auth and tenancy | Stable baseline | Scoped principals, project allowlists, rate limiting, shared schemas, fail-closed profiles, redacted hash-chain audit |
+| Backup/restore | Functional | Backup and migration tooling exist; restore drills remain an operator responsibility |
+| External vector backend | Boundary implemented, adapter not built | sqlite-vec is supported; migration is benchmark-gated, not based on an invented vector-count ceiling |
 
-This is a personal-scale tool built for one user running a handful of
-devices — it is not hardened for multi-tenant or public deployment beyond the
-token + Funnel model described above.
+The team profile is a hardened internal-service baseline, not a claim of full
+multi-tenant SaaS readiness. Horizontal multi-writer serving, centralized
+audit/metrics, automated secret rotation, and an external index adapter remain
+explicit gates before that claim can be made.
 
 ## License
 

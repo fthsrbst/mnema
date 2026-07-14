@@ -11,7 +11,14 @@
  * - Embedding vektörleri base64 taşınır — cihazlar yeniden embed etmez.
  */
 import { createHash } from "node:crypto";
-import { getDb, hasVec, NOW_MS } from "./db.js";
+import {
+  configuredEmbeddingGeneration,
+  getDb,
+  NOW_MS,
+} from "./db.js";
+import { config } from "./config.js";
+import { syncPayloadSchema } from "./schemas.js";
+import { vectorStore } from "./vector-store.js";
 
 /** Eşit updated_at için deterministik tie-break anahtarı. Alan sırası sabit kalmalı. */
 export function contentFingerprint(parts: (string | number | null | undefined)[]): string {
@@ -38,6 +45,9 @@ export interface SyncMemory {
   project: string | null;
   tags: string;
   source: string | null;
+  language?: string | null;
+  canonical_summary?: string | null;
+  normalizer_generation?: string | null;
   created_at: string;
   updated_at: string;
   importance?: number; // eski peer göndermezse 1.0 varsayılır
@@ -59,17 +69,54 @@ export interface SyncDocument {
   uri: string | null;
   project: string | null;
   enabled?: number; // eski peer'lar göndermez → 1 varsay
+  kind?: string;
+  version?: string | null;
+  is_current?: number;
+  supersedes_uid?: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  archived_at?: string | null;
+  content_hash?: string | null;
+  language?: string | null;
   created_at: string;
   updated_at: string;
   chunks: SyncChunk[];
 }
 
+interface StoredSyncDocument extends Omit<SyncDocument, "chunks"> {
+  enabled: number;
+  kind: string;
+  version: string | null;
+  is_current: number;
+  supersedes_uid: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  archived_at: string | null;
+  content_hash: string | null;
+  language: string | null;
+}
+
 export interface SyncPayload {
   now: string;
+  /** Generation hash for every transported vector. Missing only on legacy peers. */
+  embedding_generation?: string;
   memories: SyncMemory[];
   documents: SyncDocument[];
+  relations?: {
+    uid: string;
+    from_uid: string;
+    to_uid: string;
+    relation_type: string;
+    confidence: number;
+    valid_from: string | null;
+    valid_to: string | null;
+    source: string | null;
+    metadata: string;
+    created_at: string;
+    updated_at: string;
+  }[];
   projects: { name: string; data: string; updated_at: string }[];
-  sessions: { uid: string; project: string | null; summary: string; source: string | null; created_at: string }[];
+  sessions: { uid: string; project: string | null; summary: string; source: string | null; created_at: string; updated_at?: string }[];
   machines: { name: string; host: string; lmstudio_port: number | null; ollama_port?: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }[];
   deletions: { uid: string; tbl: string; deleted_at: string }[];
 }
@@ -79,11 +126,7 @@ function b64(buf: Buffer | null | undefined): string | undefined {
 }
 
 function getVecBuffer(table: string, rowid: number): Buffer | null {
-  if (!hasVec()) return null;
-  const row = getDb().prepare(`SELECT embedding FROM ${table} WHERE rowid = ?`).get(BigInt(rowid)) as
-    | { embedding: Buffer }
-    | undefined;
-  return row?.embedding ?? null;
+  return vectorStore.get(table === "memories_vec" ? "memory" : "chunk", rowid);
 }
 
 /** `since`'ten (ISO, UTC "YYYY-MM-DD HH:MM:SS") beri değişen her şeyi topla. */
@@ -96,6 +139,9 @@ export function collectChanges(since: string): SyncPayload {
     .all(since) as (SyncMemory & { id: number })[]).map((m) => ({
     uid: m.uid, type: m.type, title: m.title, body: m.body, project: m.project,
     tags: m.tags, source: m.source, created_at: m.created_at, updated_at: m.updated_at,
+    language: m.language ?? null,
+    canonical_summary: m.canonical_summary ?? null,
+    normalizer_generation: m.normalizer_generation ?? null,
     importance: m.importance ?? 1.0,
     related: m.related ?? "[]",
     // last_accessed/access_count kasıtlı olarak taşınmaz — cihaz-yerel istatistik
@@ -108,7 +154,11 @@ export function collectChanges(since: string): SyncPayload {
   const chunkStmt = db.prepare("SELECT id, seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq");
   const documents = docRows.map((d) => ({
     uid: d.uid, title: d.title, source: d.source, uri: d.uri, project: d.project,
-    enabled: d.enabled ?? 1, created_at: d.created_at, updated_at: d.updated_at,
+    enabled: d.enabled ?? 1, kind: d.kind ?? "reference", version: d.version ?? null,
+    is_current: d.is_current ?? 1, supersedes_uid: d.supersedes_uid ?? null,
+    valid_from: d.valid_from ?? null, valid_to: d.valid_to ?? null,
+    archived_at: d.archived_at ?? null, content_hash: d.content_hash ?? null,
+    language: d.language ?? null, created_at: d.created_at, updated_at: d.updated_at,
     chunks: (chunkStmt.all(d.id) as { id: number; seq: number; heading: string | null; text: string }[]).map(
       (c) => ({ seq: c.seq, heading: c.heading, text: c.text, embedding: b64(getVecBuffer("chunks_vec", c.id)) })
     ),
@@ -116,69 +166,136 @@ export function collectChanges(since: string): SyncPayload {
 
   return {
     now,
+    embedding_generation: configuredEmbeddingGeneration(),
     memories,
     documents,
+    relations: db
+      .prepare(
+        `SELECT uid, from_uid, to_uid, relation_type, confidence, valid_from,
+                valid_to, source, metadata, created_at, updated_at
+         FROM memory_relations WHERE updated_at >= ?`
+      )
+      .all(since) as NonNullable<SyncPayload["relations"]>,
     projects: db.prepare("SELECT name, data, updated_at FROM projects WHERE updated_at >= ?").all(since) as SyncPayload["projects"],
-    sessions: db.prepare("SELECT uid, project, summary, source, created_at FROM session_logs WHERE created_at >= ?").all(since) as SyncPayload["sessions"],
+    sessions: db
+      .prepare("SELECT uid, project, summary, source, created_at, updated_at FROM session_logs WHERE updated_at >= ?")
+      .all(since) as SyncPayload["sessions"],
     machines: db.prepare("SELECT name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
     deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at >= ?").all(since) as SyncPayload["deletions"],
   };
 }
 
-function insertVec(table: string, rowid: number, embeddingB64: string | undefined): void {
-  if (!hasVec() || !embeddingB64) return;
-  const db = getDb();
-  db.prepare(`DELETE FROM ${table} WHERE rowid = ?`).run(BigInt(rowid));
-  db.prepare(`INSERT INTO ${table}(rowid, embedding) VALUES (?, ?)`).run(BigInt(rowid), Buffer.from(embeddingB64, "base64"));
+function insertMemoryVec(rowid: number, project: string | null, embeddingB64: string | undefined): void {
+  if (!vectorStore.available() || !embeddingB64) return;
+  vectorStore.putMemory(rowid, project, Buffer.from(embeddingB64, "base64"));
+}
+
+function insertChunkVec(
+  rowid: number,
+  document: Pick<SyncDocument, "project" | "enabled" | "is_current" | "kind">,
+  embeddingB64: string | undefined
+): void {
+  if (!vectorStore.available() || !embeddingB64) return;
+  vectorStore.putChunk(
+    rowid,
+    document.project,
+    document.enabled ?? 1,
+    document.is_current ?? 1,
+    document.kind ?? "reference",
+    Buffer.from(embeddingB64, "base64")
+  );
 }
 
 export interface ApplyResult {
   memories: number;
   documents: number;
+  relations: number;
   projects: number;
   sessions: number;
   machines: number;
   deletions: number;
+  vectors_skipped?: number;
 }
 
 /** Uzaktan gelen değişiklikleri LWW ile uygula. */
-export function applyChanges(payload: SyncPayload): ApplyResult {
+function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
   const db = getDb();
-  const result: ApplyResult = { memories: 0, documents: 0, projects: 0, sessions: 0, machines: 0, deletions: 0 };
+  const result: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, deletions: 0, vectors_skipped: 0 };
+  const generationMatches = payload.embedding_generation
+    ? payload.embedding_generation === configuredEmbeddingGeneration()
+    : config.acceptLegacyVectors;
+  // Never mix newly configured vectors into an index whose active generation
+  // is still old. Source rows sync normally and the required reindex fills them.
+  const acceptVectors = generationMatches && vectorStore.ready();
 
   for (const raw of payload.memories ?? []) {
     // eski peer importance/related göndermezse varsayılanla doldur
-    const m = { ...raw, importance: raw.importance ?? 1.0, related: raw.related ?? "[]" };
+    const m = {
+      ...raw,
+      importance: raw.importance ?? 1.0,
+      related: raw.related ?? "[]",
+      language: raw.language ?? null,
+      canonical_summary: raw.canonical_summary ?? null,
+      normalizer_generation: raw.normalizer_generation ?? null,
+    };
     // Bu uid bizde daha yeni silinmişse alma
-    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE uid = ?").get(m.uid) as { deleted_at: string } | undefined;
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memories' AND uid = ?").get(m.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= m.updated_at) continue;
     const local = db.prepare("SELECT * FROM memories WHERE uid = ?").get(m.uid) as
-      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance: number; related: string | null }
+      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language: string | null; canonical_summary: string | null; normalizer_generation: string | null; importance: number; related: string | null }
       | undefined;
     if (local) {
-      const memFp = (r: { type: string; title: string; body: string; project: string | null; tags: string; source: string | null; importance?: number; related?: string | null }) =>
-        contentFingerprint([r.type, r.title, r.body, r.project, r.tags, r.source, r.importance ?? 1.0, r.related ?? "[]"]);
+      const memFp = (r: { type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language?: string | null; canonical_summary?: string | null; normalizer_generation?: string | null; importance?: number; related?: string | null }) =>
+        contentFingerprint([
+          r.type, r.title, r.body, r.project, r.tags, r.source,
+          r.language, r.canonical_summary, r.normalizer_generation,
+          r.importance ?? 1.0, r.related ?? "[]",
+        ]);
       if (!remoteWins(local.updated_at, m.updated_at, () => memFp(local), () => memFp(m))) continue;
       db.prepare(
         `UPDATE memories SET type=@type, title=@title, body=@body, project=@project, tags=@tags,
-         source=@source, importance=@importance, related=@related, updated_at=@updated_at WHERE uid=@uid`
+         source=@source, language=@language, canonical_summary=@canonical_summary,
+         normalizer_generation=@normalizer_generation, importance=@importance,
+         related=@related, updated_at=@updated_at WHERE uid=@uid`
       ).run(m);
-      insertVec("memories_vec", local.id, m.embedding);
+      if (acceptVectors) insertMemoryVec(local.id, m.project, m.embedding);
+      else if (m.embedding) result.vectors_skipped!++;
     } else {
       const info = db.prepare(
-        `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, related, created_at, updated_at)
-         VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, @related, @created_at, @updated_at)`
+        `INSERT INTO memories(
+           uid, type, title, body, project, tags, source, language, canonical_summary,
+           normalizer_generation, importance, related, created_at, updated_at
+         ) VALUES (
+           @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
+           @normalizer_generation, @importance, @related, @created_at, @updated_at
+         )`
       ).run(m);
-      insertVec("memories_vec", Number(info.lastInsertRowid), m.embedding);
+      if (acceptVectors) insertMemoryVec(Number(info.lastInsertRowid), m.project, m.embedding);
+      else if (m.embedding) result.vectors_skipped!++;
     }
     result.memories++;
   }
 
-  for (const d of payload.documents ?? []) {
-    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE uid = ?").get(d.uid) as { deleted_at: string } | undefined;
+  for (const raw of payload.documents ?? []) {
+    const d = {
+      ...raw,
+      enabled: raw.enabled ?? 1,
+      kind: raw.kind ?? "reference",
+      version: raw.version ?? null,
+      is_current: raw.is_current ?? 1,
+      supersedes_uid: raw.supersedes_uid ?? null,
+      valid_from: raw.valid_from ?? null,
+      valid_to: raw.valid_to ?? null,
+      archived_at: raw.archived_at ?? null,
+      content_hash: raw.content_hash ?? null,
+      language: raw.language ?? null,
+    };
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'documents' AND uid = ?").get(d.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= d.updated_at) continue;
-    const local = db.prepare("SELECT id, updated_at, title, source, uri, project, enabled FROM documents WHERE uid = ?").get(d.uid) as
-      | { id: number; updated_at: string; title: string; source: string | null; uri: string | null; project: string | null; enabled: number | null }
+    const local = db
+      .prepare("SELECT * FROM documents WHERE uid = ? OR (uri IS NOT NULL AND uri = ?) ORDER BY uid = ? DESC LIMIT 1")
+      .get(d.uid, d.uri, d.uid) as
+      | (StoredSyncDocument & { id: number })
       | undefined;
     let docId: number;
     if (local) {
@@ -189,37 +306,94 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
           .all(local.id) as { seq: number; heading: string | null; text: string }[];
         return contentFingerprint([
           local.title, local.source, local.uri, local.project, local.enabled ?? 1,
+          local.kind, local.version, local.is_current, local.supersedes_uid,
+          local.valid_from, local.valid_to, local.archived_at, local.content_hash, local.language,
           ...localChunks.flatMap((c) => [c.seq, c.heading, c.text]),
         ]);
       };
       const remoteFp = () =>
         contentFingerprint([
           d.title, d.source, d.uri, d.project, d.enabled ?? 1,
+          d.kind, d.version, d.is_current, d.supersedes_uid,
+          d.valid_from, d.valid_to, d.archived_at, d.content_hash, d.language,
           ...(d.chunks ?? []).flatMap((c) => [c.seq, c.heading, c.text]),
         ]);
       if (!remoteWins(local.updated_at, d.updated_at, localFp, remoteFp)) continue;
       docId = local.id;
-      if (hasVec()) db.prepare("DELETE FROM chunks_vec WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)").run(docId);
+      vectorStore.deleteDocumentChunks(docId);
       db.prepare("DELETE FROM chunks WHERE document_id = ?").run(docId);
-      db.prepare("UPDATE documents SET title=@title, source=@source, uri=@uri, project=@project, enabled=@enabled, updated_at=@updated_at WHERE id=@id")
-        .run({ ...d, enabled: d.enabled ?? 1, id: docId });
+      db.prepare(
+        `UPDATE documents SET title=@title, source=@source, uri=@uri, project=@project,
+         enabled=@enabled, kind=@kind, version=@version, is_current=@is_current,
+         supersedes_uid=@supersedes_uid, valid_from=@valid_from, valid_to=@valid_to,
+         archived_at=@archived_at, content_hash=@content_hash, language=@language,
+         updated_at=@updated_at WHERE id=@id`
+      ).run({ ...d, id: docId });
     } else {
       docId = Number(
         db.prepare(
-          `INSERT INTO documents(uid, title, source, uri, project, enabled, created_at, updated_at)
-           VALUES (@uid, @title, @source, @uri, @project, @enabled, @created_at, @updated_at)`
-        ).run({ ...d, enabled: d.enabled ?? 1 }).lastInsertRowid
+          `INSERT INTO documents(
+             uid, title, source, uri, project, enabled, kind, version, is_current,
+             supersedes_uid, valid_from, valid_to, archived_at, content_hash, language,
+             created_at, updated_at
+           ) VALUES (
+             @uid, @title, @source, @uri, @project, @enabled, @kind, @version, @is_current,
+             @supersedes_uid, @valid_from, @valid_to, @archived_at, @content_hash, @language,
+             @created_at, @updated_at
+           )`
+        ).run(d).lastInsertRowid
       );
     }
     const insertChunk = db.prepare("INSERT INTO chunks(document_id, seq, heading, text) VALUES (?, ?, ?, ?)");
     for (const c of d.chunks ?? []) {
       const chunkId = Number(insertChunk.run(docId, c.seq, c.heading, c.text).lastInsertRowid);
-      insertVec("chunks_vec", chunkId, c.embedding);
+      if (acceptVectors) insertChunkVec(chunkId, d, c.embedding);
+      else if (c.embedding) result.vectors_skipped!++;
     }
     result.documents++;
   }
 
+  for (const relation of payload.relations ?? []) {
+    const tomb = db
+      .prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memory_relations' AND uid = ?")
+      .get(relation.uid) as { deleted_at: string } | undefined;
+    if (tomb && tomb.deleted_at >= relation.updated_at) continue;
+    // Accept before endpoints if peer ordering is partial. Graph reads hide it
+    // until both memories arrive; integrity_check exposes a persistent orphan.
+    const local = db.prepare("SELECT * FROM memory_relations WHERE uid = ?").get(relation.uid) as
+      | (typeof relation)
+      | undefined;
+    const relationFp = (row: typeof relation) =>
+      contentFingerprint([
+        row.from_uid, row.to_uid, row.relation_type, row.confidence,
+        row.valid_from, row.valid_to, row.source, row.metadata, row.created_at,
+      ]);
+    if (
+      local &&
+      !remoteWins(local.updated_at, relation.updated_at, () => relationFp(local), () => relationFp(relation))
+    ) continue;
+    db.prepare(
+      `INSERT INTO memory_relations(
+         uid, from_uid, to_uid, relation_type, confidence, valid_from, valid_to,
+         source, metadata, created_at, updated_at
+       ) VALUES (
+         @uid, @from_uid, @to_uid, @relation_type, @confidence, @valid_from, @valid_to,
+         @source, @metadata, @created_at, @updated_at
+       ) ON CONFLICT(uid) DO UPDATE SET
+         from_uid=excluded.from_uid, to_uid=excluded.to_uid,
+         relation_type=excluded.relation_type, confidence=excluded.confidence,
+         valid_from=excluded.valid_from, valid_to=excluded.valid_to,
+         source=excluded.source, metadata=excluded.metadata,
+         created_at=excluded.created_at, updated_at=excluded.updated_at`
+    ).run(relation);
+    result.relations++;
+  }
+
   for (const p of payload.projects ?? []) {
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'projects' AND uid = ?").get(p.name) as
+      | { deleted_at: string }
+      | undefined;
+    if (tomb && tomb.deleted_at >= p.updated_at) continue;
     const local = db.prepare("SELECT data, updated_at FROM projects WHERE name = ?").get(p.name) as
       | { data: string; updated_at: string }
       | undefined;
@@ -232,17 +406,34 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   }
 
   for (const s of payload.sessions ?? []) {
-    const tomb = db.prepare("SELECT 1 FROM deletions WHERE uid = ?").get(s.uid);
+    const session = { ...s, updated_at: s.updated_at ?? s.created_at };
+    const tomb = db.prepare("SELECT 1 FROM deletions WHERE tbl = 'session_logs' AND uid = ?").get(s.uid);
     if (tomb) continue; // silinmiş oturum logu geri dirilmesin
-    const exists = db.prepare("SELECT 1 FROM session_logs WHERE uid = ?").get(s.uid);
-    if (exists) continue;
-    db.prepare(
-      "INSERT INTO session_logs(uid, project, summary, source, created_at) VALUES (@uid, @project, @summary, @source, @created_at)"
-    ).run(s);
+    const local = db.prepare("SELECT project, summary, source, created_at, updated_at FROM session_logs WHERE uid = ?").get(s.uid) as
+      | { project: string | null; summary: string; source: string | null; created_at: string; updated_at: string }
+      | undefined;
+    if (local) {
+      const fp = (row: { project: string | null; summary: string; source: string | null; created_at: string }) =>
+        contentFingerprint([row.project, row.summary, row.source, row.created_at]);
+      if (!remoteWins(local.updated_at, session.updated_at, () => fp(local), () => fp(session))) continue;
+      db.prepare(
+        `UPDATE session_logs SET project=@project, summary=@summary, source=@source,
+         created_at=@created_at, updated_at=@updated_at WHERE uid=@uid`
+      ).run(session);
+    } else {
+      db.prepare(
+        `INSERT INTO session_logs(uid, project, summary, source, created_at, updated_at)
+         VALUES (@uid, @project, @summary, @source, @created_at, @updated_at)`
+      ).run(session);
+    }
     result.sessions++;
   }
 
   for (const m of payload.machines ?? []) {
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'machines' AND uid = ?").get(m.name) as
+      | { deleted_at: string }
+      | undefined;
+    if (tomb && tomb.deleted_at >= m.updated_at) continue;
     const local = db.prepare("SELECT host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE name = ?").get(m.name) as
       | { host: string; lmstudio_port: number | null; ollama_port: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }
       | undefined;
@@ -263,21 +454,29 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
     // deleted_at donmasın: geç gelen silme daha yeni ise tombstone'u ilerlet (LWW)
     db.prepare(
       `INSERT INTO deletions(uid, tbl, deleted_at) VALUES (@uid, @tbl, @deleted_at)
-       ON CONFLICT(uid) DO UPDATE SET deleted_at = MAX(deleted_at, excluded.deleted_at)`
+       ON CONFLICT(tbl, uid) DO UPDATE SET deleted_at = MAX(deleted_at, excluded.deleted_at)`
     ).run(del);
     if (del.tbl === "memories") {
       const row = db.prepare("SELECT id, updated_at FROM memories WHERE uid = ?").get(del.uid) as { id: number; updated_at: string } | undefined;
       if (row && row.updated_at <= del.deleted_at) {
-        if (hasVec()) db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(row.id));
+        vectorStore.delete("memory", row.id);
         db.prepare("DELETE FROM memories WHERE id = ?").run(row.id);
         result.deletions++;
       }
     } else if (del.tbl === "documents") {
       const row = db.prepare("SELECT id, updated_at FROM documents WHERE uid = ?").get(del.uid) as { id: number; updated_at: string } | undefined;
       if (row && row.updated_at <= del.deleted_at) {
-        if (hasVec()) db.prepare("DELETE FROM chunks_vec WHERE rowid IN (SELECT id FROM chunks WHERE document_id = ?)").run(row.id);
+        vectorStore.deleteDocumentChunks(row.id);
         db.prepare("DELETE FROM chunks WHERE document_id = ?").run(row.id);
         db.prepare("DELETE FROM documents WHERE id = ?").run(row.id);
+        result.deletions++;
+      }
+    } else if (del.tbl === "memory_relations") {
+      const row = db.prepare("SELECT updated_at FROM memory_relations WHERE uid = ?").get(del.uid) as
+        | { updated_at: string }
+        | undefined;
+      if (row && row.updated_at <= del.deleted_at) {
+        db.prepare("DELETE FROM memory_relations WHERE uid = ?").run(del.uid);
         result.deletions++;
       }
     } else if (del.tbl === "session_logs") {
@@ -300,9 +499,19 @@ export function applyChanges(payload: SyncPayload): ApplyResult {
   return result;
 }
 
+/** Apply one sync payload atomically: a malformed row cannot leave a half-applied peer state. */
+export function applyChanges(payload: SyncPayload): ApplyResult {
+  payload = syncPayloadSchema.parse(payload) as SyncPayload;
+  const db = getDb();
+  return db.transaction(() => applyChangesUnsafe(payload))();
+}
+
 export function recordDeletion(tbl: string, uid: string): void {
   getDb()
-    .prepare(`INSERT INTO deletions(uid, tbl, deleted_at) VALUES (?, ?, ${NOW_MS}) ON CONFLICT(uid) DO UPDATE SET deleted_at = ${NOW_MS}`)
+    .prepare(
+      `INSERT INTO deletions(uid, tbl, deleted_at) VALUES (?, ?, ${NOW_MS})
+       ON CONFLICT(tbl, uid) DO UPDATE SET deleted_at = ${NOW_MS}`
+    )
     .run(uid, tbl);
 }
 
@@ -352,7 +561,7 @@ async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResul
     setSyncState({ last_pull: remote.now });
 
     const local = collectChanges(state.last_push);
-    let pushed: ApplyResult = { memories: 0, documents: 0, projects: 0, sessions: 0, machines: 0, deletions: 0 };
+    let pushed: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, deletions: 0 };
     const hasLocal = Object.entries(local).some(([k, v]) => k !== "now" && Array.isArray(v) && v.length > 0);
     if (hasLocal) {
       const pushRes = await fetch(`${primaryUrl}/api/sync/apply`, {

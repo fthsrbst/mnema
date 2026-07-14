@@ -1,5 +1,10 @@
 # Bağlayıcılar (Connectors) — claude.ai, ChatGPT, Gemini'den hub'a erişim
 
+> Bu belgedeki `?token=` örnekleri, header gönderemeyen hosted istemciler için
+> yalnızca **personal profil uyumluluk yoludur**. `team` ve `enterprise`
+> profilleri `HUB_ALLOW_QUERY_TOKEN=false` gerektirir; header/OAuth destekli
+> onaylı bir gateway kullanılmalıdır. Ayrıntı: `operations/company-deployment.md`.
+
 Bu doküman hub'ı **hosted/bulut AI uygulamalarından** (kendi bilgisayarında
 çalışan CLI/editör agent'ları değil — claude.ai web/mobil, ChatGPT web/mobil,
 Gemini app) MCP üzerinden nasıl bağlayacağını anlatır.
@@ -35,10 +40,9 @@ Bearer ...`) ekleme imkanı **vermiyor** — bağlantı URL'i dışında bir
 kimlik doğrulama alanı yok. Hub sunucusu bu yüzden token'ı query string'den
 de kabul edecek şekilde yazıldı (`src/server/index.ts`):
 
-```ts
-if (header === `Bearer ${config.token}`) return next();
-if (typeof req.query.token === "string" && req.query.token === config.token) return next();
-```
+Sunucu önce scoped token politikalarını doğrular. Legacy `HUB_TOKEN` yalnızca
+`HUB_ALLOW_LEGACY_ADMIN=true` iken, query transport ise yalnızca
+`HUB_ALLOW_QUERY_TOKEN=true` iken kabul edilir.
 
 Kapatmak için:
 ```bash

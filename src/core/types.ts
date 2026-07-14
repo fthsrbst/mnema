@@ -2,12 +2,16 @@ export type MemoryType = "fact" | "preference" | "decision" | "howto" | "context
 
 export interface Memory {
   id: number;
+  uid: string;
   type: MemoryType;
   title: string;
   body: string;
   project: string | null;
   tags: string[];
   source: string | null;
+  language: string | null;
+  canonical_summary: string | null;
+  normalizer_generation: string | null;
   importance: number;
   last_accessed: string | null;
   access_count: number;
@@ -24,6 +28,12 @@ export interface MemoryInput {
   project?: string;
   tags?: string[];
   source?: string;
+  /** Original BCP-47 language. Original title/body remain authoritative. */
+  language?: string;
+  /** Optional concise English retrieval/context alias; never replaces body. */
+  canonical_summary?: string | null;
+  /** Model/ruleset version that produced canonical_summary. */
+  normalizer_generation?: string | null;
   /** Önem çarpanı; 0.5–2.0 aralığına kelepçelenir. 2=kritik karar, 1=normal, 0.5=önemsiz detay. */
   importance?: number;
   /** Bağlantılı hafıza id'leri (yerel) — uid'e çevrilerek saklanır; bilinmeyen id sessizce atlanır. */
@@ -37,12 +47,22 @@ export interface RelatedRef {
 }
 
 export type FeedbackVerdict = "noisy" | "missing" | "helpful";
+export type FeedbackTargetKind = "memory" | "chunk" | "document" | "context";
+export type FeedbackChannel = "fts" | "vec" | "authority" | "graph";
 
 /** Agent'lardan gelen recall kalite geri bildirimi — eşik kalibrasyonu verisi (cihaz-yerel). */
 export interface RecallFeedback {
   id: number;
   query: string;
   verdict: FeedbackVerdict;
+  target_kind: FeedbackTargetKind | null;
+  target_id: number | null;
+  project: string | null;
+  intent: Exclude<import("./context.js").ContextIntent, "auto"> | null;
+  rank: number | null;
+  channels: FeedbackChannel[];
+  delivery_id: string | null;
+  /** Deprecated compatibility alias. */
   memory_id: number | null;
   note: string | null;
   source: string | null;
@@ -60,6 +80,7 @@ export interface ScoredMemory extends Memory {
   score: number;
   /** Hangi arama kanalları buldu ("fts"/"vec"). Recall'un anlamsal kanıt kapısı kullanır. */
   channels?: ("fts" | "vec")[];
+  channel_ranks?: Partial<Record<"fts" | "vec", number>>;
 }
 
 /** Kayıt anında bulunan olası benzer/tekrar (dedup) hafıza. */
@@ -80,6 +101,43 @@ export interface DocumentInput {
   source?: string;
   uri?: string;
   project?: string;
+  /** Stable lifecycle class used by intent routing and retention policy. */
+  kind?: "reference" | "status" | "decision" | "runbook" | "research" | "learning" | "source";
+  version?: string;
+  /** Current documents participate in default retrieval. Defaults to true. */
+  is_current?: boolean;
+  /** Stable UID of an older document explicitly replaced by this document. */
+  supersedes_uid?: string;
+  valid_from?: string;
+  valid_to?: string;
+  archived_at?: string;
+  /** Original BCP-47 language when known. Original text is always preserved. */
+  language?: string;
+}
+
+export type MemoryRelationType =
+  | "related"
+  | "supports"
+  | "contradicts"
+  | "supersedes"
+  | "caused_by"
+  | "derived_from"
+  | "applies_to";
+
+export interface MemoryRelation {
+  id: string;
+  from_id: number;
+  from_title: string;
+  to_id: number;
+  to_title: string;
+  relation_type: MemoryRelationType;
+  confidence: number;
+  valid_from: string | null;
+  valid_to: string | null;
+  source: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ScoredChunk {
@@ -88,11 +146,15 @@ export interface ScoredChunk {
   document_title: string;
   uri: string | null;
   project: string | null;
+  document_kind?: string;
+  document_version?: string | null;
+  is_current?: number;
   heading: string | null;
   text: string;
   score: number;
   /** Hangi arama kanalları buldu ("fts"/"vec"). Recall'un anlamsal kanıt kapısı kullanır. */
   channels?: ("fts" | "vec")[];
+  channel_ranks?: Partial<Record<"fts" | "vec", number>>;
 }
 
 /** Kod haritasının bir modülü — bir dizin/dosya kümesi ve sorumluluğu. */
@@ -143,4 +205,5 @@ export interface SessionLog {
   summary: string;
   source: string | null;
   created_at: string;
+  updated_at: string;
 }

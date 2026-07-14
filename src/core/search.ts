@@ -1,6 +1,7 @@
 import { config } from "./config.js";
-import { getDb, hasVec } from "./db.js";
+import { getDb } from "./db.js";
 import { embedOne, embeddingsEnabled, toBuffer } from "./embeddings.js";
+import { vectorStore } from "./vector-store.js";
 
 const RRF_K = 60;
 
@@ -21,46 +22,160 @@ export interface RankedId {
   score: number;
   /** Hangi arama kanalları buldu. Recall'un anlamsal kanıt kapısı bunu kullanır. */
   channels: SearchChannel[];
+  /** One-based rank in each source channel; retained for audit and feedback. */
+  channel_ranks: Partial<Record<SearchChannel, number>>;
+}
+
+export interface SearchScope {
+  project?: string;
+  memoryType?: string;
+  memoryTag?: string;
+  /** Include project-less global rows together with the requested project. */
+  includeGlobal?: boolean;
+  /** Document searches default to current, enabled documents only. */
+  currentOnly?: boolean;
+  documentKind?: string;
 }
 
 /** FTS + vektör sonuçlarını Reciprocal Rank Fusion ile birleştirir. */
 export function rrfFuse(lists: { channel: SearchChannel; ids: number[] }[]): RankedId[] {
-  const scores = new Map<number, { score: number; channels: SearchChannel[] }>();
+  const scores = new Map<
+    number,
+    { score: number; channels: SearchChannel[]; channel_ranks: Partial<Record<SearchChannel, number>> }
+  >();
   for (const { channel, ids } of lists) {
     ids.forEach((id, rank) => {
-      const cur = scores.get(id) ?? { score: 0, channels: [] };
+      const cur = scores.get(id) ?? { score: 0, channels: [], channel_ranks: {} };
       cur.score += 1 / (RRF_K + rank + 1);
-      cur.channels.push(channel);
+      if (!cur.channels.includes(channel)) cur.channels.push(channel);
+      cur.channel_ranks[channel] = rank + 1;
       scores.set(id, cur);
     });
   }
   return [...scores.entries()]
-    .map(([id, v]) => ({ id, score: v.score, channels: v.channels }))
+    .map(([id, v]) => ({ id, score: v.score, channels: v.channels, channel_ranks: v.channel_ranks }))
     .sort((a, b) => b.score - a.score);
 }
 
-export function ftsSearch(ftsTable: string, query: string, limit = config.searchCandidates): number[] {
+export function ftsSearch(
+  ftsTable: string,
+  query: string,
+  limit = config.searchCandidates,
+  scope: SearchScope = {}
+): number[] {
   const fts = toFtsQuery(query);
   if (!fts) return [];
   try {
-    const rows = getDb()
-      .prepare(`SELECT rowid FROM ${ftsTable} WHERE ${ftsTable} MATCH ? ORDER BY rank LIMIT ?`)
-      .all(fts, limit) as { rowid: number }[];
+    let sql = `SELECT ${ftsTable}.rowid FROM ${ftsTable}`;
+    const conditions = [`${ftsTable} MATCH ?`];
+    const params: unknown[] = [fts];
+    if (ftsTable === "memories_fts" && scope.project) {
+      sql += " JOIN memories m ON m.id = memories_fts.rowid";
+      if (scope.includeGlobal) {
+        conditions.push("(m.project = ? OR m.project IS NULL)");
+      } else {
+        conditions.push("m.project = ?");
+      }
+      params.push(scope.project);
+      if (scope.memoryType) {
+        conditions.push("m.type = ?");
+        params.push(scope.memoryType);
+      }
+      if (scope.memoryTag) {
+        conditions.push("EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value = ?)");
+        params.push(scope.memoryTag);
+      }
+    } else if (ftsTable === "memories_fts" && (scope.memoryType || scope.memoryTag)) {
+      sql += " JOIN memories m ON m.id = memories_fts.rowid";
+      if (scope.memoryType) {
+        conditions.push("m.type = ?");
+        params.push(scope.memoryType);
+      }
+      if (scope.memoryTag) {
+        conditions.push("EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value = ?)");
+        params.push(scope.memoryTag);
+      }
+    } else if (ftsTable === "chunks_fts") {
+      sql += " JOIN chunks c ON c.id = chunks_fts.rowid JOIN documents d ON d.id = c.document_id";
+      conditions.push("d.enabled = 1");
+      if (scope.currentOnly !== false) conditions.push("d.is_current = 1");
+      if (scope.currentOnly !== false) {
+        conditions.push("(d.valid_from IS NULL OR julianday(d.valid_from) <= julianday('now'))");
+        conditions.push("(d.valid_to IS NULL OR julianday(d.valid_to) > julianday('now'))");
+      }
+      if (scope.documentKind) {
+        conditions.push("d.kind = ?");
+        params.push(scope.documentKind);
+      }
+      if (scope.project) {
+        conditions.push(scope.includeGlobal ? "(d.project = ? OR d.project IS NULL)" : "d.project = ?");
+        params.push(scope.project);
+      }
+    }
+    sql += ` WHERE ${conditions.join(" AND ")} ORDER BY ${ftsTable}.rank LIMIT ?`;
+    params.push(limit);
+    const rows = getDb().prepare(sql).all(...params) as { rowid: number }[];
     return rows.map((r) => r.rowid);
   } catch {
     return []; // bozuk sorgu FTS'i düşürmesin
   }
 }
 
-export async function vecSearch(vecTable: string, query: string, limit = config.searchCandidates): Promise<number[]> {
-  if (!hasVec() || !embeddingsEnabled()) return [];
+export async function vecSearch(
+  vecTable: string,
+  query: string,
+  limit = config.searchCandidates,
+  scope: SearchScope = {}
+): Promise<number[]> {
+  if (!vectorStore.ready() || !embeddingsEnabled()) return [];
   const vec = await embedOne(query, "RETRIEVAL_QUERY");
   if (!vec) return [];
-  const rows = getDb()
-    .prepare(`SELECT rowid, distance FROM ${vecTable} WHERE embedding MATCH ? AND k = ? ORDER BY distance`)
-    .all(toBuffer(vec), limit) as { rowid: number; distance: number }[];
+  const memoryFiltered = vecTable === "memories_vec" && Boolean(scope.memoryType || scope.memoryTag);
+  const temporalDocumentFilter = vecTable === "chunks_vec" && scope.currentOnly !== false;
+  // sqlite-vec cannot express a multi-valued JSON tag constraint. Oversample
+  // within the already-applied project partition, then filter before fusion.
+  // At the configured 5k ceiling this covers the current/local profile fully;
+  // external adapters must implement the same constraint natively.
+  const vectorLimit = memoryFiltered || temporalDocumentFilter
+    ? Math.min(5000, Math.max(limit * 4, 80))
+    : limit;
+  let rows = vectorStore.search(vecTable === "chunks_vec" ? "chunk" : "memory", toBuffer(vec), vectorLimit, {
+    project: scope.project,
+    includeGlobal: scope.includeGlobal,
+    currentOnly: scope.currentOnly,
+    documentKind: scope.documentKind,
+  });
+  if (memoryFiltered && rows.length > 0) {
+    const placeholders = rows.map(() => "?").join(",");
+    const conditions = [`id IN (${placeholders})`];
+    const params: unknown[] = rows.map((row) => row.id);
+    if (scope.memoryType) (conditions.push("type = ?"), params.push(scope.memoryType));
+    if (scope.memoryTag) {
+      conditions.push("EXISTS (SELECT 1 FROM json_each(memories.tags) WHERE json_each.value = ?)");
+      params.push(scope.memoryTag);
+    }
+    const allowed = new Set(
+      (getDb().prepare(`SELECT id FROM memories WHERE ${conditions.join(" AND ")}`).all(...params) as { id: number }[])
+        .map((row) => row.id)
+    );
+    rows = rows.filter((row) => allowed.has(row.id)).slice(0, limit);
+  }
+  if (temporalDocumentFilter && rows.length > 0) {
+    const placeholders = rows.map(() => "?").join(",");
+    const allowed = new Set(
+      (getDb()
+        .prepare(
+          `SELECT c.id FROM chunks c JOIN documents d ON d.id = c.document_id
+           WHERE c.id IN (${placeholders})
+             AND (d.valid_from IS NULL OR julianday(d.valid_from) <= julianday('now'))
+             AND (d.valid_to IS NULL OR julianday(d.valid_to) > julianday('now'))`
+        )
+        .all(...rows.map((row) => row.id)) as { id: number }[]).map((row) => row.id)
+    );
+    rows = rows.filter((row) => allowed.has(row.id)).slice(0, limit);
+  }
   // KNN her zaman "en yakın" k sonucu döner; alakasızları mesafe eşiğiyle ele
-  return rows.filter((r) => r.distance <= config.vecMaxDistance).map((r) => r.rowid);
+  return rows.filter((r) => r.distance <= config.vecMaxDistance).map((r) => r.id);
 }
 
 /** Hibrit arama: FTS + vektör → RRF. Vektör yoksa FTS-only. */
@@ -68,11 +183,12 @@ export async function hybridSearch(
   ftsTable: string,
   vecTable: string,
   query: string,
-  candidates = config.searchCandidates
+  candidates = config.searchCandidates,
+  scope: SearchScope = {}
 ): Promise<RankedId[]> {
   const [ftsIds, vecIds] = await Promise.all([
-    Promise.resolve(ftsSearch(ftsTable, query, candidates)),
-    vecSearch(vecTable, query, candidates).catch((err) => {
+    Promise.resolve(ftsSearch(ftsTable, query, candidates, scope)),
+    vecSearch(vecTable, query, candidates, scope).catch((err) => {
       console.error(`[hub] vektör arama hatası (FTS ile devam): ${(err as Error).message}`);
       return [] as number[];
     }),
