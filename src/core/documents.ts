@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { config } from "./config.js";
 import { getDb, hasVec, NOW_MS } from "./db.js";
 import { chunkMarkdown } from "./chunker.js";
 import { embed, toBuffer } from "./embeddings.js";
@@ -91,18 +92,25 @@ export async function searchChunks(
   query: string,
   opts: { project?: string; limit?: number } = {}
 ): Promise<ScoredChunk[]> {
-  const ranked = await hybridSearch("chunks_fts", "chunks_vec", query);
+  // Proje filtresi RRF SONRASI uygulanır — filtreli aramada havuzu büyüt (bkz. searchMemories).
+  const pool = opts.project ? config.searchCandidates * 2 : config.searchCandidates;
+  const ranked = await hybridSearch("chunks_fts", "chunks_vec", query, pool);
   if (ranked.length === 0) return [];
-  const stmt = getDb().prepare(
-    `SELECT c.id AS chunk_id, c.document_id, c.heading, c.text,
-            d.title AS document_title, d.uri, d.project
-     FROM chunks c JOIN documents d ON d.id = c.document_id
-     WHERE c.id = ? AND d.enabled = 1`
-  );
+  // N+1 yerine tek sorgu: sıralama RRF'ten gelir, satırlar id→row haritasından okunur.
+  const placeholders = ranked.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare(
+      `SELECT c.id AS chunk_id, c.document_id, c.heading, c.text,
+              d.title AS document_title, d.uri, d.project
+       FROM chunks c JOIN documents d ON d.id = c.document_id
+       WHERE c.id IN (${placeholders}) AND d.enabled = 1`
+    )
+    .all(...ranked.map((r) => r.id)) as Omit<ScoredChunk, "score">[];
+  const byId = new Map(rows.map((r) => [r.chunk_id, r]));
   const limit = opts.limit ?? 6;
   const out: ScoredChunk[] = [];
   for (const { id, score, channels } of ranked) {
-    const row = stmt.get(id) as Omit<ScoredChunk, "score"> | undefined;
+    const row = byId.get(id);
     if (!row) continue;
     if (opts.project && row.project !== opts.project) continue;
     out.push({ ...row, score, channels });

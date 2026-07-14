@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Grid } from "@astryxdesign/core/Grid";
-import { ClickableCard } from "@astryxdesign/core/ClickableCard";
-import { Button } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Divider } from "@astryxdesign/core/Divider";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useToast } from "@astryxdesign/core/Toast";
+import { VStack, HStack, Grid } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { TextField } from "../components/ui/Field";
+import { Heading, Text } from "../components/ui/Typography";
+import { StatusDot } from "../components/ui/Tag";
+import { Divider } from "../components/ui/Divider";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Dialog } from "../components/ui/Dialog";
+import { PixelMeter } from "../components/ui/PixelMeter";
+import { useToast } from "../components/ui/useToast";
 import { api, type RagDocument, type RagDocumentDetail, type RagSearchResult } from "../api";
 import { useI18n } from "../i18n";
 import { Markdown } from "../components/Markdown";
@@ -46,8 +46,7 @@ export function Learning() {
     setDetailLoading(true);
     setDetail(null);
     try {
-      const full = await api<RagDocumentDetail>("GET", `/api/rag/documents/${doc.id}`);
-      setDetail(full);
+      setDetail(await api<RagDocumentDetail>("GET", `/api/rag/documents/${doc.id}`));
     } catch (err) {
       toast({ body: `${t("common.loadFailed")}: ${(err as Error).message}`, type: "error" });
     } finally {
@@ -59,11 +58,7 @@ export function Learning() {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      const results = await api<RagSearchResult[]>(
-        "GET",
-        `/api/rag/search?q=${encodeURIComponent(searchQuery)}&project=${encodeURIComponent(LEARNING_PROJECT)}&limit=10`
-      );
-      setSearchResults(results);
+      setSearchResults(await api<RagSearchResult[]>("GET", `/api/rag/search?q=${encodeURIComponent(searchQuery)}&project=${encodeURIComponent(LEARNING_PROJECT)}&limit=10`));
     } catch (err) {
       toast({ body: `${t("common.error")}: ${(err as Error).message}`, type: "error" });
       setSearchResults([]);
@@ -88,21 +83,15 @@ export function Learning() {
       </HStack>
 
       <HStack gap={2} vAlign="end">
-        <TextInput
-          className="rx-search"
+        <TextField
           label={t("common.search")}
-          isLabelHidden
+          hideLabel
           placeholder={t("learning.searchPlaceholder")}
           value={searchQuery}
-          onChange={(v: string) => { setSearchQuery(v); if (!v.trim()) setSearchResults(null); }}
+          onChange={(v) => { setSearchQuery(v); if (!v.trim()) setSearchResults(null); }}
           hasClear
         />
-        <Button
-          label={searching ? t("common.searching") : t("common.search")}
-          variant="secondary"
-          onClick={runSearch}
-          isDisabled={searching || !searchQuery.trim()}
-        />
+        <Button label={searching ? t("common.searching") : t("common.search")} variant="secondary" onClick={runSearch} disabled={searching || !searchQuery.trim()} />
       </HStack>
 
       {error && <Text color="secondary">{t("common.error")}: {error}</Text>}
@@ -135,54 +124,47 @@ export function Learning() {
       ) : docs.length === 0 ? (
         <EmptyState title={t("learning.empty")} description={t("learning.emptyDesc")} />
       ) : (
-        <Grid columns={{ minWidth: 260, repeat: "fit" }} gap={4}>
+        <Grid minWidth={240} gap={4}>
           {docs.map((d) => (
-            <ClickableCard key={d.id} label={d.title} onClick={() => openDetail(d)} className="glass-card">
-              <VStack gap={2}>
-                <HStack hAlign="between" vAlign="start">
-                  <Heading level={4}>{d.title}</Heading>
-                  <StatusDot variant={d.enabled ? "success" : "warning"} label={d.enabled ? t("rag.docActive") : t("rag.docDisabled")} />
-                </HStack>
-                <Text type="supporting" color="secondary">{d.created_at} · {d.chunk_count} {t("learning.chunkCount")}</Text>
-                {d.chunk_count > 0 && (
-                  <VStack className="rx-progress">
-                    <span style={{ width: `${Math.round((d.vec_count / d.chunk_count) * 100)}%` }} />
-                  </VStack>
-                )}
-              </VStack>
-            </ClickableCard>
+            <Panel key={d.id} className="clickable" style={{ cursor: "pointer" }}>
+              <div onClick={() => openDetail(d)}>
+                <VStack gap={2}>
+                  <HStack hAlign="between" vAlign="start">
+                    <Heading level={4}>{d.title}</Heading>
+                    <StatusDot variant={d.enabled ? "success" : "warning"} label={d.enabled ? t("rag.docActive") : t("rag.docDisabled")} />
+                  </HStack>
+                  <Text type="supporting" color="secondary">{d.created_at} · {d.chunk_count} {t("learning.chunkCount")}</Text>
+                  {d.chunk_count > 0 && <PixelMeter value={d.vec_count} max={d.chunk_count} blocks={16} variant="success" />}
+                </VStack>
+              </div>
+            </Panel>
           ))}
         </Grid>
       )}
 
-      <Dialog isOpen={detail !== null || detailLoading} onOpenChange={(open) => { if (!open) setDetail(null); }} purpose="form" width={640}>
-        <DialogHeader title={detail?.title ?? t("common.loading")} />
-        <VStack gap={3} paddingInline={5} paddingBlock={4}>
-          {detailLoading ? (
-            <Text color="secondary">{t("common.loading")}</Text>
-          ) : detail ? (
-            <VStack gap={3}>
-              <Text type="supporting" color="secondary">
-                {detail.uri ?? t("rag.uriMissing")} · {detail.project ?? t("rag.projectMissing")} · {detail.chunk_count} {t("learning.chunkCount")}
-              </Text>
-              <Divider />
-              {detail.chunks.length === 0 ? (
-                <Text type="supporting" color="secondary">{t("learning.noChunks")}</Text>
-              ) : (
-                <VStack gap={3}>
-                  {detail.chunks.map((c) => (
-                    <VStack key={c.id} gap={1}>
-                      <Text type="supporting" color="secondary">
-                        Chunk #{c.seq}{c.heading ? ` — ${c.heading}` : ""}
-                      </Text>
-                      <Markdown>{c.text}</Markdown>
-                    </VStack>
-                  ))}
-                </VStack>
-              )}
-            </VStack>
-          ) : null}
-        </VStack>
+      <Dialog isOpen={detail !== null || detailLoading} onOpenChange={(open) => { if (!open) setDetail(null); }} width={640} title={detail?.title ?? t("common.loading")}>
+        {detailLoading ? (
+          <Text color="secondary">{t("common.loading")}</Text>
+        ) : detail ? (
+          <VStack gap={3}>
+            <Text type="supporting" color="secondary">
+              {detail.uri ?? t("rag.uriMissing")} · {detail.project ?? t("rag.projectMissing")} · {detail.chunk_count} {t("learning.chunkCount")}
+            </Text>
+            <Divider />
+            {detail.chunks.length === 0 ? (
+              <Text type="supporting" color="secondary">{t("learning.noChunks")}</Text>
+            ) : (
+              <VStack gap={3}>
+                {detail.chunks.map((c) => (
+                  <VStack key={c.id} gap={1}>
+                    <Text type="supporting" color="secondary">Chunk #{c.seq}{c.heading ? ` — ${c.heading}` : ""}</Text>
+                    <Markdown>{c.text}</Markdown>
+                  </VStack>
+                ))}
+              </VStack>
+            )}
+          </VStack>
+        ) : null}
       </Dialog>
     </VStack>
   );

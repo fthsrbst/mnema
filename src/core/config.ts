@@ -33,6 +33,9 @@ export const config = {
   vecMaxDistance: Number(process.env.VEC_MAX_DISTANCE ?? 0.86),
   // Kayıt anında benzerlik uyarısı eşiği: bundan yakın mesafedeki hafızalar dedup adayı sayılır.
   dupDistance: Number(process.env.HUB_DUP_DISTANCE ?? 0.35),
+  // Kanal başına aday havuzu (FTS ve vektör ayrı ayrı). Filtreli aramalarda (type/project/tag)
+  // havuz otomatik 2× büyür — filtre RRF SONRASI uygulandığından küçük havuz sonuçları açlığa iter.
+  searchCandidates: Number(process.env.HUB_SEARCH_CANDIDATES ?? 40),
   // Local-first eşitleme: tanımlıysa bu instance, primary (Pi) ile periyodik eşitlenir.
   // Virgülle ayrılmış çoklu adres desteklenir (örn. Tailscale + LAN yedeği):
   // "http://100.x:8033,http://192.168.1.53:8033" — sırayla denenir, ilk erişilebilenle çalışılır.

@@ -61,6 +61,14 @@ export interface Memory {
   score?: number;
 }
 
+export interface ProjectModule {
+  name: string;
+  path: string;
+  purpose: string;
+  key_files?: string[];
+  depends_on?: string[];
+}
+
 export interface ProjectMap {
   name: string;
   status?: string;
@@ -72,6 +80,13 @@ export interface ProjectMap {
   next_steps?: string[];
   notes?: string;
   updated_at?: string;
+  // --- kod haritası alanları (opsiyonel — backend'de henüz doldurulmamış olabilir) ---
+  architecture?: string;
+  modules?: ProjectModule[];
+  entry_points?: Record<string, string>;
+  commands?: Record<string, string>;
+  conventions?: string[];
+  data_model?: string;
 }
 
 export interface SessionLog {
@@ -203,6 +218,57 @@ export interface UsageStats {
   stale: UsageItem[];
   stale_count: number;
   total: number;
+}
+
+// --- graph (ilişki grafiği) ---
+
+export type GraphNodeKind = "project" | "memory" | "document" | "session" | "tag";
+
+export type GraphRel = "related" | "belongs" | "tagged" | "logged";
+
+export interface GraphNode {
+  /** "<kind>:<key>" — memory/document/session için sayısal id, project/tag için ad. */
+  id: string;
+  kind: GraphNodeKind;
+  label: string;
+  sublabel?: string;
+  project?: string | null;
+  /** Toplam komşu sayısı — genişletme rozeti bundan. */
+  degree: number;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  rel: GraphRel;
+}
+
+export interface GraphPayload {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  /** Sayfalama: bu genişletmede dönmeyen kalan komşu sayısı. */
+  more: number;
+}
+
+/** "kind:key" düğüm kimliğini parçalar (key içinde ":" olabilir — ilk ayraç esas alınır). */
+export function parseGraphId(id: string): { kind: GraphNodeKind; key: string } {
+  const i = id.indexOf(":");
+  return { kind: id.slice(0, i) as GraphNodeKind, key: id.slice(i + 1) };
+}
+
+export function fetchGraphSeed(tags = 24): Promise<GraphPayload> {
+  return api("GET", `/api/graph/seed?tags=${tags}`);
+}
+
+export function fetchGraphNeighbors(kind: GraphNodeKind, key: string, offset = 0, limit = 30): Promise<GraphPayload> {
+  return api(
+    "GET",
+    `/api/graph/neighbors?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}&offset=${offset}&limit=${limit}`
+  );
+}
+
+export function fetchGraphNode(kind: GraphNodeKind, key: string): Promise<GraphNode> {
+  return api("GET", `/api/graph/node?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}`);
 }
 
 // --- prompts ---

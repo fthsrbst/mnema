@@ -168,14 +168,23 @@ function touchMemories(ids: number[]): void {
 }
 
 export async function searchMemories(query: string, filters: SearchFilters = {}): Promise<ScoredMemory[]> {
-  const ranked = await hybridSearch("memories_fts", "memories_vec", query);
+  // Filtre RRF SONRASI uygulanır; dar havuz + filtre = sonuç açlığı. Filtreli aramada havuzu büyüt.
+  const hasFilter = Boolean(filters.type || filters.project || filters.tag);
+  const pool = hasFilter ? config.searchCandidates * 2 : config.searchCandidates;
+  const ranked = await hybridSearch("memories_fts", "memories_vec", query, pool);
   if (ranked.length === 0) return [];
+  // N+1 yerine tek sorgu: sıralama RRF'ten gelir, satırlar id→row haritasından okunur.
+  const placeholders = ranked.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare(`SELECT * FROM memories WHERE id IN (${placeholders})`)
+    .all(...ranked.map((r) => r.id)) as Record<string, unknown>[];
+  const byId = new Map(rows.map((r) => [r.id as number, rowToMemory(r)]));
   const limit = filters.limit ?? 8;
   const now = Date.now();
   const halflifeMs = Math.max(config.decayHalflifeDays, 1) * 86_400_000;
   const candidates: ScoredMemory[] = [];
   for (const { id, score, channels } of ranked) {
-    const mem = getMemory(id);
+    const mem = byId.get(id);
     if (!mem) continue;
     if (filters.type && mem.type !== filters.type) continue;
     if (filters.project && mem.project !== filters.project) continue;

@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { Item } from "@astryxdesign/core/Item";
-import { Icon } from "@astryxdesign/core/Icon";
-import { Divider } from "@astryxdesign/core/Divider";
-import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { CircleStackIcon, ClockIcon, DocumentTextIcon } from "@heroicons/react/24/outline";
+import { VStack, HStack } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { Heading, Text } from "../components/ui/Typography";
+import { EmptyState } from "../components/ui/EmptyState";
+import { ListRow } from "../components/ui/ListRow";
+import { Icon, type IconName } from "../components/icons/Icons";
+import { SectionRule } from "../components/ui/Divider";
+import { SegmentedControl } from "../components/ui/Tabs";
+import { Tag } from "../components/ui/Tag";
 import { api, type TimelineItem } from "../api";
 import { useI18n, type Lang, type TKey } from "../i18n";
 
@@ -17,23 +17,12 @@ const PAGE_SIZE = 50;
 type Kind = TimelineItem["kind"];
 type Filter = "all" | Kind;
 
-/** Her tür için ikon, ikon rengi ve gidilecek görünüm — türler bir bakışta ayırt edilsin. */
-const KIND_CONFIG: Record<
-  Kind,
-  {
-    icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-    iconColor: "accent" | "success" | "warning";
-    tagClass: "rx-tag-blue" | "rx-tag-forest" | "rx-tag-amber";
-    labelKey: TKey;
-    targetView: "memories" | "sessions" | "rag";
-  }
-> = {
-  memory: { icon: CircleStackIcon, iconColor: "accent", tagClass: "rx-tag-blue", labelKey: "timeline.kindMemory", targetView: "memories" },
-  session: { icon: ClockIcon, iconColor: "success", tagClass: "rx-tag-forest", labelKey: "timeline.kindSession", targetView: "sessions" },
-  document: { icon: DocumentTextIcon, iconColor: "warning", tagClass: "rx-tag-amber", labelKey: "timeline.kindDocument", targetView: "rag" },
+const KIND_CONFIG: Record<Kind, { icon: IconName; labelKey: TKey; targetView: "memories" | "sessions" | "rag" }> = {
+  memory: { icon: "memory", labelKey: "timeline.kindMemory", targetView: "memories" },
+  session: { icon: "sessions", labelKey: "timeline.kindSession", targetView: "sessions" },
+  document: { icon: "docs", labelKey: "timeline.kindDocument", targetView: "rag" },
 };
 
-/** SQLite UTC tarihini ("YYYY-MM-DD HH:MM:SS") yerel Date'e çevirir. */
 function parseDate(iso: string): Date {
   return new Date(iso.replace(" ", "T") + (iso.endsWith("Z") ? "" : "Z"));
 }
@@ -49,12 +38,7 @@ function dayLabel(dayKey: string, sample: Date, lang: Lang, t: (k: TKey) => stri
   const yesterday = localDayKey(new Date(now.getTime() - 86400000));
   if (dayKey === today) return t("timeline.today");
   if (dayKey === yesterday) return t("timeline.yesterday");
-  return sample.toLocaleDateString(lang === "tr" ? "tr-TR" : "en-US", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  return sample.toLocaleDateString(lang === "tr" ? "tr-TR" : "en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
 interface DayGroup {
@@ -96,10 +80,7 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
     setLoadingMore(true);
     setError("");
     try {
-      const batch = await api<TimelineItem[]>(
-        "GET",
-        `/api/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(last.date)}`
-      );
+      const batch = await api<TimelineItem[]>("GET", `/api/timeline?limit=${PAGE_SIZE}&before=${encodeURIComponent(last.date)}`);
       setItems((prev) => [...prev, ...batch]);
       setHasMore(batch.length === PAGE_SIZE);
     } catch (err) {
@@ -111,7 +92,6 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
 
   const visible = filter === "all" ? items : items.filter((it) => it.kind === filter);
 
-  // Gün bazında grupla — API zaten en yeni önce sıralı döner.
   const groups: DayGroup[] = [];
   for (const it of visible) {
     const d = parseDate(it.date);
@@ -131,25 +111,24 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
           <Heading level={3}>{t("timeline.title")}</Heading>
           <Text type="supporting" color="secondary">{t("timeline.subtitle")}</Text>
         </VStack>
-        <Button label={t("common.refresh")} variant="secondary" onClick={load} isDisabled={loading} />
+        <Button label={t("common.refresh")} variant="secondary" onClick={load} disabled={loading} />
       </HStack>
 
       <SegmentedControl
-        label={t("timeline.title")}
         value={filter}
-        onChange={(v) => setFilter(v as Filter)}
-        size="sm"
-      >
-        <SegmentedControlItem value="all" label={t("timeline.filterAll")} />
-        <SegmentedControlItem value="memory" label={t("timeline.kindMemory")} />
-        <SegmentedControlItem value="session" label={t("timeline.kindSession")} />
-        <SegmentedControlItem value="document" label={t("timeline.kindDocument")} />
-      </SegmentedControl>
+        onChange={setFilter}
+        items={[
+          { value: "all", label: t("timeline.filterAll") },
+          { value: "memory", label: t("timeline.kindMemory") },
+          { value: "session", label: t("timeline.kindSession") },
+          { value: "document", label: t("timeline.kindDocument") },
+        ]}
+      />
 
       {error && (
-        <Card variant="red">
+        <Panel variant="danger">
           <Text color="secondary">{t("common.loadFailed")}: {error}</Text>
-        </Card>
+        </Panel>
       )}
 
       {loading && items.length === 0 ? (
@@ -163,10 +142,7 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
         <VStack gap={5}>
           {groups.map((group) => (
             <VStack key={group.key} gap={2}>
-              <VStack gap={1}>
-                <span className="rx-label">{group.label}</span>
-                <Divider />
-              </VStack>
+              <SectionRule label={group.label} />
               <VStack gap={0}>
                 {group.items.map((it, idx) => {
                   const cfg = KIND_CONFIG[it.kind];
@@ -175,18 +151,16 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
                     ? it.date.slice(11, 16)
                     : d.toLocaleTimeString(lang === "tr" ? "tr-TR" : "en-US", { hour: "2-digit", minute: "2-digit" });
                   return (
-                    <Item
+                    <ListRow
                       key={`${it.kind}-${it.id}`}
-                      density="balanced"
+                      bordered={idx > 0}
                       onClick={() => onNavigate(cfg.targetView)}
-                      startContent={<Icon icon={cfg.icon} color={cfg.iconColor} size="md" />}
-                      label={it.title}
-                      labelLines={1}
+                      start={<Icon name={cfg.icon} size={16} className="u-mono-dim" />}
+                      title={it.title}
                       description={it.subtype ? `${t(cfg.labelKey)} · ${it.subtype}` : t(cfg.labelKey)}
-                      style={idx > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
-                      endContent={
+                      end={
                         <HStack gap={2} vAlign="center">
-                          {it.project && <span className={`rx-tag ${cfg.tagClass}`}>{it.project}</span>}
+                          {it.project && <Tag>{it.project}</Tag>}
                           <Text type="supporting" color="disabled">{time}</Text>
                         </HStack>
                       }
@@ -199,12 +173,7 @@ export function Timeline({ onNavigate }: { onNavigate: (view: "memories" | "sess
 
           {hasMore ? (
             <HStack hAlign="center">
-              <Button
-                label={loadingMore ? t("common.loading") : t("timeline.loadMore")}
-                variant="secondary"
-                onClick={loadMore}
-                isDisabled={loadingMore}
-              />
+              <Button label={loadingMore ? t("common.loading") : t("timeline.loadMore")} variant="secondary" onClick={loadMore} disabled={loadingMore} />
             </HStack>
           ) : (
             <HStack hAlign="center">

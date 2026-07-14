@@ -239,7 +239,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Proje map'ini getir",
       description:
-        "Bir projenin tam bağlamı: özet, stack, alınan kararlar, mevcut odak, sıradaki adımlar. Bir projede çalışmaya başlarken önce bunu çek.",
+        "Bir projenin tam bağlamı: özet, stack, kararlar, mevcut odak, sıradaki adımlar + kod haritası (architecture, modules, entry_points, commands, conventions, data_model). Bir projede çalışmaya başlarken önce bunu çek; kod haritası boş/bayatsa keşfettiğini project_update ile yaz.",
       inputSchema: { name: z.string() },
     },
     async ({ name }) => {
@@ -253,7 +253,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Proje map'ini güncelle",
       description:
-        "Proje map'ini oluşturur/günceller (merge eder, silmez). Odak değişince, karar alınınca, adım tamamlanınca çağır.",
+        "Proje map'ini oluşturur/günceller (merge eder, silmez). Odak değişince, karar alınınca, adım tamamlanınca çağır. Kod haritasını da burada tut: bir projeyi keşfettiğinde (modül sınırları, giriş noktaları, komutlar) modules/architecture/entry_points alanlarını doldur — sonraki agent kodu yeniden keşfetmek zorunda kalmasın.",
       inputSchema: {
         name: z.string(),
         status: z.enum(["active", "paused", "done", "idea"]).optional(),
@@ -264,6 +264,23 @@ export function buildMcpServer(): McpServer {
         decisions: z.array(z.string()).optional().describe("TAM liste (üzerine yazar); tek karar eklemek için add_decision kullan"),
         next_steps: z.array(z.string()).optional().describe("TAM liste (üzerine yazar)"),
         notes: z.string().optional(),
+        architecture: z.string().optional().describe("Mimarinin 3-5 cümlelik özeti: katmanlar, veri akışı, sınırlar"),
+        modules: z
+          .array(
+            z.object({
+              name: z.string().describe("Kısa modül adı, ör. 'core/search'"),
+              path: z.string().describe("Repo köküne göre yol"),
+              purpose: z.string().describe("Tek cümle: ne yapar, sınırı ne"),
+              key_files: z.array(z.string()).optional().describe("Değişiklikte ilk bakılacak dosyalar"),
+              depends_on: z.array(z.string()).optional().describe("Bağımlı olduğu modül adları"),
+            })
+          )
+          .optional()
+          .describe("Kod haritası modül dökümü — TAM liste (üzerine yazar)"),
+        entry_points: z.record(z.string(), z.string()).optional().describe("Rol → dosya, ör. { server: 'src/server/index.ts' }"),
+        commands: z.record(z.string(), z.string()).optional().describe("Ad → komut, ör. { dev: 'npm run dev' }"),
+        conventions: z.array(z.string()).optional().describe("Koddan okunamayan yazılı kurallar (kısa maddeler)"),
+        data_model: z.string().optional().describe("Ana tablolar/varlıklar ve ilişkilerinin kısa özeti"),
       },
     },
     async (args) => json(upsertProject(args as ProjectMap))

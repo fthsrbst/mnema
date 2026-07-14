@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MNEMA — One memory for every AI agent</title>
+<meta name="description" content="Mnema is a self-hosted shared memory server for AI agents. Memory, RAG, project maps and auto-recall over MCP + REST. Runs on a Raspberry Pi, syncs across your devices. Open source, MIT.">
+<meta property="og:title" content="MNEMA — One memory for every AI agent">
+<meta property="og:description" content="Self-hosted shared memory for AI agents. Hybrid search memory, RAG, project maps, auto-recall — 24 MCP tools, one SQLite file, your own hardware.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mnema">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="MNEMA — One memory for every AI agent">
+<meta name="twitter:description" content="Self-hosted shared memory for AI agents. MCP + REST. Open source, MIT.">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="%23000"/><rect x="3" y="3" width="4" height="4" fill="%23a6ff6b"/><rect x="9" y="9" width="4" height="4" fill="%23a6ff6b"/><rect x="9" y="3" width="4" height="4" fill="%23fff"/></svg>'>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ================= MNEMA — 1-bit record-sleeve schematic ================= */
+:root{
+  --ink:#000000;
+  --paper:#f2f2ee;
+  --phos:#a6ff6b;
+  --phos-dim:#4d7a33;
+  --grey:#8a8a84;
+  --mono:'IBM Plex Mono',monospace;
+  --pix:'Silkscreen',monospace;
+  --crt:'VT323',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{
+  background:var(--ink);
+  color:var(--paper);
+  font-family:var(--mono);
+  font-size:15px;
+  line-height:1.55;
+  overflow-x:hidden;
+}
+::selection{background:var(--phos);color:var(--ink)}
+a{color:var(--phos)}
+img{max-width:100%}
+pre{font-family:var(--mono)}
+
+/* ---------- registration / crop marks ---------- */
+.regmark{
+  position:fixed;width:34px;height:34px;z-index:60;pointer-events:none;
+  opacity:.9;
+}
+.regmark::before,.regmark::after{content:"";position:absolute;background:var(--paper)}
+.regmark::before{left:50%;top:0;width:1px;height:100%}
+.regmark::after{top:50%;left:0;height:1px;width:100%}
+.regmark i{position:absolute;inset:9px;border:1px solid var(--paper);border-radius:50%}
+.regmark.tl{top:8px;left:8px}.regmark.tr{top:8px;right:8px}
+.regmark.bl{bottom:8px;left:8px}.regmark.br{bottom:8px;right:8px}
+@media(max-width:720px){.regmark{width:22px;height:22px}.regmark i{inset:6px}}
+
+/* ---------- ticker ---------- */
+.ticker{
+  border-bottom:1px solid var(--paper);
+  background:var(--ink);
+  overflow:hidden;white-space:nowrap;
+  font-family:var(--pix);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;padding:7px 0;
+  position:relative;z-index:5;
+}
+.ticker__inner{display:inline-block;padding-left:0;animation:tick 38s linear infinite}
+.ticker span{margin:0 1.4em;color:var(--paper)}
+.ticker b{color:var(--phos);font-weight:400}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.ticker__inner{animation:none}}
+
+/* ---------- shell ---------- */
+.shell{max-width:1120px;margin:0 auto;padding:0 clamp(16px,4vw,48px)}
+section{position:relative}
+
+/* ---------- hero ---------- */
+.hero{position:relative;border-bottom:1px solid var(--paper);overflow:hidden}
+.hero canvas{
+  position:absolute;inset:0;width:100%;height:100%;
+  image-rendering:pixelated;opacity:.38;z-index:0;
+}
+@media(max-width:720px){.hero canvas{opacity:.2}}
+.hero__in{position:relative;z-index:2;padding-top:clamp(48px,9vh,110px);padding-bottom:clamp(40px,7vh,90px)}
+.hero__meta{
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  font-family:var(--pix);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--grey);margin-bottom:clamp(22px,4vh,44px);
+}
+.hero__meta b{color:var(--phos);font-weight:400}
+.asciiwrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.asciilogo{
+  font-family:var(--mono);
+  font-size:clamp(9px,2.05vw,22px);
+  line-height:1.12;
+  color:var(--phos);
+  text-shadow:0 0 18px rgba(166,255,107,.35);
+  white-space:pre;
+}
+.hero__tag{
+  margin-top:clamp(20px,4vh,40px);
+  font-family:var(--crt);
+  font-size:clamp(24px,4vw,42px);
+  line-height:1.15;
+  max-width:22ch;
+}
+.hero__tag em{font-style:normal;background:var(--phos);color:var(--ink);padding:0 .18em}
+.hero__sub{
+  margin-top:16px;color:var(--grey);max-width:62ch;font-size:14px;
+}
+.hero__sub b{color:var(--paper);font-weight:500}
+.cta{display:flex;gap:14px;margin-top:clamp(26px,4vh,44px);flex-wrap:wrap}
+.btn{
+  font-family:var(--pix);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  text-decoration:none;padding:14px 22px;border:1px solid var(--paper);
+  color:var(--paper);background:var(--ink);position:relative;
+  transition:background .12s steps(2),color .12s steps(2);
+}
+.btn::before{content:"■ ";color:var(--phos)}
+.btn:hover{background:var(--paper);color:var(--ink)}
+.btn:hover::before{color:var(--ink)}
+.btn--solid{background:var(--phos);color:var(--ink);border-color:var(--phos)}
+.btn--solid::before{color:var(--ink)}
+.btn--solid:hover{background:var(--ink);color:var(--phos);border-color:var(--phos)}
+.btn--solid:hover::before{color:var(--phos)}
+.hero__stamps{
+  margin-top:clamp(30px,5vh,54px);display:flex;gap:10px;flex-wrap:wrap;
+}
+.stamp{
+  font-family:var(--pix);font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  border:1px solid var(--grey);color:var(--grey);padding:5px 9px;
+}
+.stamp--go{border-color:var(--phos);color:var(--phos)}
+
+/* ---------- ascii rules / dividers ---------- */
+.rule{
+  overflow:hidden;white-space:nowrap;color:var(--phos-dim);
+  font-size:11px;line-height:1;padding:10px 0;user-select:none;
+}
+.dither-strip{display:block;width:100%;height:26px;image-rendering:pixelated;opacity:.8}
+
+/* ---------- section headers ---------- */
+.shead{
+  display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;
+  padding:clamp(40px,7vh,72px) 0 26px;
+}
+.shead__no{
+  font-family:var(--pix);font-size:12px;color:var(--ink);
+  background:var(--phos);padding:4px 8px;letter-spacing:.1em;
+}
+.shead__t{
+  font-family:var(--pix);font-weight:700;
+  font-size:clamp(19px,3.4vw,30px);
+  letter-spacing:.06em;text-transform:uppercase;
+}
+.shead__d{color:var(--grey);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-family:var(--pix)}
+
+/* ---------- why ---------- */
+.why{border-bottom:1px solid var(--paper)}
+.why__grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--paper);margin-bottom:clamp(44px,7vh,80px)}
+@media(max-width:840px){.why__grid{grid-template-columns:1fr}}
+.why__col{padding:clamp(20px,3.4vw,38px)}
+.why__col+.why__col{border-left:1px solid var(--paper)}
+@media(max-width:840px){.why__col+.why__col{border-left:0;border-top:1px solid var(--paper)}}
+.why__label{
+  font-family:var(--pix);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  margin-bottom:16px;display:inline-block;padding:3px 8px;
+}
+.why__label--err{background:var(--paper);color:var(--ink)}
+.why__label--fix{background:var(--phos);color:var(--ink)}
+.why li{list-style:none;padding:9px 0;border-bottom:1px dashed var(--phos-dim);font-size:14px}
+.why li:last-child{border-bottom:0}
+.why li::before{font-family:var(--mono);margin-right:10px}
+.why__col--err li::before{content:"✕";color:var(--grey)}
+.why__col--fix li::before{content:"■";color:var(--phos)}
+.why__punch{
+  font-family:var(--crt);font-size:clamp(20px,3vw,30px);
+  padding:0 0 clamp(44px,7vh,80px);max-width:36ch;
+}
+.why__punch b{color:var(--phos);font-weight:400}
+
+/* ---------- features ---------- */
+.features{border-bottom:1px solid var(--paper)}
+.fgrid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  border-top:1px solid var(--paper);border-left:1px solid var(--paper);
+  margin-bottom:clamp(44px,7vh,80px);
+}
+@media(max-width:960px){.fgrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.fgrid{grid-template-columns:1fr}}
+.fcard{
+  border-right:1px solid var(--paper);border-bottom:1px solid var(--paper);
+  padding:clamp(18px,2.6vw,28px);position:relative;
+  background:var(--ink);
+}
+.fcard:hover{background:#0a0f07}
+.fcard::after{
+  content:"";position:absolute;top:8px;right:8px;width:7px;height:7px;
+  background:var(--phos);
+}
+.fcard pre.icon{
+  font-size:11px;line-height:1.15;color:var(--phos);margin-bottom:14px;
+  text-shadow:0 0 10px rgba(166,255,107,.3);
+}
+.fcard h3{
+  font-family:var(--pix);font-size:13px;letter-spacing:.08em;
+  text-transform:uppercase;margin-bottom:10px;font-weight:700;
+}
+.fcard p{font-size:13px;color:var(--grey);line-height:1.6}
+.fcard p code{color:var(--paper);font-size:12px}
+.fcard .tag{
+  display:inline-block;margin-top:12px;font-family:var(--pix);font-size:9px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--phos-dim);
+}
+
+/* ---------- architecture ---------- */
+.arch{border-bottom:1px solid var(--paper)}
+.arch__scroll{
+  overflow-x:auto;border:1px solid var(--paper);
+  margin-bottom:14px;background:#020402;
+  -webkit-overflow-scrolling:touch;
+}
+.arch__pre{
+  font-size:clamp(10px,1.15vw,13px);line-height:1.18;color:var(--paper);
+  padding:clamp(16px,3vw,34px);white-space:pre;min-width:max-content;
+}
+.arch__pre .g{color:var(--phos)}
+.arch__pre .d{color:var(--phos-dim)}
+.arch__hint{
+  font-family:var(--pix);font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--grey);margin-bottom:clamp(44px,7vh,80px);
+}
+@media(min-width:900px){.arch__hint .m{display:none}}
+
+/* ---------- tracklist ---------- */
+.tracks{border-bottom:1px solid var(--paper);background:var(--ink)}
+.tracks__note{color:var(--grey);font-size:13px;max-width:64ch;margin-bottom:26px}
+.tlist{list-style:none;margin-bottom:18px}
+.track{
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;gap:0 16px;
+  background:var(--paper);color:var(--ink);
+  border:1px solid var(--ink);
+  outline:1px solid var(--paper);
+  margin-bottom:6px;
+  padding:7px 12px;
+  font-size:13px;
+}
+.track__no{
+  font-family:var(--pix);font-size:11px;min-width:3.2em;
+}
+.track__no::after{content:"▸";color:var(--phos-dim);margin-left:6px}
+.track__body{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;min-width:0}
+.track__name{font-weight:700;letter-spacing:.02em;white-space:nowrap}
+.track__desc{color:#444;font-size:12px}
+.track .wave{
+  display:flex;align-items:flex-end;gap:1px;height:14px;width:64px;
+  overflow:hidden;
+}
+.track .wave i{display:block;width:2px;background:var(--ink);min-height:2px}
+@media(max-width:640px){
+  .track{grid-template-columns:auto 1fr}
+  .track .wave{display:none}
+  .track__desc{flex-basis:100%}
+}
+.tracks__total{
+  font-family:var(--pix);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--grey);text-align:right;margin-bottom:clamp(44px,7vh,80px);
+}
+.tracks__total b{color:var(--phos);font-weight:400}
+
+/* ---------- quickstart ---------- */
+.qs{border-bottom:1px solid var(--paper)}
+.qs__grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:22px}
+@media(max-width:900px){.qs__grid{grid-template-columns:1fr}}
+.term{border:1px solid var(--paper);background:#020402}
+.term__bar{
+  display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--paper);padding:7px 12px;
+  font-family:var(--pix);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+}
+.term__bar b{color:var(--phos);font-weight:400}
+.term__bar .dots{color:var(--grey);letter-spacing:.3em}
+.term pre{
+  padding:16px 14px 18px;overflow-x:auto;font-size:12.5px;line-height:1.7;
+}
+.term .c{color:var(--phos-dim)}
+.term .p{color:var(--phos);user-select:none}
+.term .o{color:var(--grey)}
+.qs__wide{margin-bottom:22px}
+.qs__note{
+  color:var(--grey);font-size:13px;max-width:70ch;margin-bottom:clamp(44px,7vh,80px);
+}
+.qs__note code{color:var(--paper)}
+
+/* ---------- footer ---------- */
+footer{padding:clamp(40px,7vh,72px) 0 90px;position:relative}
+.foot__grid{
+  display:grid;grid-template-columns:1fr auto;gap:34px;align-items:end;
+  border-top:1px solid var(--paper);padding-top:34px;
+}
+@media(max-width:760px){.foot__grid{grid-template-columns:1fr}}
+.foot__stamps{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 22px}
+.foot__links{display:flex;gap:22px;flex-wrap:wrap;font-size:13px}
+.foot__links a{color:var(--paper);text-decoration:none;border-bottom:1px solid var(--phos-dim)}
+.foot__links a:hover{color:var(--phos);border-bottom-color:var(--phos)}
+.foot__fine{color:var(--grey);font-size:11px;margin-top:20px;letter-spacing:.04em}
+.barcode{display:block}
+.barcode svg{display:block;background:var(--paper);padding:8px 10px 3px}
+.barcode figcaption{
+  font-family:var(--pix);font-size:9px;letter-spacing:.3em;color:var(--grey);
+  text-align:center;margin-top:6px;text-transform:uppercase;
+}
+.foot__ascii{color:var(--phos-dim);font-size:10px;line-height:1.25;margin-bottom:26px;overflow-x:auto;white-space:pre}
+
+/* focus */
+a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<div class="regmark tl" aria-hidden="true"><i></i></div>
+<div class="regmark tr" aria-hidden="true"><i></i></div>
+<div class="regmark bl" aria-hidden="true"><i></i></div>
+<div class="regmark br" aria-hidden="true"><i></i></div>
+
+<div class="ticker" aria-hidden="true">
+  <div class="ticker__inner">
+    <span>MNEMA <b>///</b> one memory for every AI agent</span><span><b>■</b> self-hosted</span><span><b>■</b> open source · MIT</span><span><b>■</b> MCP + REST</span><span><b>■</b> SQLite + FTS5 + sqlite-vec</span><span><b>■</b> runs on a Raspberry Pi</span><span><b>■</b> local-first LWW sync</span><span>MNEMA <b>///</b> one memory for every AI agent</span><span><b>■</b> self-hosted</span><span><b>■</b> open source · MIT</span><span><b>■</b> MCP + REST</span><span><b>■</b> SQLite + FTS5 + sqlite-vec</span><span><b>■</b> runs on a Raspberry Pi</span><span><b>■</b> local-first LWW sync</span>
+  </div>
+</div>
+
+<header class="hero">
+  <canvas id="dither" aria-hidden="true"></canvas>
+  <div class="shell hero__in">
+    <p class="hero__meta">
+      <span>MNM-001 <b>·</b> SIDE A</span>
+      <span>SHARED MEMORY SERVER</span>
+      <span>33⅓ <b>·</b> SELF-HOSTED</span>
+    </p>
+    <div class="asciiwrap">
+<pre class="asciilogo" role="img" aria-label="MNEMA">
+███╗   ███╗ ███╗   ██╗ ███████╗ ███╗   ███╗  █████╗
+████╗ ████║ ████╗  ██║ ██╔════╝ ████╗ ████║ ██╔══██╗
+██╔████╔██║ ██╔██╗ ██║ █████╗   ██╔████╔██║ ███████║
+██║╚██╔╝██║ ██║╚██╗██║ ██╔══╝   ██║╚██╔╝██║ ██╔══██║
+██║ ╚═╝ ██║ ██║ ╚████║ ███████╗ ██║ ╚═╝ ██║ ██║  ██║
+╚═╝     ╚═╝ ╚═╝  ╚═══╝ ╚══════╝ ╚═╝     ╚═╝ ╚═╝  ╚═╝
+</pre>
+    </div>
+    <h1 class="hero__tag">One memory for <em>every</em> AI agent.</h1>
+    <p class="hero__sub">
+      Claude Code, Cursor, opencode, Codex CLI — each forgets when the session ends.
+      Mnema is a small <b>self-hosted server</b> that gives them all one common brain:
+      structured memory, hybrid RAG, project maps and auto-recall. One SQLite file,
+      one protocol (MCP), your own hardware.
+    </p>
+    <nav class="cta" aria-label="Primary">
+      <a class="btn btn--solid" href="https://github.com/fthsrbst/mnema">View on GitHub</a>
+      <a class="btn" href="#quickstart">Quick start</a>
+    </nav>
+    <div class="hero__stamps" aria-hidden="true">
+      <span class="stamp stamp--go">Self-hosted</span>
+      <span class="stamp stamp--go">Open source</span>
+      <span class="stamp">TypeScript</span>
+      <span class="stamp">SQLite</span>
+      <span class="stamp">MCP</span>
+      <span class="stamp">No cloud required</span>
+    </div>
+  </div>
+</header>
+
+<div class="rule" aria-hidden="true">▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░ ▓▒░</div>
+
+<main>
+
+<!-- ============ 01 WHY ============ -->
+<section class="why" id="why" aria-labelledby="why-t">
+  <div class="shell">
+    <div class="shead">
+      <span class="shead__no">01</span>
+      <h2 class="shead__t" id="why-t">Agents forget. Mnema doesn't.</h2>
+      <span class="shead__d">problem / solution</span>
+    </div>
+    <div class="why__grid reveal">
+      <div class="why__col why__col--err">
+        <span class="why__label why__label--err">WITHOUT A HUB</span>
+        <ul>
+          <li>A decision made in Claude Code is invisible to Cursor an hour later</li>
+          <li>Switching desktop → laptop means re-explaining everything</li>
+          <li>Every agent re-derives project context from scratch</li>
+          <li>"I learned X yesterday" lives in scrollback — or nowhere</li>
+        </ul>
+      </div>
+      <div class="why__col why__col--fix">
+        <span class="why__label why__label--fix">WITH MNEMA</span>
+        <ul>
+          <li>Decisions saved once, with rationale, retrievable by any agent</li>
+          <li>Project maps follow you across every machine on your mesh</li>
+          <li>Relevant memory is auto-injected into each message — precisely filtered</li>
+          <li>Notes and research live in a searchable RAG store, forever</li>
+        </ul>
+      </div>
+    </div>
+    <p class="why__punch reveal">No vector-DB cluster. No message queue. No Docker layer.
+    <b>Just enough infrastructure</b> to make memory persistent and searchable across tools and devices.</p>
+  </div>
+</section>
+
+<!-- ============ 02 FEATURES ============ -->
+<section class="features" id="features" aria-labelledby="feat-t">
+  <div class="shell">
+    <div class="shead">
+      <span class="shead__no">02</span>
+      <h2 class="shead__t" id="feat-t">System modules</h2>
+      <span class="shead__d">9 subsystems · one core</span>
+    </div>
+    <div class="fgrid">
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+█▀█ █▀█
+█▄█ █▄█
+▀ ▀ ▀ ▀</pre>
+        <h3>Memory</h3>
+        <p>Decisions, preferences, how-tos — saved with rationale. Hybrid search:
+        <code>FTS5</code> BM25 + <code>sqlite-vec</code> vector KNN, merged with
+        Reciprocal Rank Fusion. Importance multiplier × time decay scoring.</p>
+        <span class="tag">memory_save / memory_search</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+▐███▌ ▐█▌
+▐█▌   ▐███▌
+▐███▌ ▐█▌</pre>
+        <h3>RAG store</h3>
+        <p>Ingest notes, READMEs, research write-ups. Markdown-aware chunking,
+        Gemini embeddings, hybrid retrieval with source references. Falls back
+        to keyword-only search without an API key.</p>
+        <span class="tag">rag_add / rag_search</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+ ░▒▓█▓▒░
+▓█▓ ▲ ▓█▓
+ ░▒▓█▓▒░</pre>
+        <h3>Auto-recall</h3>
+        <p>Hooks inject relevant memory into every message and project context
+        (bridge) at session start — gated by a semantic-evidence precision
+        filter. Few results, high signal.</p>
+        <span class="tag">recall / recall_feedback</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+█▀▀▀█ ▄▄
+█ ▓ █ ██
+█▄▄▄█ ▀▀</pre>
+        <h3>Project maps</h3>
+        <p>One structured record per project: architecture, module map,
+        decisions, current focus, next steps. Agents stop re-discovering
+        your codebase — <code>project_get("name")</code> and go.</p>
+        <span class="tag">project_get / project_update</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+◄██► ◄██►
+ ▐ MCP ▌
+◄██► ◄██►</pre>
+        <h3>MCP + REST</h3>
+        <p>24 MCP tools over Streamable HTTP for agents; a mirror REST API for
+        scripts and the web UI. One implementation, two doors. Works with
+        Claude Code, Cursor, opencode, Codex CLI, ChatGPT&hellip;</p>
+        <span class="tag">/mcp · /api/*</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+▓░ CPU ░▓
+ ▼▼▼▼▼▼
+▓░ GPU ░▓</pre>
+        <h3>Local AI orchestration</h3>
+        <p>Route bulk text work to LM Studio / Ollama at zero API cost, and
+        image / video generation to ComfyUI — all from one API, callable by
+        any connected agent.</p>
+        <span class="tag">local_llm / media_generate</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+ ●───●
+ │ ╲ │
+ ●───●</pre>
+        <h3>Relationship graph</h3>
+        <p>Memories, projects, documents and tags form a network. Explore it
+        as an infinitely expanding interactive graph — follow any node
+        outward.</p>
+        <span class="tag">web ui / graph</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+PC ◄═══► Pi
+     ║
+    Mac</pre>
+        <h3>Cross-device sync</h3>
+        <p>Local-first, last-write-wins: millisecond timestamps with a
+        deterministic content-hash tie-break. Every replica converges to the
+        same winner — write anywhere, read everywhere.</p>
+        <span class="tag">LWW · private mesh</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
+▓▒░ UI ░▒▓
+█ ▀▄ ▄▀ █
+▓▒░░░░░▒▓</pre>
+        <h3>Web UI</h3>
+        <p>A 1-bit / bitmap-aesthetic dashboard for browsing memory, RAG
+        documents, projects and prompts — from any browser, including your
+        phone (installable PWA).</p>
+        <span class="tag">react · dashboard</span>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 03 ARCHITECTURE ============ -->
+<section class="arch" id="architecture" aria-labelledby="arch-t">
+  <div class="shell">
+    <div class="shead">
+      <span class="shead__no">03</span>
+      <h2 class="shead__t" id="arch-t">Signal path</h2>
+      <span class="shead__d">devices ↔ hub ↔ storage</span>
+    </div>
+    <div class="arch__scroll reveal" role="img" aria-label="Architecture diagram: desktop and laptop devices connect over a private Tailscale mesh via MCP and REST to a hub server on a Raspberry Pi 5, which stores everything in a single SQLite file with FTS5 and sqlite-vec indexes, with nightly backups.">
+<pre class="arch__pre" aria-hidden="true">
+<span class="d">┌──────────────┐</span>              <span class="g">┌──────────────────────────────────┐</span>              <span class="d">┌──────────────┐</span>
+<span class="d">│   DESKTOP    │</span>              <span class="g">│  RASPBERRY PI 5 ·· always-on hub │</span>              <span class="d">│    LAPTOP    │</span>
+<span class="d">│              │</span>              <span class="g">│                                  │</span>              <span class="d">│              │</span>
+<span class="d">│  Claude Code │</span>──── MCP ────▶<span class="g">│  ┌────────────────────────────┐  │</span>◀──── MCP ────<span class="d">│  Cursor      │</span>
+<span class="d">│  Cursor      │</span>              <span class="g">│  │ mnema server · Node 22     │  │</span>              <span class="d">│  opencode    │</span>
+<span class="d">│  scripts     │</span>──── REST ───▶<span class="g">│  │  /mcp  Streamable HTTP     │  │</span>◀─── REST ────<span class="d">│  Codex CLI   │</span>
+<span class="d">│              │</span>              <span class="g">│  │  /api  REST                │  │</span>              <span class="d">│              │</span>
+<span class="d">│      ▲       │</span>◀─── sync ───▶<span class="g">│  │  /     Web UI (PWA)        │  │</span>◀─── sync ───▶<span class="d">│      ▲       │</span>
+<span class="d">└──────┼───────┘</span>              <span class="g">│  └─────────────┬──────────────┘  │</span>              <span class="d">└──────┼───────┘</span>
+<span class="d">       │</span>                      <span class="g">│                │                 │</span>                     <span class="d">│</span>
+<span class="d">       │</span>                      <span class="g">│  ┌─────────────▼──────────────┐  │</span>                     <span class="d">│</span>
+<span class="d">       │</span>                      <span class="g">│  │ SQLite · one file          │  │</span>                     <span class="d">│</span>
+<span class="d">       └</span>─── TAILSCALE MESH ───<span class="g">│  │  memories · projects       │  │</span>─── TAILSCALE MESH ──<span class="d">┘</span>
+            private network   <span class="g">│  │  chunks + sqlite-vec KNN   │  │</span>    private network
+                              <span class="g">│  │  chunks_fts · FTS5 BM25    │  │</span>
+                              <span class="g">│  └────────────────────────────┘  │</span>
+                              <span class="g">│                                  │</span>
+                              <span class="g">│  nightly: sqlite backup ──▶ git  │</span>
+                              <span class="g">└──────────────────────────────────┘</span>
+</pre>
+    </div>
+    <p class="arch__hint">■ embeddings are computed on the hub only — clients send raw text, the API key lives in exactly one place <span class="m">· drag sideways to pan the diagram</span></p>
+  </div>
+</section>
+
+<!-- ============ 04 TRACKLIST ============ -->
+<section class="tracks" id="tools" aria-labelledby="tools-t">
+  <div class="shell">
+    <div class="shead">
+      <span class="shead__no">04</span>
+      <h2 class="shead__t" id="tools-t">Tool tracklist</h2>
+      <span class="shead__d">MNM-001 · 24 tracks</span>
+    </div>
+    <p class="tracks__note">Every capability is an MCP tool. Point any MCP client at
+    <code>/mcp</code> and the full set is callable — same tools, every agent, every device.</p>
+    <ol class="tlist">
+      <li class="track reveal"><span class="track__no">01.</span><span class="track__body"><span class="track__name">memory_search</span><span class="track__desc">hybrid recall — BM25 + vector KNN, fused with RRF</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">02.</span><span class="track__body"><span class="track__name">memory_save</span><span class="track__desc">store decisions, preferences &amp; how-tos with rationale</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">03.</span><span class="track__body"><span class="track__name">memory_update</span><span class="track__desc">amend a memory the moment it's falsified</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">04.</span><span class="track__body"><span class="track__name">memory_delete</span><span class="track__desc">contradictory memory is worse than none</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">05.</span><span class="track__body"><span class="track__name">recall</span><span class="track__desc">precision-gated context injection, per message</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">06.</span><span class="track__body"><span class="track__name">recall_feedback</span><span class="track__desc">grade what surfaced — the filter learns</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">07.</span><span class="track__body"><span class="track__name">rag_add</span><span class="track__desc">markdown-aware chunking + embeddings</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">08.</span><span class="track__body"><span class="track__name">rag_search</span><span class="track__desc">hybrid document retrieval with source refs</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">09.</span><span class="track__body"><span class="track__name">project_list</span><span class="track__desc">every project map on the hub</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">10.</span><span class="track__body"><span class="track__name">project_get</span><span class="track__desc">summary, stack, decisions, focus — instantly</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">11.</span><span class="track__body"><span class="track__name">project_update</span><span class="track__desc">keep the map current; stale maps mislead agents</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">12.</span><span class="track__body"><span class="track__name">project_add_decision</span><span class="track__desc">record the choice — and the why</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">13.</span><span class="track__body"><span class="track__name">project_delete</span><span class="track__desc">retire a map cleanly</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">14.</span><span class="track__body"><span class="track__name">prompt_list</span><span class="track__desc">role prompt library index</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">15.</span><span class="track__body"><span class="track__name">prompt_get</span><span class="track__desc">architect · reviewer · debugger · security · devops · ml</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">16.</span><span class="track__body"><span class="track__name">session_log</span><span class="track__desc">what was done, what's half-finished, what's next</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">17.</span><span class="track__body"><span class="track__name">session_recent</span><span class="track__desc">"where was I?" — across devices</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">18.</span><span class="track__body"><span class="track__name">skill_list</span><span class="track__desc">shared skill set index</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">19.</span><span class="track__body"><span class="track__name">skill_save</span><span class="track__desc">publish a skill to every device at once</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">20.</span><span class="track__body"><span class="track__name">machine_status</span><span class="track__desc">who's online on the mesh</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">21.</span><span class="track__body"><span class="track__name">machine_register</span><span class="track__desc">enroll a new device</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">22.</span><span class="track__body"><span class="track__name">local_llm</span><span class="track__desc">route bulk work to LM Studio / Ollama — zero API cost</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">23.</span><span class="track__body"><span class="track__name">workflow_list</span><span class="track__desc">ComfyUI workflow registry</span></span><span class="wave" aria-hidden="true"></span></li>
+      <li class="track reveal"><span class="track__no">24.</span><span class="track__body"><span class="track__name">media_generate</span><span class="track__desc">image &amp; video via ComfyUI, one API</span></span><span class="wave" aria-hidden="true"></span></li>
+    </ol>
+    <p class="tracks__total">total running time: <b>24 tools</b> · all in daily use · REST mirrors every track</p>
+  </div>
+</section>
+
+<!-- ============ 05 QUICK START ============ -->
+<section class="qs" id="quickstart" aria-labelledby="qs-t">
+  <div class="shell">
+    <div class="shead">
+      <span class="shead__no">05</span>
+      <h2 class="shead__t" id="qs-t">Quick start</h2>
+      <span class="shead__d">node 22+ · any OS</span>
+    </div>
+
+    <div class="term qs__wide reveal">
+      <div class="term__bar"><b>OPTION A ·· one-click installer</b><span class="dots">·····</span></div>
+      <pre><span class="c"># macOS / Linux</span>
+<span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/master/scripts/install.sh | bash
+
+<span class="c"># Windows (PowerShell)</span>
+<span class="p">&gt;</span> irm https://raw.githubusercontent.com/fthsrbst/mnema/master/scripts/install.ps1 | iex</pre>
+    </div>
+
+    <div class="qs__grid">
+      <div class="term reveal">
+        <div class="term__bar"><b>OPTION B ·· manual</b><span class="dots">·····</span></div>
+        <pre><span class="p">$</span> git clone https://github.com/fthsrbst/mnema.git
+<span class="p">$</span> cd mnema
+<span class="p">$</span> npm ci
+<span class="p">$</span> npm run build
+<span class="p">$</span> cp .env.example .env   <span class="c"># set HUB_TOKEN</span>
+<span class="p">$</span> npm run dev
+<span class="o">→ http://127.0.0.1:8033</span></pre>
+      </div>
+      <div class="term reveal">
+        <div class="term__bar"><b>RASPBERRY PI ·· always-on deploy</b><span class="dots">·····</span></div>
+        <pre><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/\
+  fthsrbst/mnema/master/deploy/setup-pi.sh | bash
+
+<span class="c"># installs Node 22, builds server + web UI,</span>
+<span class="c"># generates .env with a random HUB_TOKEN,</span>
+<span class="c"># installs a systemd unit + nightly backup cron</span></pre>
+      </div>
+    </div>
+
+    <div class="term qs__wide reveal">
+      <div class="term__bar"><b>CONNECT AN AGENT ·· claude code</b><span class="dots">·····</span></div>
+      <pre><span class="p">$</span> claude mcp add --transport http --scope user hub &lt;HUB-URL&gt;/mcp \
+    --header <span class="o">"Authorization: Bearer &lt;TOKEN&gt;"</span>
+
+<span class="c"># Cursor / Windsurf / opencode / Codex CLI: same endpoint, see README</span></pre>
+    </div>
+
+    <p class="qs__note">No <code>GEMINI_API_KEY</code>? The server still runs — it falls back to
+    keyword-only (FTS) search instead of hybrid. Nothing crashes; you lose semantic recall until
+    you add a key. Embeddings are only ever computed server-side.</p>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer aria-label="Footer">
+  <div class="shell">
+    <pre class="foot__ascii" aria-hidden="true">
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+█ WRITE ANYWHERE ░ READ EVERYWHERE ░ ONE SQLITE FILE ░ YOUR HARDWARE ░ YOUR MEMORY █
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░</pre>
+    <div class="foot__grid">
+      <div>
+        <div class="foot__stamps" aria-hidden="true">
+          <span class="stamp stamp--go">SELF-HOSTED</span>
+          <span class="stamp stamp--go">OPEN SOURCE</span>
+          <span class="stamp">MIT LICENSE</span>
+          <span class="stamp">MNM-001</span>
+        </div>
+        <nav class="foot__links" aria-label="Footer links">
+          <a href="https://github.com/fthsrbst/mnema">GitHub</a>
+          <a href="https://github.com/fthsrbst/mnema/blob/master/LICENSE">License (MIT)</a>
+          <a href="#quickstart">Quick start</a>
+          <a href="#tools">Tools</a>
+        </nav>
+        <p class="foot__fine">© 2026 Fatih Serbest · MIT License · Mnema is a personal-scale tool —
+        one user, a handful of devices, zero cloud dependencies. Built with TypeScript, SQLite,
+        Express &amp; MCP.</p>
+      </div>
+      <figure class="barcode" aria-hidden="true">
+        <svg width="196" height="52" viewBox="0 0 196 52" role="presentation">
+          <g fill="#000">
+            <rect x="4"  y="4" width="3" height="36"/><rect x="9"  y="4" width="1" height="36"/>
+            <rect x="12" y="4" width="2" height="36"/><rect x="17" y="4" width="1" height="36"/>
+            <rect x="20" y="4" width="4" height="36"/><rect x="26" y="4" width="1" height="36"/>
+            <rect x="29" y="4" width="2" height="36"/><rect x="34" y="4" width="3" height="36"/>
+            <rect x="39" y="4" width="1" height="36"/><rect x="43" y="4" width="2" height="36"/>
+            <rect x="47" y="4" width="4" height="36"/><rect x="53" y="4" width="1" height="36"/>
+            <rect x="56" y="4" width="2" height="36"/><rect x="61" y="4" width="1" height="36"/>
+            <rect x="64" y="4" width="3" height="36"/><rect x="70" y="4" width="2" height="36"/>
+            <rect x="74" y="4" width="1" height="36"/><rect x="78" y="4" width="4" height="36"/>
+            <rect x="84" y="4" width="1" height="36"/><rect x="88" y="4" width="2" height="36"/>
+            <rect x="92" y="4" width="3" height="36"/><rect x="98" y="4" width="1" height="36"/>
+            <rect x="101" y="4" width="2" height="36"/><rect x="106" y="4" width="4" height="36"/>
+            <rect x="112" y="4" width="1" height="36"/><rect x="116" y="4" width="3" height="36"/>
+            <rect x="121" y="4" width="1" height="36"/><rect x="125" y="4" width="2" height="36"/>
+            <rect x="130" y="4" width="4" height="36"/><rect x="136" y="4" width="1" height="36"/>
+            <rect x="140" y="4" width="2" height="36"/><rect x="145" y="4" width="3" height="36"/>
+            <rect x="150" y="4" width="1" height="36"/><rect x="154" y="4" width="2" height="36"/>
+            <rect x="159" y="4" width="4" height="36"/><rect x="165" y="4" width="1" height="36"/>
+            <rect x="169" y="4" width="2" height="36"/><rect x="174" y="4" width="3" height="36"/>
+            <rect x="179" y="4" width="1" height="36"/><rect x="183" y="4" width="4" height="36"/>
+            <rect x="189" y="4" width="2" height="36"/>
+          </g>
+          <text x="98" y="49" text-anchor="middle" font-family="monospace" font-size="8" fill="#000">4 260033 916013</text>
+        </svg>
+        <figcaption>MNM-001 · SIDE A</figcaption>
+      </figure>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
+<script>
+(function(){
+  "use strict";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- animated Bayer-dither hero background ---------- */
+  var canvas = document.getElementById("dither");
+  if (canvas && canvas.getContext){
+    var ctx = canvas.getContext("2d", {alpha:false});
+    var BAYER = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+    var SCALE = 5, W=0, H=0, img=null;
+    function size(){
+      var r = canvas.getBoundingClientRect();
+      W = Math.max(2, Math.floor(r.width / SCALE));
+      H = Math.max(2, Math.floor(r.height / SCALE));
+      canvas.width = W; canvas.height = H;
+      img = ctx.createImageData(W, H);
+    }
+    function paint(t){
+      var d = img.data, i, x, y, v, th, on, g;
+      var cx = W*0.72, cy = H*0.38;
+      for (y=0; y<H; y++){
+        for (x=0; x<W; x++){
+          var dx=(x-cx)/W, dy=(y-cy)/H;
+          v = 0.5
+            + 0.28*Math.sin(x*0.11 + t*0.9)
+            * Math.sin(y*0.13 - t*0.6)
+            + 0.22*Math.sin(Math.sqrt(dx*dx+dy*dy)*16 - t*1.4)
+            - 0.42
+            - 0.42*(1 - x/W);   /* fade dither away from the text column */
+          th = (BAYER[y & 3][x & 3] + 0.5) / 16;
+          on = v > th;
+          i = (y*W + x) * 4;
+          if (on){
+            g = ((x ^ y) & 4) ? 1 : 0;   /* two greens for texture */
+            d[i]   = g ? 166 : 60;
+            d[i+1] = g ? 255 : 110;
+            d[i+2] = g ? 107 : 45;
+          } else {
+            d[i]=0; d[i+1]=0; d[i+2]=0;
+          }
+          d[i+3]=255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+    function perf(){ return performance.now()/1000; }
+    size();
+    if ("ResizeObserver" in window){
+      new ResizeObserver(function(){ size(); paint(perf()); }).observe(canvas.parentElement);
+    } else {
+      window.addEventListener("resize", function(){ size(); paint(perf()); });
+    }
+    window.addEventListener("load", function(){ size(); paint(perf()); });
+    if (reduced){
+      paint(3.7); /* single static frame */
+    } else {
+      var last = 0, visible = true;
+      if ("IntersectionObserver" in window){
+        new IntersectionObserver(function(e){ visible = e[0].isIntersecting; })
+          .observe(canvas);
+      }
+      (function loop(now){
+        requestAnimationFrame(loop);
+        if (!visible) return;
+        if (now - last < 90) return;  /* ~11 fps — deliberate machine cadence */
+        last = now;
+        paint(now/1000);
+      })(0);
+    }
+  }
+
+  /* ---------- waveforms on tracklist (decorative) ---------- */
+  document.querySelectorAll(".track .wave").forEach(function(w, idx){
+    var seed = idx * 7 + 3;
+    for (var k=0; k<21; k++){
+      var bar = document.createElement("i");
+      seed = (seed * 16807) % 2147483647;
+      var h = 2 + (seed % 13);
+      bar.style.height = h + "px";
+      w.appendChild(bar);
+    }
+  });
+
+  /* ---------- GSAP scroll reveals (progressive enhancement) ---------- */
+  window.addEventListener("load", function(){
+    if (reduced || !window.gsap || !window.ScrollTrigger) return;
+    gsap.registerPlugin(ScrollTrigger);
+
+    gsap.from(".asciilogo", {opacity:0, y:14, duration:.7, ease:"steps(7)"});
+    gsap.from(".hero__tag",  {opacity:0, y:12, duration:.5, delay:.25, ease:"steps(5)"});
+    gsap.from(".hero__sub",  {opacity:0, duration:.5, delay:.4, ease:"steps(5)"});
+    gsap.from(".cta .btn",   {opacity:0, y:10, duration:.4, delay:.5, stagger:.12, ease:"steps(4)"});
+
+    gsap.utils.toArray(".shead").forEach(function(el){
+      gsap.from(el, {
+        opacity:0, x:-24, duration:.45, ease:"steps(6)",
+        scrollTrigger:{trigger:el, start:"top 88%"}
+      });
+    });
+    ScrollTrigger.batch(".fcard", {
+      start:"top 92%",
+      onEnter: function(batch){
+        gsap.from(batch, {opacity:0, y:18, duration:.4, stagger:.07, ease:"steps(4)"});
+      },
+      once:true
+    });
+    ScrollTrigger.batch(".track", {
+      start:"top 95%",
+      onEnter: function(batch){
+        gsap.from(batch, {opacity:0, x:-16, duration:.3, stagger:.04, ease:"steps(3)"});
+      },
+      once:true
+    });
+    gsap.utils.toArray(".why__grid,.why__punch,.arch__scroll,.term").forEach(function(el){
+      gsap.from(el, {
+        opacity:0, y:20, duration:.45, ease:"steps(5)",
+        scrollTrigger:{trigger:el, start:"top 90%"}
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

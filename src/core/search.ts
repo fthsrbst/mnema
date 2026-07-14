@@ -3,7 +3,6 @@ import { getDb, hasVec } from "./db.js";
 import { embedOne, embeddingsEnabled, toBuffer } from "./embeddings.js";
 
 const RRF_K = 60;
-const CANDIDATES = 20;
 
 /** Serbest metni güvenli FTS5 sorgusuna çevirir: "tok1" OR "tok2" ... */
 export function toFtsQuery(query: string): string {
@@ -40,7 +39,7 @@ export function rrfFuse(lists: { channel: SearchChannel; ids: number[] }[]): Ran
     .sort((a, b) => b.score - a.score);
 }
 
-export function ftsSearch(ftsTable: string, query: string, limit = CANDIDATES): number[] {
+export function ftsSearch(ftsTable: string, query: string, limit = config.searchCandidates): number[] {
   const fts = toFtsQuery(query);
   if (!fts) return [];
   try {
@@ -53,7 +52,7 @@ export function ftsSearch(ftsTable: string, query: string, limit = CANDIDATES): 
   }
 }
 
-export async function vecSearch(vecTable: string, query: string, limit = CANDIDATES): Promise<number[]> {
+export async function vecSearch(vecTable: string, query: string, limit = config.searchCandidates): Promise<number[]> {
   if (!hasVec() || !embeddingsEnabled()) return [];
   const vec = await embedOne(query, "RETRIEVAL_QUERY");
   if (!vec) return [];
@@ -65,10 +64,15 @@ export async function vecSearch(vecTable: string, query: string, limit = CANDIDA
 }
 
 /** Hibrit arama: FTS + vektör → RRF. Vektör yoksa FTS-only. */
-export async function hybridSearch(ftsTable: string, vecTable: string, query: string): Promise<RankedId[]> {
+export async function hybridSearch(
+  ftsTable: string,
+  vecTable: string,
+  query: string,
+  candidates = config.searchCandidates
+): Promise<RankedId[]> {
   const [ftsIds, vecIds] = await Promise.all([
-    Promise.resolve(ftsSearch(ftsTable, query)),
-    vecSearch(vecTable, query).catch((err) => {
+    Promise.resolve(ftsSearch(ftsTable, query, candidates)),
+    vecSearch(vecTable, query, candidates).catch((err) => {
       console.error(`[hub] vektör arama hatası (FTS ile devam): ${(err as Error).message}`);
       return [] as number[];
     }),

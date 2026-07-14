@@ -95,6 +95,20 @@ export interface ScoredChunk {
   channels?: ("fts" | "vec")[];
 }
 
+/** Kod haritasının bir modülü — bir dizin/dosya kümesi ve sorumluluğu. */
+export interface ProjectModule {
+  /** Kısa modül adı, ör. "core/search" */
+  name: string;
+  /** Repo köküne göre yol, ör. "src/core/search.ts" veya "src/core/" */
+  path: string;
+  /** Tek cümle: bu modül ne yapar, sınırı ne. */
+  purpose: string;
+  /** Değişiklik yaparken ilk bakılacak dosyalar. */
+  key_files?: string[];
+  /** Bağımlı olduğu modül adları (modules[].name). */
+  depends_on?: string[];
+}
+
 export interface ProjectMap {
   name: string;
   status?: "active" | "paused" | "done" | "idea";
@@ -107,6 +121,18 @@ export interface ProjectMap {
   next_steps?: string[];
   links?: string[];
   notes?: string;
+  /** Kod haritası: mimarinin 3-5 cümlelik özeti (katmanlar, veri akışı, sınırlar). */
+  architecture?: string;
+  /** Kod haritası: modül dökümü — agent'ın "nereye bakacağım" sorusunun cevabı. */
+  modules?: ProjectModule[];
+  /** Giriş noktaları: rol → dosya, ör. { server: "src/server/index.ts" }. */
+  entry_points?: Record<string, string>;
+  /** Sık komutlar: ad → komut, ör. { dev: "npm run dev", test: "npm test" }. */
+  commands?: Record<string, string>;
+  /** Koddan okunamayan yazılı kurallar/konvansiyonlar (kısa maddeler). */
+  conventions?: string[];
+  /** Veri modelinin kısa özeti: ana tablolar/varlıklar ve ilişkileri. */
+  data_model?: string;
   updated_at?: string;
   [key: string]: unknown;
 }

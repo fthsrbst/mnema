@@ -1,25 +1,111 @@
 import { useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Grid } from "@astryxdesign/core/Grid";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { TextArea } from "@astryxdesign/core/TextArea";
-import { Selector } from "@astryxdesign/core/Selector";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useToast } from "@astryxdesign/core/Toast";
-import { api, type ProjectMap } from "../api";
+import { VStack, HStack, Grid } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { TextField, TextArea, Select } from "../components/ui/Field";
+import { Heading, Text } from "../components/ui/Typography";
+import { StatusDot } from "../components/ui/Tag";
+import { EmptyState } from "../components/ui/EmptyState";
+import { AlertDialog, Dialog } from "../components/ui/Dialog";
+import { SectionRule } from "../components/ui/Divider";
+import { DataTable, type Column } from "../components/ui/DataTable";
+import { useToast } from "../components/ui/useToast";
+import { api, type ProjectMap, type ProjectModule } from "../api";
 import { useI18n } from "../i18n";
 import { Markdown } from "../components/Markdown";
 
 const STATUS_OPTIONS = ["active", "paused", "done", "idea"];
 
-function statusVariant(s: string | undefined) {
-  return s === "active" ? "success" : s === "paused" ? "warning" : s === "done" ? "neutral" : "accent";
+function statusVariant(s: string | undefined): "success" | "warning" | "neutral" | "error" {
+  return s === "active" ? "success" : s === "paused" ? "warning" : s === "done" ? "neutral" : "neutral";
+}
+
+/** Kod haritası alanları (mimari, modüller, komutlar vb.) — backend'de opsiyonel, doluysa gösterilir. */
+function CodeMapSection({ project }: { project: ProjectMap }) {
+  const { t } = useI18n();
+  const hasAny =
+    project.architecture ||
+    (project.modules?.length ?? 0) > 0 ||
+    (project.entry_points && Object.keys(project.entry_points).length > 0) ||
+    (project.commands && Object.keys(project.commands).length > 0) ||
+    (project.conventions?.length ?? 0) > 0 ||
+    project.data_model;
+
+  if (!hasAny) return null;
+
+  const moduleColumns: Column<ProjectModule>[] = [
+    { key: "name", header: t("projects.moduleName"), width: "160px", render: (m) => m.name },
+    { key: "path", header: t("projects.modulePath"), width: "200px", render: (m) => <code style={{ fontSize: 11 }}>{m.path}</code> },
+    { key: "purpose", header: t("projects.modulePurpose"), render: (m) => m.purpose },
+    {
+      key: "depends",
+      header: t("projects.moduleDependsOn"),
+      width: "160px",
+      render: (m) => (m.depends_on?.length ? m.depends_on.join(", ") : "—"),
+    },
+  ];
+
+  return (
+    <Panel>
+      <VStack gap={4}>
+        <SectionRule label={t("projects.architecture")} />
+        {project.architecture && <Markdown headingLevelStart={5}>{project.architecture}</Markdown>}
+
+        {(project.modules?.length ?? 0) > 0 && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.modules")}</span>
+            <DataTable data={project.modules!} columns={moduleColumns} rowKey={(m) => m.name} />
+          </VStack>
+        )}
+
+        {project.entry_points && Object.keys(project.entry_points).length > 0 && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.entryPoints")}</span>
+            <VStack gap={1}>
+              {Object.entries(project.entry_points).map(([k, v]) => (
+                <HStack key={k} gap={3}>
+                  <code style={{ fontSize: 11, color: "var(--fg-dim)", minWidth: 100 }}>{k}</code>
+                  <code style={{ fontSize: 11 }}>{v}</code>
+                </HStack>
+              ))}
+            </VStack>
+          </VStack>
+        )}
+
+        {project.commands && Object.keys(project.commands).length > 0 && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.commands")}</span>
+            <VStack gap={1}>
+              {Object.entries(project.commands).map(([k, v]) => (
+                <HStack key={k} gap={3} vAlign="start">
+                  <code style={{ fontSize: 11, color: "var(--fg-dim)", minWidth: 100 }}>{k}</code>
+                  <code style={{ fontSize: 11 }}>{v}</code>
+                </HStack>
+              ))}
+            </VStack>
+          </VStack>
+        )}
+
+        {(project.conventions?.length ?? 0) > 0 && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.conventions")}</span>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--fg-dim)", display: "flex", flexDirection: "column", gap: 4 }}>
+              {project.conventions!.map((c, i) => (
+                <li key={i}>{c}</li>
+              ))}
+            </ul>
+          </VStack>
+        )}
+
+        {project.data_model && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.dataModel")}</span>
+            <Markdown headingLevelStart={5}>{project.data_model}</Markdown>
+          </VStack>
+        )}
+      </VStack>
+    </Panel>
+  );
 }
 
 export function Projects() {
@@ -139,40 +225,35 @@ export function Projects() {
           </HStack>
           <Button label={t("common.delete")} variant="destructive" onClick={() => setDeleteTarget(selected)} />
         </HStack>
-        <Card className="glass-card">
+        <Panel>
           <VStack gap={3}>
             <TextArea label={t("projects.summary")} value={summary} onChange={setSummary} rows={2} />
             <HStack gap={3}>
-              <Selector label={t("projects.status")} value={status} onChange={setStatus} options={STATUS_OPTIONS} />
-              <TextInput label={t("projects.stack")} value={stack} onChange={setStack} isOptional />
+              <Select label={t("projects.status")} value={status} onChange={setStatus} options={STATUS_OPTIONS.map((v) => ({ value: v, label: v }))} />
+              <TextField label={t("projects.stack")} value={stack} onChange={setStack} optional />
             </HStack>
             {selected.repo && <Text color="secondary">Repo: {selected.repo}</Text>}
-            <TextInput label={t("projects.currentFocus")} value={focus} onChange={setFocus} />
+            <TextField label={t("projects.currentFocus")} value={focus} onChange={setFocus} />
             <TextArea label={t("projects.nextSteps")} value={nextSteps} onChange={setNextSteps} rows={5} />
-            <TextArea label={t("projects.notes")} value={notes} onChange={setNotes} rows={3} isOptional />
-            <HStack gap={2}>
-              <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} isDisabled={saving} />
-            </HStack>
+            <TextArea label={t("projects.notes")} value={notes} onChange={setNotes} rows={3} optional />
+            <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} disabled={saving} />
           </VStack>
-        </Card>
+        </Panel>
+
+        <CodeMapSection project={selected} />
+
         {(selected.decisions?.length ?? 0) > 0 && (
-          <Card className="glass-card">
+          <Panel>
             <VStack gap={2}>
-              <Heading level={4}>{t("projects.decisions")}</Heading>
+              <SectionRule label={t("projects.decisions")} />
               {selected.decisions!.map((d, i) => (
-                <HStack
-                  key={i}
-                  gap={2}
-                  vAlign="start"
-                  style={i > 0 ? { borderTop: "1px solid var(--color-border)" } : undefined}
-                  paddingBlock={i > 0 ? 2 : undefined}
-                >
-                  <Text type="supporting" color="secondary">•</Text>
+                <HStack key={i} gap={2} vAlign="start" style={i > 0 ? { borderTop: "1px solid var(--border)", paddingTop: 8 } : undefined}>
+                  <Text type="supporting" color="secondary">›</Text>
                   <Markdown headingLevelStart={6}>{d}</Markdown>
                 </HStack>
               ))}
             </VStack>
-          </Card>
+          </Panel>
         )}
 
         <AlertDialog
@@ -182,8 +263,7 @@ export function Projects() {
           description={`"${deleteTarget?.name}" ${t("projects.confirmDeleteDesc")}`}
           actionLabel={t("projects.deleteAction")}
           cancelLabel={t("common.cancel")}
-          actionVariant="destructive"
-          isActionLoading={deleting}
+          loading={deleting}
           onAction={confirmDelete}
         />
       </VStack>
@@ -213,9 +293,9 @@ export function Projects() {
       {projects.length === 0 ? (
         <EmptyState title={t("projects.empty")} description={t("projects.emptyDesc")} />
       ) : (
-        <Grid columns={{ minWidth: 300, repeat: "fit" }} gap={4}>
+        <Grid minWidth={280} gap={4}>
           {projects.map((p) => (
-            <Card key={p.name} className="glass-card">
+            <Panel key={p.name}>
               <VStack gap={2}>
                 <HStack gap={2} vAlign="center" hAlign="between">
                   <Heading level={4}>{p.name}</Heading>
@@ -228,27 +308,24 @@ export function Projects() {
                   <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(p)} />
                 </HStack>
               </VStack>
-            </Card>
+            </Panel>
           ))}
         </Grid>
       )}
 
-      <Dialog isOpen={showNew} onOpenChange={setShowNew} purpose="form" width={520}>
-        <DialogHeader title={t("projects.newDialogTitle")} />
-        <VStack gap={3} paddingInline={5} paddingBlock={4}>
-          <TextInput label={t("projects.name")} value={newName} onChange={setNewName} isRequired />
-          <TextArea label={t("projects.summary")} value={summary} onChange={setSummary} rows={2} isOptional />
-          <HStack gap={3}>
-            <Selector label={t("projects.status")} value={status} onChange={setStatus} options={STATUS_OPTIONS} />
-            <TextInput label={t("projects.stack")} value={stack} onChange={setStack} isOptional />
-          </HStack>
-          <TextInput label={t("projects.currentFocus")} value={focus} onChange={setFocus} isOptional />
-          <TextArea label={t("projects.nextSteps")} value={nextSteps} onChange={setNextSteps} rows={3} isOptional />
-          <HStack gap={2}>
-            <Button label={saving ? t("common.saving") : t("common.create")} variant="primary" onClick={createProject} isDisabled={saving || !newName.trim()} />
-            <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
-          </HStack>
-        </VStack>
+      <Dialog isOpen={showNew} onOpenChange={setShowNew} width={520} title={t("projects.newDialogTitle")}>
+        <TextField label={t("projects.name")} value={newName} onChange={setNewName} />
+        <TextArea label={t("projects.summary")} value={summary} onChange={setSummary} rows={2} optional />
+        <HStack gap={3}>
+          <Select label={t("projects.status")} value={status} onChange={setStatus} options={STATUS_OPTIONS.map((v) => ({ value: v, label: v }))} />
+          <TextField label={t("projects.stack")} value={stack} onChange={setStack} optional />
+        </HStack>
+        <TextField label={t("projects.currentFocus")} value={focus} onChange={setFocus} optional />
+        <TextArea label={t("projects.nextSteps")} value={nextSteps} onChange={setNextSteps} rows={3} optional />
+        <HStack gap={2}>
+          <Button label={saving ? t("common.saving") : t("common.create")} variant="primary" onClick={createProject} disabled={saving || !newName.trim()} />
+          <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
+        </HStack>
       </Dialog>
 
       <AlertDialog
@@ -258,8 +335,7 @@ export function Projects() {
         description={`"${deleteTarget?.name}" ${t("projects.confirmDeleteDesc")}`}
         actionLabel={t("projects.deleteAction")}
         cancelLabel={t("common.cancel")}
-        actionVariant="destructive"
-        isActionLoading={deleting}
+        loading={deleting}
         onAction={confirmDelete}
       />
     </VStack>

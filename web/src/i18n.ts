@@ -1,15 +1,17 @@
 // Hafif i18n çözümü — kütüphane yok, tek sözlük modülü.
 // Kullanım: const { lang, setLang, t } = useI18n();
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 export type Lang = "tr" | "en";
 
 const STORAGE_KEY = "hub_lang";
 
+// Varsayılan EN — kullanıcı kararı (2026-07-13): Türkçe karakterler sorun çıkarıyor.
+// localStorage'da açıkça "tr" seçilmişse TR kalır.
 export function getLang(): Lang {
   const v = localStorage.getItem(STORAGE_KEY);
-  return v === "en" ? "en" : "tr";
+  return v === "tr" ? "tr" : "en";
 }
 
 export function setStoredLang(lang: Lang): void {
@@ -17,10 +19,10 @@ export function setStoredLang(lang: Lang): void {
 }
 
 const dict = {
-  // --- nav ---
-  "nav.sectionGeneral": { tr: "Genel", en: "General" },
-  "nav.sectionInfo": { tr: "Bilgi", en: "Knowledge" },
-  "nav.sectionWork": { tr: "Çalışma", en: "Work" },
+  // --- nav: 4 üst bölüm (icon rail) ---
+  "nav.sectionOverview": { tr: "Genel Bakış", en: "Overview" },
+  "nav.sectionMemory": { tr: "Bellek", en: "Memory" },
+  "nav.sectionProjects": { tr: "Projeler", en: "Projects" },
   "nav.sectionSystem": { tr: "Sistem", en: "System" },
   "nav.dashboard": { tr: "Panel", en: "Dashboard" },
   "nav.rag": { tr: "RAG Yönetimi", en: "RAG Management" },
@@ -34,6 +36,7 @@ const dict = {
   "nav.media": { tr: "Medya", en: "Media" },
   "nav.skills": { tr: "Skiller", en: "Skills" },
   "nav.settings": { tr: "Ayarlar", en: "Settings" },
+  "nav.graph": { tr: "Graf", en: "Graph" },
 
   // --- common ---
   "common.save": { tr: "Kaydet", en: "Save" },
@@ -121,6 +124,17 @@ const dict = {
   "projects.confirmDeleteDesc": { tr: "kalıcı olarak silinecek. Bu işlem geri alınamaz.", en: "will be permanently deleted. This action cannot be undone." },
   "projects.deleteAction": { tr: "Projeyi sil", en: "Delete project" },
   "projects.newDialogTitle": { tr: "Yeni proje oluştur", en: "Create new project" },
+  "projects.architecture": { tr: "Mimari", en: "Architecture" },
+  "projects.modules": { tr: "Modüller", en: "Modules" },
+  "projects.moduleName": { tr: "Modül", en: "Module" },
+  "projects.modulePath": { tr: "Yol", en: "Path" },
+  "projects.modulePurpose": { tr: "Amaç", en: "Purpose" },
+  "projects.moduleKeyFiles": { tr: "Anahtar dosyalar", en: "Key files" },
+  "projects.moduleDependsOn": { tr: "Bağımlı olduğu", en: "Depends on" },
+  "projects.entryPoints": { tr: "Giriş noktaları", en: "Entry points" },
+  "projects.commands": { tr: "Komutlar", en: "Commands" },
+  "projects.conventions": { tr: "Kurallar", en: "Conventions" },
+  "projects.dataModel": { tr: "Veri modeli", en: "Data model" },
 
   // --- sessions ---
   "sessions.title": { tr: "Oturum Geçmişi", en: "Session History" },
@@ -321,6 +335,40 @@ const dict = {
   "dashboard.heroTitleLine1": { tr: "Ortak hafızanın", en: "Your shared" },
   "dashboard.heroTitleLine2": { tr: "nabzı", en: "memory, live" },
   "dashboard.heroCaption": { tr: "Hafıza, oturum ve doküman büyümenizi tek bakışta izleyin.", en: "Track your memory, session, and document growth at a glance." },
+
+  // --- graph ---
+  "graph.searchPlaceholder": { tr: "Düğüm ara (proje, etiket, hafıza)...", en: "Search nodes (project, tag, memory)..." },
+  "graph.noResults": { tr: "Eşleşme yok", en: "No matches" },
+  "graph.inGraph": { tr: "grafta", en: "in graph" },
+  "graph.fit": { tr: "Sığdır", en: "Fit" },
+  "graph.zoomIn": { tr: "Yaklaş", en: "Zoom in" },
+  "graph.zoomOut": { tr: "Uzaklaş", en: "Zoom out" },
+  "graph.nodes": { tr: "düğüm", en: "nodes" },
+  "graph.edges": { tr: "kenar", en: "edges" },
+  "graph.expand": { tr: "Genişlet", en: "Expand" },
+  "graph.loadMore": { tr: "Daha fazla yükle", en: "Load more" },
+  "graph.expanding": { tr: "Genişletiliyor...", en: "Expanding..." },
+  "graph.deselect": { tr: "Seçimi bırak", en: "Deselect" },
+  "graph.legend": { tr: "Gösterge", en: "Legend" },
+  "graph.relRelated": { tr: "ilişkili", en: "related" },
+  "graph.relBelongs": { tr: "ait", en: "belongs" },
+  "graph.relTagged": { tr: "etiketli", en: "tagged" },
+  "graph.relLogged": { tr: "oturum", en: "logged" },
+  "graph.kindProject": { tr: "Proje", en: "Project" },
+  "graph.kindMemory": { tr: "Hafıza", en: "Memory" },
+  "graph.kindDocument": { tr: "Doküman", en: "Document" },
+  "graph.kindSession": { tr: "Oturum", en: "Session" },
+  "graph.kindTag": { tr: "Etiket", en: "Tag" },
+  "graph.loading": { tr: "Graf yükleniyor...", en: "Loading graph..." },
+  "graph.empty": { tr: "Graf boş", en: "Graph is empty" },
+  "graph.emptyDesc": { tr: "Projeler ve etiketler eklendikçe ilişki ağı burada oluşacak.", en: "The relationship network will appear here as projects and tags are added." },
+  "graph.loadFailed": { tr: "Graf yüklenemedi", en: "Failed to load graph" },
+  "graph.degree": { tr: "bağ", en: "links" },
+  "graph.hint": { tr: "çift tık: genişlet · sürükle: taşı · tekerlek: zoom", en: "double-click: expand · drag: move · wheel: zoom" },
+  "graph.detailProject": { tr: "Proje", en: "Project" },
+  "graph.detailKind": { tr: "Tür", en: "Type" },
+  "graph.bodyLoading": { tr: "Gövde yükleniyor...", en: "Loading body..." },
+  "graph.canvasLabel": { tr: "İlişki grafiği tuvali", en: "Relationship graph canvas" },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type TKey = keyof typeof dict;
@@ -346,6 +394,12 @@ export function useProvideI18n(): I18nContextValue {
     setLangState(next);
   }, []);
   const t = useCallback((key: TKey) => translate(key, lang), [lang]);
+  // <html lang> öğesini eşitle: CSS text-transform:uppercase Türkçe kurallarını
+  // (i → İ) yalnızca lang="tr" iken uygular — yanlış ayarlanırsa İngilizce
+  // metinlerde de "MACHİNES" gibi hatalı büyütme çıkar.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
   return { lang, setLang, t };
 }
 

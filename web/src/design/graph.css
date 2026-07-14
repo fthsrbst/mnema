@@ -1,0 +1,281 @@
+/* İlişki grafiği — tuval + overlay katmanları. Köşesiz, mono, token tabanlı. */
+
+.graph-view {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Dither dokusunu köşe crop-mark hissiyle sınırla — çok soluk zaten */
+.graph-view > canvas:first-child {
+  z-index: 0;
+}
+
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+  z-index: 1;
+}
+
+/* --- araç çubuğu --- */
+.graph-toolbar {
+  position: absolute;
+  top: var(--sp-3);
+  left: var(--sp-3);
+  right: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.graph-toolbar > * {
+  pointer-events: auto;
+}
+
+.graph-search {
+  position: relative;
+  width: min(280px, 60vw);
+}
+
+.graph-search .input {
+  background: var(--bg-panel);
+}
+
+.graph-search-results {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-hard-sm);
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 5;
+}
+
+.graph-search-hit {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graph-search-hit:last-child {
+  border-bottom: none;
+}
+
+.graph-search-hit:hover {
+  background: var(--bg-hover);
+}
+
+.graph-search-hit-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-search-hit-note {
+  font-size: 9px;
+  color: var(--fg-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.graph-search-empty {
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+/* --- tür filtreleri --- */
+.graph-filters {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.graph-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.graph-filter[data-on="true"] {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.graph-filter[data-on="false"] {
+  opacity: 0.45;
+}
+
+.graph-filter[data-on="false"] .graph-kind-mark {
+  background: var(--fg-faint) !important;
+}
+
+.graph-kind-mark {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+}
+
+/* --- zoom grubu + sayaç --- */
+.graph-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  padding: 2px;
+}
+
+.graph-zoom-pct {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-dim);
+  min-width: 40px;
+  text-align: center;
+}
+
+.graph-counter {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-faint);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+  padding: 5px 8px;
+  margin-left: auto;
+}
+
+/* --- legend --- */
+.graph-legend {
+  position: absolute;
+  left: var(--sp-3);
+  bottom: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  z-index: 3;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-dim);
+  pointer-events: none;
+}
+
+.graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.graph-legend-line {
+  width: 22px;
+  border-top: 1px solid var(--fg-dim);
+}
+
+.graph-legend-line--dotted {
+  border-top-style: dotted;
+}
+
+.graph-legend-line--dashed {
+  border-top-style: dashed;
+}
+
+.graph-legend-line--dashed-wide {
+  border-top: none;
+  height: 1px;
+  background: repeating-linear-gradient(to right, var(--fg-dim) 0 7px, transparent 7px 10px);
+}
+
+.graph-hint {
+  color: var(--fg-faint);
+}
+
+/* --- detay paneli --- */
+.graph-detail {
+  position: absolute;
+  top: 56px;
+  right: var(--sp-3);
+  width: min(300px, 82vw);
+  max-height: calc(100% - 100px);
+  overflow-y: auto;
+  z-index: 4;
+}
+
+.graph-detail-body {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  padding: var(--sp-2);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-hairline);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* --- durum katmanı (yükleniyor/boş/hata) --- */
+.graph-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.graph-status .empty-state {
+  pointer-events: auto;
+}
+
+@media (max-width: 720px) {
+  .graph-counter {
+    display: none;
+  }
+  .graph-detail {
+    top: auto;
+    bottom: var(--sp-6);
+    max-height: 50%;
+  }
+}

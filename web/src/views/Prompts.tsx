@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Grid } from "@astryxdesign/core/Grid";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { TextArea } from "@astryxdesign/core/TextArea";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { Banner } from "@astryxdesign/core/Banner";
-import { TabList, Tab } from "@astryxdesign/core/TabList";
-import { Markdown } from "@astryxdesign/core/Markdown";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useToast } from "@astryxdesign/core/Toast";
+import { VStack, HStack, Grid } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { TextField } from "../components/ui/Field";
+import { Heading, Text } from "../components/ui/Typography";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Tabs } from "../components/ui/Tabs";
+import { Dialog } from "../components/ui/Dialog";
+import { Tag } from "../components/ui/Tag";
+import { useToast } from "../components/ui/useToast";
 import { api, type PromptList } from "../api";
 import { useI18n } from "../i18n";
+import { Markdown } from "../components/Markdown";
 
 type EditorTab = "edit" | "preview" | "composed";
 
@@ -112,54 +110,41 @@ export function Prompts() {
           <HStack gap={3} vAlign="center">
             <Button label={t("common.back")} variant="secondary" onClick={() => setSelected(null)} />
             <Heading level={3}>{selected}</Heading>
-            {isMaster && <span className="rx-tag rx-tag-navy">{t("prompts.master")}</span>}
+            {isMaster && <Tag solid>{t("prompts.master")}</Tag>}
           </HStack>
-          <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} isDisabled={saving || !isDirty} />
+          <Button label={saving ? t("common.saving") : t("common.save")} variant="primary" onClick={save} disabled={saving || !isDirty} />
         </HStack>
 
-        {isMaster ? (
-          <Banner
-            status="info"
-            title={t("prompts.masterBannerTitle")}
-            description={t("prompts.masterBannerDesc")}
-          />
-        ) : (
-          <Banner
-            status="info"
-            title={t("prompts.roleBannerTitle")}
-            description={t("prompts.roleBannerDesc")}
-          />
-        )}
+        <Panel>
+          <Text color="secondary">{isMaster ? t("prompts.masterBannerDesc") : t("prompts.roleBannerDesc")}</Text>
+        </Panel>
 
         {loadingDetail ? (
           <Text color="secondary">{t("common.loading")}</Text>
         ) : (
           <>
-            <TabList value={tab} onChange={(v) => setTab(v as EditorTab)} hasDivider>
-              <Tab value="edit" label={t("prompts.tabEdit")} />
-              <Tab value="preview" label={t("prompts.tabPreview")} />
-              {!isMaster && <Tab value="composed" label={t("prompts.tabComposed")} />}
-            </TabList>
+            <Tabs
+              value={tab}
+              onChange={setTab}
+              items={[
+                { value: "edit", label: t("prompts.tabEdit") },
+                { value: "preview", label: t("prompts.tabPreview") },
+                ...(isMaster ? [] : [{ value: "composed" as EditorTab, label: t("prompts.tabComposed") }]),
+              ]}
+            />
 
             {tab === "edit" && (
-              <TextArea
-                label={t("common.content")}
-                isLabelHidden
-                value={draft}
-                onChange={setDraft}
-                rows={24}
-                hasSpellCheck={false}
-              />
+              <textarea className="textarea" value={draft} onChange={(e) => setDraft(e.target.value)} rows={24} spellCheck={false} aria-label={t("common.content")} />
             )}
             {tab === "preview" && (
-              <Card className="glass-card">
+              <Panel>
                 <Markdown headingLevelStart={4}>{draft || "*Boş*"}</Markdown>
-              </Card>
+              </Panel>
             )}
             {tab === "composed" && !isMaster && (
-              <Card className="glass-card">
+              <Panel>
                 <Markdown headingLevelStart={4}>{composed || "*Boş*"}</Markdown>
-              </Card>
+              </Panel>
             )}
           </>
         )}
@@ -177,11 +162,9 @@ export function Prompts() {
         <Button label={t("prompts.newRole")} variant="primary" onClick={() => { setNewName(""); setNewDescription(""); setShowNew(true); }} />
       </HStack>
 
-      <Banner
-        status="info"
-        title={t("prompts.bannerTitle")}
-        description={t("prompts.bannerDesc")}
-      />
+      <Panel>
+        <Text color="secondary">{t("prompts.bannerDesc")}</Text>
+      </Panel>
 
       {error && <Text color="secondary">{t("common.error")}: {error}</Text>}
 
@@ -192,18 +175,18 @@ export function Prompts() {
           {list.master && (
             <VStack gap={2}>
               <Heading level={4}>{t("prompts.master")}</Heading>
-              <Card className="glass-card">
+              <Panel>
                 <HStack hAlign="between" vAlign="center">
                   <VStack gap={1}>
                     <HStack gap={2} vAlign="center">
                       <Text>{list.master.name}</Text>
-                      <span className="rx-tag rx-tag-navy">{t("prompts.master")}</span>
+                      <Tag solid>{t("prompts.master")}</Tag>
                     </HStack>
                     <Text type="supporting" color="secondary">{list.master.description || t("prompts.noDescription")}</Text>
                   </VStack>
                   <Button label={t("common.open")} variant="secondary" size="sm" onClick={() => openPrompt("master")} />
                 </HStack>
-              </Card>
+              </Panel>
             </VStack>
           )}
 
@@ -212,17 +195,15 @@ export function Prompts() {
             {list.roles.length === 0 ? (
               <EmptyState title={t("prompts.noRoles")} description={t("prompts.noRolesDesc")} />
             ) : (
-              <Grid columns={{ minWidth: 280, repeat: "fit" }} gap={3}>
+              <Grid minWidth={260} gap={3}>
                 {list.roles.map((r) => (
-                  <Card key={r.name} className="glass-card">
+                  <Panel key={r.name}>
                     <VStack gap={2}>
                       <Text>{r.name}</Text>
                       <Text type="supporting" color="secondary">{r.description || t("prompts.noDescription")}</Text>
-                      <HStack>
-                        <Button label={t("common.open")} variant="secondary" size="sm" onClick={() => openPrompt(r.name)} />
-                      </HStack>
+                      <Button label={t("common.open")} variant="secondary" size="sm" onClick={() => openPrompt(r.name)} />
                     </VStack>
-                  </Card>
+                  </Panel>
                 ))}
               </Grid>
             )}
@@ -230,16 +211,13 @@ export function Prompts() {
         </VStack>
       )}
 
-      <Dialog isOpen={showNew} onOpenChange={setShowNew} purpose="form" width={480}>
-        <DialogHeader title={t("prompts.newDialogTitle")} />
-        <VStack gap={3} paddingInline={5} paddingBlock={4}>
-          <TextInput label={t("prompts.roleName")} value={newName} onChange={setNewName} isRequired />
-          <TextInput label={t("prompts.roleDescription")} value={newDescription} onChange={setNewDescription} isOptional />
-          <HStack gap={2}>
-            <Button label={creating ? t("common.saving") : t("common.create")} variant="primary" onClick={createRole} isDisabled={creating || !newName.trim()} />
-            <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
-          </HStack>
-        </VStack>
+      <Dialog isOpen={showNew} onOpenChange={setShowNew} width={480} title={t("prompts.newDialogTitle")}>
+        <TextField label={t("prompts.roleName")} value={newName} onChange={setNewName} />
+        <TextField label={t("prompts.roleDescription")} value={newDescription} onChange={setNewDescription} optional />
+        <HStack gap={2}>
+          <Button label={creating ? t("common.saving") : t("common.create")} variant="primary" onClick={createRole} disabled={creating || !newName.trim()} />
+          <Button label={t("common.cancel")} variant="secondary" onClick={() => setShowNew(false)} />
+        </HStack>
       </Dialog>
     </VStack>
   );

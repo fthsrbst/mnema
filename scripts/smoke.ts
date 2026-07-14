@@ -80,6 +80,20 @@ upsertProject({ name: "ai-hub", current_focus: "Faz 2" });
 const proj = getProject("ai-hub");
 check("project upsert+merge", proj?.current_focus === "Faz 2" && proj?.summary === "Ortak hafıza sistemi");
 
+// kod haritası alanları: merge ile saklanır, bridge çıktısına girer
+upsertProject({
+  name: "ai-hub",
+  architecture: "Core kütüphane + Express sunucu.",
+  modules: [{ name: "core/search", path: "src/core/search.ts", purpose: "Hibrit arama (FTS+vec, RRF)." }],
+  entry_points: { server: "src/server/index.ts" },
+  commands: { dev: "npm run dev" },
+});
+const projMap = getProject("ai-hub");
+check(
+  "project kod haritası merge",
+  projMap?.modules?.[0]?.name === "core/search" && projMap?.current_focus === "Faz 2"
+);
+
 const log = addSessionLog("Smoke test oturumu", "ai-hub", "smoke");
 check("session_log", log.id > 0);
 
@@ -122,6 +136,11 @@ check(
   "bridge proje map'i + son oturum",
   bridgeText.includes("<hub-bridge>") && bridgeText.includes("ai-hub") && bridgeText.includes("Smoke test oturumu"),
   bridgeText.slice(0, 80).replaceAll("\n", " ")
+);
+check(
+  "bridge kod haritası enjeksiyonu",
+  bridgeText.includes("Kod haritası:") && bridgeText.includes("core/search") && bridgeText.includes("Giriş noktaları:"),
+  bridgeText.split("\n").find((l) => l.includes("core/search")) ?? "?"
 );
 check("bridge çözülemeyen cwd → boş", bridge("C:\\tmp\\rastgele-klasor") === "");
 

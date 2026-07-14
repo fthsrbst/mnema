@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { VStack, HStack } from "@astryxdesign/core/Layout";
-import { Grid } from "@astryxdesign/core/Grid";
-import { Card } from "@astryxdesign/core/Card";
-import { Button } from "@astryxdesign/core/Button";
-import { Text, Heading } from "@astryxdesign/core/Text";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { ProgressBar } from "@astryxdesign/core/ProgressBar";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { Divider } from "@astryxdesign/core/Divider";
-import { Badge } from "@astryxdesign/core/Badge";
-import { Item } from "@astryxdesign/core/Item";
-import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { VStack, HStack, Grid } from "../components/ui/Stack";
+import { Panel } from "../components/ui/Panel";
+import { Button } from "../components/ui/Button";
+import { Heading, Text } from "../components/ui/Typography";
+import { StatusDot, LivePill, Tag } from "../components/ui/Tag";
+import { PixelMeter } from "../components/ui/PixelMeter";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Divider, SectionRule } from "../components/ui/Divider";
+import { Collapsible } from "../components/ui/Collapsible";
+import { ListRow } from "../components/ui/ListRow";
+import { Ticker } from "../components/ui/Ticker";
+import { Dither } from "../components/ui/Dither";
 import { api, type GrowthStats, type HealthStatus, type RagStats, type SessionLog, type UsageStats } from "../api";
 import { useI18n, type Lang, type TKey } from "../i18n";
 import { Markdown } from "../components/Markdown";
@@ -22,18 +22,23 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-// --- Bilgi büyümesi grafiği (saf SVG — kütüphane yok) ---
+// --- Bilgi büyümesi grafiği — saf SVG, monokrom step-line + kare noktalar ---
 
 const SERIES = [
-  { key: "memories", labelKey: "dashboard.seriesMemories", color: "var(--rx-chart-teal)" },
-  { key: "sessions", labelKey: "dashboard.seriesSessions", color: "var(--rx-chart-sage)" },
-  { key: "documents", labelKey: "dashboard.seriesDocuments", color: "var(--rx-chart-amber)" },
+  { key: "memories", labelKey: "dashboard.seriesMemories" },
+  { key: "sessions", labelKey: "dashboard.seriesSessions" },
+  { key: "documents", labelKey: "dashboard.seriesDocuments" },
 ] as const;
 
 type SeriesKey = (typeof SERIES)[number]["key"];
 type CumulativePoint = { day: string } & Record<SeriesKey, number>;
 
-/** Günlük sayıları eksik günleri doldurarak kümülatif seriye çevirir. */
+const SERIES_DASH: Record<SeriesKey, string | undefined> = {
+  memories: undefined,
+  sessions: "4 3",
+  documents: "1 3",
+};
+
 function buildCumulative(daily: GrowthStats["daily"]): CumulativePoint[] {
   if (daily.length === 0) return [];
   const byDay = new Map(daily.map((r) => [r.day, r]));
@@ -68,7 +73,6 @@ function formatDay(day: string, lang: Lang): string {
 function GrowthChart({ growth }: { growth: GrowthStats }) {
   const { t, lang } = useI18n();
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-
   const points = buildCumulative(growth.daily);
 
   if (points.length === 0) {
@@ -76,11 +80,11 @@ function GrowthChart({ growth }: { growth: GrowthStats }) {
   }
 
   const W = 640;
-  const H = 220;
-  const padL = 36;
-  const padR = 10;
+  const H = 200;
+  const padL = 30;
+  const padR = 8;
   const padT = 10;
-  const padB = 22;
+  const padB = 20;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const n = points.length;
@@ -95,14 +99,6 @@ function GrowthChart({ growth }: { growth: GrowthStats }) {
       ? `${padL},${y(points[0][key]).toFixed(1)} ${padL + plotW},${y(points[0][key]).toFixed(1)}`
       : points.map((p, i) => `${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
 
-  const areaPath = (key: SeriesKey) => {
-    const pts =
-      n === 1
-        ? [`${padL},${y(points[0][key]).toFixed(1)}`, `${padL + plotW},${y(points[0][key]).toFixed(1)}`]
-        : points.map((p, i) => `${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`);
-    return `M ${pts[0]} L ${pts.slice(1).join(" L ")} L ${(padL + plotW).toFixed(1)},${yBase} L ${padL},${yBase} Z`;
-  };
-
   const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = ((e.clientX - rect.left) / rect.width) * W;
@@ -116,10 +112,6 @@ function GrowthChart({ growth }: { growth: GrowthStats }) {
 
   const hover = hoverIdx === null ? null : points[hoverIdx];
   const hoverX = hoverIdx === null ? 0 : x(hoverIdx);
-  const tooltipW = 148;
-  const tooltipX = hoverX + tooltipW + 12 > W - padR ? hoverX - tooltipW - 12 : hoverX + 12;
-
-  const gridLevels = [0.5, 1];
   const xTicks = n === 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1];
 
   return (
@@ -132,96 +124,51 @@ function GrowthChart({ growth }: { growth: GrowthStats }) {
         onMouseMove={onMove}
         onMouseLeave={() => setHoverIdx(null)}
       >
-        {/* seri renkleri: tepeden tabana şeffaflaşan gradyan dolgu */}
-        <defs>
-          {SERIES.map((s) => (
-            <linearGradient key={`grad-${s.key}`} id={`rx-area-${s.key}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={s.color} stopOpacity={0.28} />
-              <stop offset="100%" stopColor={s.color} stopOpacity={0} />
-            </linearGradient>
-          ))}
-        </defs>
+        <line x1={padL} y1={yBase} x2={padL + plotW} y2={yBase} stroke="var(--border-strong)" strokeWidth={1} />
+        <text x={padL - 6} y={yBase + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono)" fill="var(--fg-dim)">0</text>
+        <text x={padL - 6} y={y(yMax) + 3} textAnchor="end" fontSize={9} fontFamily="var(--font-mono)" fill="var(--fg-dim)">{yMax}</text>
 
-        {/* yatay ızgara + y ekseni etiketleri */}
-        <line x1={padL} y1={yBase} x2={padL + plotW} y2={yBase} stroke="var(--color-border-emphasized)" strokeWidth={1} />
-        {gridLevels.map((g) => (
-          <g key={g}>
-            <line x1={padL} y1={y(yMax * g)} x2={padL + plotW} y2={y(yMax * g)} stroke="var(--color-border)" strokeWidth={1} />
-            <text x={padL - 6} y={y(yMax * g) + 3} textAnchor="end" fontSize={10} fill="var(--color-text-secondary)">
-              {Math.round(yMax * g)}
-            </text>
-          </g>
-        ))}
-        <text x={padL - 6} y={yBase + 3} textAnchor="end" fontSize={10} fill="var(--color-text-secondary)">0</text>
-
-        {/* x ekseni etiketleri */}
         {xTicks.map((i) => (
           <text
             key={i}
             x={x(i)}
-            y={H - 6}
+            y={H - 4}
             textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}
-            fontSize={10}
-            fill="var(--color-text-secondary)"
+            fontSize={9}
+            fontFamily="var(--font-mono)"
+            fill="var(--fg-dim)"
           >
             {formatDay(points[i].day, lang)}
           </text>
         ))}
 
-        {/* alan dolguları + çizgiler */}
-        {SERIES.map((s) => (
-          <path key={`area-${s.key}`} d={areaPath(s.key)} fill={`url(#rx-area-${s.key})`} />
-        ))}
         {SERIES.map((s) => (
           <polyline
             key={`line-${s.key}`}
             points={linePoints(s.key)}
             fill="none"
-            stroke={s.color}
-            strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
+            stroke="var(--fg)"
+            strokeWidth={1.5}
+            strokeDasharray={SERIES_DASH[s.key]}
+            strokeLinejoin="miter"
           />
         ))}
 
-        {/* hover: dikey çizgi + noktalar + tooltip */}
         {hover && (
           <g pointerEvents="none">
-            <line x1={hoverX} y1={padT} x2={hoverX} y2={yBase} stroke="var(--color-border-emphasized)" strokeWidth={1} />
+            <line x1={hoverX} y1={padT} x2={hoverX} y2={yBase} stroke="var(--border-strong)" strokeWidth={1} strokeDasharray="2 2" />
             {SERIES.map((s) => (
-              <circle key={`dot-${s.key}`} cx={n === 1 ? hoverX : hoverX} cy={y(hover[s.key])} r={3.5} fill={s.color} />
-            ))}
-            <rect
-              x={tooltipX}
-              y={padT}
-              width={tooltipW}
-              height={20 + SERIES.length * 16}
-              rx={6}
-              fill="var(--color-background-popover)"
-              stroke="var(--color-border-emphasized)"
-              strokeWidth={1}
-            />
-            <text x={tooltipX + 10} y={padT + 16} fontSize={11} fill="var(--color-text-primary)">
-              {formatDay(hover.day, lang)}
-            </text>
-            {SERIES.map((s, si) => (
-              <g key={`tt-${s.key}`}>
-                <circle cx={tooltipX + 14} cy={padT + 28 + si * 16} r={3.5} fill={s.color} />
-                <text x={tooltipX + 24} y={padT + 32 + si * 16} fontSize={11} fill="var(--color-text-secondary)">
-                  {t(s.labelKey as TKey)}: {hover[s.key]}
-                </text>
-              </g>
+              <rect key={`dot-${s.key}`} x={hoverX - 2.5} y={y(hover[s.key]) - 2.5} width={5} height={5} fill="var(--fg)" />
             ))}
           </g>
         )}
       </svg>
 
-      {/* lejant + toplamlar */}
       <HStack gap={5} vAlign="center" wrap="wrap">
         {SERIES.map((s) => (
-          <HStack key={`legend-${s.key}`} gap={1.5} vAlign="center">
-            <svg width={10} height={10} viewBox="0 0 10 10" aria-hidden="true">
-              <circle cx={5} cy={5} r={5} fill={s.color} />
+          <HStack key={`legend-${s.key}`} gap={1} vAlign="center">
+            <svg width={14} height={2} aria-hidden="true">
+              <line x1={0} y1={1} x2={14} y2={1} stroke="var(--fg)" strokeWidth={1.5} strokeDasharray={SERIES_DASH[s.key]} />
             </svg>
             <Text type="supporting" color="secondary">
               {t(s.labelKey as TKey)}: {growth.totals[s.key]}
@@ -236,29 +183,26 @@ function GrowthChart({ growth }: { growth: GrowthStats }) {
   );
 }
 
-// --- kullanım paneli: en çok başvurulan + uzun süredir erişilmeyen kayıtlar ---
-
 function UsageSection({ usage, formatRelative }: { usage: UsageStats; formatRelative: (iso: string | null) => string }) {
   const { t } = useI18n();
   return (
-    <Card className="glass-card">
+    <Panel>
       <VStack gap={4}>
         <Heading level={4}>{t("dashboard.usageTitle")}</Heading>
 
-        <VStack gap={2}>
-          <span className="rx-label">{t("dashboard.usageTopTitle")}</span>
+        <VStack gap={1}>
+          <span className="u-label">{t("dashboard.usageTopTitle")}</span>
           {usage.top.length === 0 ? (
             <Text type="supporting" color="secondary">{t("dashboard.usageTopEmpty")}</Text>
           ) : (
             <VStack gap={0}>
-              {usage.top.slice(0, 10).map((it) => (
-                <Item
+              {usage.top.slice(0, 10).map((it, idx) => (
+                <ListRow
                   key={`top-${it.type}-${it.id}`}
-                  density="compact"
-                  label={it.title}
-                  labelLines={1}
+                  bordered={idx > 0}
+                  title={it.title}
                   description={`${it.type}${it.project ? ` · ${it.project}` : ""} · ${t("dashboard.usageLastAccessed")}: ${formatRelative(it.last_accessed)}`}
-                  endContent={<Badge variant="info" label={`${it.access_count} ${t("dashboard.usageAccessCount")}`} />}
+                  end={<Tag>{it.access_count} {t("dashboard.usageAccessCount")}</Tag>}
                 />
               ))}
             </VStack>
@@ -269,30 +213,26 @@ function UsageSection({ usage, formatRelative }: { usage: UsageStats; formatRela
 
         <VStack gap={2}>
           <Collapsible
-            defaultIsOpen={false}
             trigger={
               <HStack gap={2} vAlign="center">
-                <span className="rx-label">{t("dashboard.usageStaleTitle")}</span>
-                {usage.stale_count > 0 && <Badge variant="warning" label={String(usage.stale_count)} />}
+                <span className="u-label">{t("dashboard.usageStaleTitle")}</span>
+                {usage.stale_count > 0 && <Tag variant="warn">{usage.stale_count}</Tag>}
               </HStack>
             }
           >
-            <VStack gap={0} paddingBlock={2}>
+            <VStack gap={0}>
               {usage.stale.length === 0 ? (
                 <Text type="supporting" color="secondary">{t("dashboard.usageStaleEmpty")}</Text>
               ) : (
-                usage.stale.map((it) => (
-                  <Item
+                usage.stale.map((it, idx) => (
+                  <ListRow
                     key={`stale-${it.type}-${it.id}`}
-                    density="compact"
-                    label={it.title}
-                    labelLines={1}
+                    bordered={idx > 0}
+                    title={it.title}
                     description={it.project ? `${it.type} · ${it.project}` : it.type}
-                    endContent={
+                    end={
                       <HStack gap={2} vAlign="center">
-                        {it.importance >= 1.5 && (
-                          <Badge variant="warning" label={`${t("dashboard.usageImportance")} ${it.importance}`} />
-                        )}
+                        {it.importance >= 1.5 && <Tag variant="warn">{t("dashboard.usageImportance")} {it.importance}</Tag>}
                         <Text type="supporting" color="secondary">{formatRelative(it.last_accessed)}</Text>
                       </HStack>
                     }
@@ -301,14 +241,9 @@ function UsageSection({ usage, formatRelative }: { usage: UsageStats; formatRela
               )}
             </VStack>
           </Collapsible>
-          {usage.stale_count > 0 && (
-            <Text type="supporting" color="secondary">
-              {usage.stale_count} {t("dashboard.usageStaleRecords")}
-            </Text>
-          )}
         </VStack>
       </VStack>
-    </Card>
+    </Panel>
   );
 }
 
@@ -356,7 +291,6 @@ export function Dashboard() {
       setLoading(false);
     }
     try {
-      // Ayrı try/catch: eski sunucularda uç 404 dönebilir — bölüm o durumda sessizce gizlenir.
       setUsage(await api<UsageStats>("GET", "/api/stats/usage"));
     } catch {
       setUsage(null);
@@ -369,89 +303,81 @@ export function Dashboard() {
 
   return (
     <VStack gap={5}>
-      <Card className="rx-hero">
-        <VStack gap={4}>
-          <HStack hAlign="between" vAlign="center">
-            <span className="rx-hero-badge">
-              <span className="rx-live-dot" aria-hidden="true" />
-              {t("dashboard.heroBadge")}
-            </span>
-            <Button label={t("common.refresh")} variant="secondary" onClick={load} isDisabled={loading} />
-          </HStack>
-          <VStack gap={0}>
-            <Heading level={2} color="inherit">{t("dashboard.heroTitleLine1")}</Heading>
-            <Heading level={2} color="inherit" className="rx-italic">{t("dashboard.heroTitleLine2")}</Heading>
+      <Panel className="hero-panel" padded={false}>
+        <Dither opacity={0.5} />
+        <div className="hero-panel-content" style={{ padding: "var(--sp-6) var(--sp-5)" }}>
+          <VStack gap={4}>
+            <HStack hAlign="between" vAlign="center">
+              <LivePill>{t("dashboard.heroBadge")}</LivePill>
+              <Button label={t("common.refresh")} variant="secondary" onClick={load} disabled={loading} />
+            </HStack>
+            <div className="hero-title">
+              {t("dashboard.heroTitleLine1")}
+              <br />
+              {t("dashboard.heroTitleLine2")}
+            </div>
+            <Text color="secondary">{t("dashboard.heroCaption")}</Text>
           </VStack>
-          <Text type="supporting" color="inherit" style={{ color: "rgba(43, 28, 8, 0.75)" }}>{t("dashboard.heroCaption")}</Text>
-        </VStack>
-      </Card>
+        </div>
+      </Panel>
 
       {error && (
-        <Card variant="red">
+        <Panel variant="danger">
           <Text color="secondary">{t("dashboard.loadFailed")}: {error}</Text>
-        </Card>
+        </Panel>
       )}
 
       {loading && !stats ? (
         <Text color="secondary">{t("common.loading")}</Text>
       ) : stats ? (
         <>
-          <Grid columns={{ minWidth: 260, repeat: "fit" }} gap={4}>
-            <Card className="glass-card">
+          <Grid minWidth={240} gap={4}>
+            <Panel>
               <VStack gap={2}>
                 <HStack hAlign="between" vAlign="center">
-                  <span className="rx-label">{t("dashboard.server")}</span>
-                  <StatusDot
-                    variant={health?.ok ? "success" : "error"}
-                    label={health?.ok ? t("dashboard.running") : t("dashboard.unreachable")}
-                    isPulsing={!!health?.ok}
-                  />
+                  <span className="u-label">{t("dashboard.server")}</span>
+                  <StatusDot variant={health?.ok ? "success" : "error"} label={health?.ok ? t("dashboard.running") : t("dashboard.unreachable")} pulsing={!!health?.ok} />
                 </HStack>
-                <span className="rx-display-sm">{health?.ok ? t("dashboard.online") : t("dashboard.offline")}</span>
+                <span className="ticker ticker--sm">{health?.ok ? t("dashboard.online") : t("dashboard.offline")}</span>
                 <Text type="supporting" color="secondary">v{health?.version ?? "?"}</Text>
               </VStack>
-            </Card>
+            </Panel>
 
-            <Card className="glass-card">
+            <Panel>
               <VStack gap={2}>
-                <span className="rx-label">{t("dashboard.database")}</span>
-                <span className="rx-display-sm">{formatBytes(stats.db_size_bytes)}</span>
+                <span className="u-label">{t("dashboard.database")}</span>
+                <span className="ticker ticker--sm">{formatBytes(stats.db_size_bytes)}</span>
                 <Text type="supporting" color="secondary" style={{ wordBreak: "break-all" }}>{stats.db_path}</Text>
               </VStack>
-            </Card>
+            </Panel>
 
-            <Card className="glass-card">
+            <Panel>
               <VStack gap={2}>
                 <HStack hAlign="between" vAlign="center">
-                  <span className="rx-label">{t("dashboard.vectorSearch")}</span>
-                  <StatusDot
-                    variant={stats.vec_available ? "success" : "warning"}
-                    label={stats.vec_available ? t("dashboard.vecActive") : t("dashboard.vecFtsOnly")}
-                  />
+                  <span className="u-label">{t("dashboard.vectorSearch")}</span>
+                  <StatusDot variant={stats.vec_available ? "success" : "warning"} label={stats.vec_available ? t("dashboard.vecActive") : t("dashboard.vecFtsOnly")} />
                 </HStack>
-                <span className="rx-display-sm">{stats.vec_available ? t("dashboard.vecActiveDesc") : t("dashboard.vecInactiveDesc")}</span>
+                <span className="ticker ticker--sm">{stats.vec_available ? t("dashboard.vecActiveDesc") : t("dashboard.vecInactiveDesc")}</span>
                 <Text type="supporting" color="secondary">
                   {stats.embeddings_enabled ? `${stats.embedding_model} (${stats.embedding_dim}d)` : t("dashboard.embeddingOff")}
                 </Text>
               </VStack>
-            </Card>
+            </Panel>
 
-            <Card className="glass-card">
+            <Panel>
               <VStack gap={2}>
-                <span className="rx-label">{t("dashboard.sync")}</span>
-                <span className="rx-display-sm">{stats.sync.primary_url ? t("dashboard.peerMode") : t("dashboard.standaloneMode")}</span>
-                <Text type="supporting" color="secondary">
-                  {stats.sync.primary_url || t("dashboard.noPrimaryUrl")}
-                </Text>
+                <span className="u-label">{t("dashboard.sync")}</span>
+                <span className="ticker ticker--sm">{stats.sync.primary_url ? t("dashboard.peerMode") : t("dashboard.standaloneMode")}</span>
+                <Text type="supporting" color="secondary">{stats.sync.primary_url || t("dashboard.noPrimaryUrl")}</Text>
               </VStack>
-            </Card>
+            </Panel>
           </Grid>
 
-          <Grid columns={{ minWidth: 320, repeat: "fit" }} gap={4}>
-            <Card className="glass-card">
+          <Grid minWidth={300} gap={4}>
+            <Panel>
               <VStack gap={3}>
-                <span className="rx-label">{t("dashboard.documents")}</span>
-                <span className="rx-display-sm">{stats.documents.total}</span>
+                <span className="u-label">{t("dashboard.documents")}</span>
+                <Ticker value={stats.documents.total} />
                 <HStack hAlign="between">
                   <Text type="supporting" color="secondary">{t("dashboard.active")}</Text>
                   <Text type="supporting">{stats.documents.enabled}</Text>
@@ -461,68 +387,51 @@ export function Dashboard() {
                   <Text type="supporting">{stats.documents.disabled}</Text>
                 </HStack>
               </VStack>
-            </Card>
+            </Panel>
 
-            <Card className="glass-card">
+            <Panel>
               <VStack gap={3}>
-                <span className="rx-label">{t("dashboard.chunkEmbedRatio")}</span>
-                <span className="rx-display-sm">
-                  {stats.chunks.total === 0 ? "—" : `${Math.round((stats.chunks.embedded / stats.chunks.total) * 100)}%`}
-                </span>
-                <ProgressBar
-                  label={t("dashboard.chunkEmbedRatio")}
-                  isLabelHidden
+                <span className="u-label">{t("dashboard.chunkEmbedRatio")}</span>
+                <Ticker value={stats.chunks.total === 0 ? 0 : Math.round((stats.chunks.embedded / stats.chunks.total) * 100)} />
+                <PixelMeter
                   value={stats.chunks.embedded}
                   max={Math.max(stats.chunks.total, 1)}
-                  hasValueLabel
-                  variant={stats.chunks.total === 0 ? "neutral" : stats.chunks.embedded === stats.chunks.total ? "success" : "warning"}
+                  variant={stats.chunks.total === 0 ? "default" : stats.chunks.embedded === stats.chunks.total ? "success" : "warning"}
                 />
-                <Text type="supporting" color="secondary">
-                  {stats.chunks.embedded} / {stats.chunks.total} {t("dashboard.chunksHave")}
-                </Text>
+                <Text type="supporting" color="secondary">{stats.chunks.embedded} / {stats.chunks.total} {t("dashboard.chunksHave")}</Text>
               </VStack>
-            </Card>
+            </Panel>
 
-            <Card className="glass-card">
+            <Panel>
               <VStack gap={3}>
-                <span className="rx-label">{t("dashboard.memoryEmbedRatio")}</span>
-                <span className="rx-display-sm">
-                  {stats.memories.total === 0 ? "—" : `${Math.round((stats.memories.embedded / stats.memories.total) * 100)}%`}
-                </span>
-                <ProgressBar
-                  label={t("dashboard.memoryEmbedRatio")}
-                  isLabelHidden
+                <span className="u-label">{t("dashboard.memoryEmbedRatio")}</span>
+                <Ticker value={stats.memories.total === 0 ? 0 : Math.round((stats.memories.embedded / stats.memories.total) * 100)} />
+                <PixelMeter
                   value={stats.memories.embedded}
                   max={Math.max(stats.memories.total, 1)}
-                  hasValueLabel
-                  variant={stats.memories.total === 0 ? "neutral" : stats.memories.embedded === stats.memories.total ? "success" : "warning"}
+                  variant={stats.memories.total === 0 ? "default" : stats.memories.embedded === stats.memories.total ? "success" : "warning"}
                 />
-                <Text type="supporting" color="secondary">
-                  {stats.memories.embedded} / {stats.memories.total} {t("dashboard.recordsHave")}
-                </Text>
+                <Text type="supporting" color="secondary">{stats.memories.embedded} / {stats.memories.total} {t("dashboard.recordsHave")}</Text>
               </VStack>
-            </Card>
+            </Panel>
           </Grid>
 
           {growth && (
-            <Card className="glass-card">
+            <Panel>
               <VStack gap={3}>
-                <VStack gap={1}>
-                  <span className="rx-label">{t("dashboard.growthTitle")}</span>
-                  <Text type="supporting" color="secondary">{t("dashboard.growthSubtitle")}</Text>
-                </VStack>
+                <SectionRule label={t("dashboard.growthTitle")} />
+                <Text type="supporting" color="secondary">{t("dashboard.growthSubtitle")}</Text>
                 <GrowthChart growth={growth} />
               </VStack>
-            </Card>
+            </Panel>
           )}
 
           {usage && <UsageSection usage={usage} formatRelative={formatRelative} />}
 
           {stats.sync.peers.length > 0 && (
-            <Card className="glass-card">
+            <Panel>
               <VStack gap={3}>
-                <span className="rx-label">{t("dashboard.peerStatus")}</span>
-                <Divider />
+                <SectionRule label={t("dashboard.peerStatus")} />
                 {stats.sync.peers.map((p) => (
                   <HStack key={p.peer} hAlign="between" vAlign="center">
                     <Text type="supporting">{p.peer}</Text>
@@ -533,15 +442,12 @@ export function Dashboard() {
                   </HStack>
                 ))}
               </VStack>
-            </Card>
+            </Panel>
           )}
 
-          <Card className="glass-card">
+          <Panel>
             <VStack gap={3}>
-              <HStack hAlign="between" vAlign="center">
-                <span className="rx-label">{t("dashboard.recentSessions")}</span>
-              </HStack>
-              <Divider />
+              <SectionRule label={t("dashboard.recentSessions")} />
               {sessions === null ? (
                 <Text color="secondary">{t("common.loading")}</Text>
               ) : sessions.length === 0 ? (
@@ -551,14 +457,14 @@ export function Dashboard() {
                   <VStack key={log.id} gap={1}>
                     <HStack gap={3} vAlign="center">
                       <Text type="supporting" color="secondary">{log.created_at}</Text>
-                      {log.project && <Text type="supporting">[{log.project}]</Text>}
+                      {log.project && <Tag>{log.project}</Tag>}
                     </HStack>
                     <Markdown headingLevelStart={5}>{log.summary}</Markdown>
                   </VStack>
                 ))
               )}
             </VStack>
-          </Card>
+          </Panel>
         </>
       ) : null}
     </VStack>
