@@ -220,9 +220,8 @@ export async function searchChunks(
   query: string,
   opts: { project?: string; limit?: number; include_archived?: boolean; kind?: DocumentInput["kind"] } = {}
 ): Promise<ScoredChunk[]> {
-  // Proje filtresi RRF SONRASI uygulanır — filtreli aramada havuzu büyüt (bkz. searchMemories).
-  const pool = opts.project ? config.searchCandidates * 2 : config.searchCandidates;
-  const ranked = await hybridSearch("chunks_fts", "chunks_vec", query, pool, {
+  // Lifecycle/project/kind constraints are applied during candidate retrieval.
+  const ranked = await hybridSearch("chunks_fts", "chunks_vec", query, config.searchCandidates, {
     project: opts.project,
     currentOnly: !opts.include_archived,
     documentKind: opts.kind,
@@ -232,8 +231,8 @@ export async function searchChunks(
   const placeholders = ranked.map(() => "?").join(",");
   const rows = getDb()
     .prepare(
-      `SELECT c.id AS chunk_id, c.document_id, c.heading, c.text,
-              d.title AS document_title, d.uri, d.project,
+      `SELECT c.id AS chunk_id, c.seq AS chunk_seq, c.document_id, c.heading, c.text,
+              d.uid AS document_uid, d.content_hash, d.title AS document_title, d.uri, d.project,
               d.kind AS document_kind, d.version AS document_version, d.is_current
        FROM chunks c JOIN documents d ON d.id = c.document_id
        WHERE c.id IN (${placeholders}) AND d.enabled = 1${opts.include_archived ? "" : " AND d.is_current = 1"}${opts.kind ? " AND d.kind = ?" : ""}`

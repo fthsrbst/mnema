@@ -308,8 +308,9 @@ Major remaining product work:
   at least 50 held-out cases before changing production ranking weights.
 - **Server-authoritative multi-writer revisions** — current transactional LWW
   sync is appropriate for local-first devices, not simultaneous company writers.
-- **External VectorStore adapter** — the online boundary exists; pgvector or
-  Qdrant is implemented only after measured latency/recall/recovery gates fail.
+- **Qdrant production qualification** — the durable projection adapter exists;
+  representative corpus parity, load, snapshot/restore, and failover drills are
+  required before enabling it in a company environment.
 - **Central audit export and managed secret rotation** — required before a
   compliance-sensitive enterprise deployment.
 
@@ -332,11 +333,11 @@ No inflation — this is what's actually solid versus still rough.
 | Public connector exposure (Funnel + `?token=`) | Personal compatibility only | Team/enterprise profiles forbid query tokens |
 | Auth and tenancy | Stable baseline | Scoped principals, project allowlists, rate limiting, shared schemas, fail-closed profiles, redacted hash-chain audit |
 | Backup/restore | Functional | Backup and migration tooling exist; restore drills remain an operator responsibility |
-| External vector backend | Boundary implemented, adapter not built | sqlite-vec is supported; migration is benchmark-gated, not based on an invented vector-count ceiling |
+| External vector backend | Qdrant projection implemented | Durable outbox, generation-specific collections, native metadata filters, rebuild/status/flush operations, contract smoke, and sqlite fallback; real cluster load/restore qualification remains |
 
 The team profile is a hardened internal-service baseline, not a claim of full
 multi-tenant SaaS readiness. Horizontal multi-writer serving, centralized
-audit/metrics, automated secret rotation, and an external index adapter remain
+audit/metrics, automated secret rotation, and production qualification of the external index remain
 explicit gates before that claim can be made.
 
 ## License

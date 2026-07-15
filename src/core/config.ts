@@ -59,9 +59,37 @@ export const config = {
   allowLegacyAdmin: envBool("HUB_ALLOW_LEGACY_ADMIN", deploymentProfile === "personal"),
   vectorBackend: (() => {
     const value = process.env.HUB_VECTOR_BACKEND ?? "sqlite-vec";
-    if (value !== "sqlite-vec") throw new Error("HUB_VECTOR_BACKEND currently supports only sqlite-vec");
-    return value as "sqlite-vec";
+    if (!["sqlite-vec", "qdrant"].includes(value)) {
+      throw new Error("HUB_VECTOR_BACKEND must be sqlite-vec or qdrant");
+    }
+    return value as "sqlite-vec" | "qdrant";
   })(),
+  qdrantUrl: (() => {
+    const value = (process.env.HUB_QDRANT_URL ?? "").trim().replace(/\/+$/, "");
+    if (!value) return "";
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw new Error("HUB_QDRANT_URL must be an absolute http(s) URL");
+    }
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("HUB_QDRANT_URL must use http or https");
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new Error("HUB_QDRANT_URL must not contain credentials, query parameters, or fragments");
+    }
+    return value;
+  })(),
+  qdrantApiKey: process.env.HUB_QDRANT_API_KEY ?? "",
+  qdrantCollectionPrefix: (() => {
+    const value = process.env.HUB_QDRANT_COLLECTION_PREFIX ?? "mnema";
+    if (!/^[a-zA-Z0-9_-]{1,48}$/.test(value)) {
+      throw new Error("HUB_QDRANT_COLLECTION_PREFIX must match [a-zA-Z0-9_-]{1,48}");
+    }
+    return value;
+  })(),
+  qdrantTimeoutMs: envNumber("HUB_QDRANT_TIMEOUT_MS", 3000, { min: 100, max: 60_000, integer: true }),
+  qdrantBatchSize: envNumber("HUB_QDRANT_BATCH_SIZE", 128, { min: 1, max: 1000, integer: true }),
+  qdrantFlushIntervalMs: envNumber("HUB_QDRANT_FLUSH_INTERVAL_MS", 2000, { min: 100, max: 60_000, integer: true }),
   // Enterprise profile: reject memory/document/session writes that reference a
   // project without a canonical project map. Disabled during legacy cleanup.
   strictProjects: envBool("HUB_STRICT_PROJECTS", deploymentProfile !== "personal"),
@@ -78,8 +106,8 @@ export const config = {
   vecMaxDistance: envNumber("VEC_MAX_DISTANCE", 0.86, { min: 0, max: 2 }),
   // Kayıt anında benzerlik uyarısı eşiği: bundan yakın mesafedeki hafızalar dedup adayı sayılır.
   dupDistance: envNumber("HUB_DUP_DISTANCE", 0.35, { min: 0, max: 2 }),
-  // Kanal başına aday havuzu (FTS ve vektör ayrı ayrı). Filtreli aramalarda (type/project/tag)
-  // havuz otomatik 2× büyür — filtre RRF SONRASI uygulandığından küçük havuz sonuçları açlığa iter.
+  // Candidate count per retrieval channel after native project/lifecycle filters.
+  // sqlite-vec JSON-tag/temporal gaps use bounded oversampling inside search.ts.
   searchCandidates: envNumber("HUB_SEARCH_CANDIDATES", 40, { min: 1, max: 5000, integer: true }),
   // Local-first eşitleme: tanımlıysa bu instance, primary (Pi) ile periyodik eşitlenir.
   // Virgülle ayrılmış çoklu adres desteklenir (örn. Tailscale + LAN yedeği):
@@ -110,6 +138,10 @@ export const config = {
   recallSingleSourcePenalty: envNumber("HUB_RECALL_SINGLE_SOURCE_PENALTY", 0.6, { min: 0, max: 10 }),
 };
 
+if (config.vectorBackend === "qdrant" && !config.qdrantUrl) {
+  throw new Error("HUB_VECTOR_BACKEND=qdrant requires HUB_QDRANT_URL");
+}
+
 /** Fail closed when a shared/company profile is configured unsafely. */
 export function assertDeploymentSafety(): void {
   if (config.deploymentProfile === "personal") return;
@@ -123,5 +155,12 @@ export function assertDeploymentSafety(): void {
   if (config.acceptLegacyVectors) throw new Error(`${config.deploymentProfile} profile requires HUB_ACCEPT_LEGACY_VECTORS=false`);
   if (config.primaryUrls.length > 0) {
     throw new Error(`${config.deploymentProfile} profile is server-authoritative and must not configure HUB_PRIMARY_URL`);
+  }
+  const localQdrant = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::|$)/i.test(config.qdrantUrl);
+  if (config.vectorBackend === "qdrant" && config.qdrantUrl.startsWith("http://") && !localQdrant) {
+    throw new Error(`${config.deploymentProfile} profile requires HTTPS for a non-local Qdrant endpoint`);
+  }
+  if (config.vectorBackend === "qdrant" && !localQdrant && !config.qdrantApiKey) {
+    throw new Error(`${config.deploymentProfile} profile requires HUB_QDRANT_API_KEY for a non-local Qdrant endpoint`);
   }
 }

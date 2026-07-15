@@ -136,6 +136,7 @@ export interface KnowledgeIntegrityReport {
     sessions: number;
     relations: number;
     audit_events: number;
+    vector_outbox: number;
   };
 }
 
@@ -182,6 +183,36 @@ export function knowledgeIntegrity(): KnowledgeIntegrityReport {
     auditChain.broken_at ? [`event #${auditChain.broken_at}`] : [],
     "Restore the audit database from a trusted backup and investigate tampering or unsafe maintenance."
   );
+
+  if (config.vectorBackend === "qdrant") {
+    const retrying = db
+      .prepare(
+        `SELECT entity, row_id, attempts, last_error FROM vector_outbox
+         WHERE attempts > 0 ORDER BY attempts DESC, updated_at LIMIT 10`
+      )
+      .all() as { entity: string; row_id: number; attempts: number; last_error: string | null }[];
+    add(
+      "warning",
+      "vector_projection_retrying",
+      one("SELECT COUNT(*) AS n FROM vector_outbox WHERE attempts > 0"),
+      retrying.map((row) => `${row.entity}#${row.row_id} attempts=${row.attempts}: ${(row.last_error ?? "unknown").slice(0, 120)}`),
+      "Check Qdrant health, TLS, credentials and collection schema; then call vector_projection_flush. Rows remain durable."
+    );
+    const stale = db
+      .prepare(
+        `SELECT entity, row_id, attempts FROM vector_outbox
+         WHERE julianday(updated_at) < julianday('now', '-15 minutes')
+         ORDER BY updated_at LIMIT 10`
+      )
+      .all() as { entity: string; row_id: number; attempts: number }[];
+    add(
+      "error",
+      "vector_projection_stalled",
+      one("SELECT COUNT(*) AS n FROM vector_outbox WHERE julianday(updated_at) < julianday('now', '-15 minutes')"),
+      stale.map((row) => `${row.entity}#${row.row_id} attempts=${row.attempts}`),
+      "Restore Qdrant connectivity or switch HUB_VECTOR_BACKEND back to sqlite-vec; do not accept external-backend parity while the queue is stalled."
+    );
+  }
 
   const typedDangling = db
     .prepare(
@@ -367,6 +398,7 @@ export function knowledgeIntegrity(): KnowledgeIntegrityReport {
       sessions: one("SELECT COUNT(*) AS n FROM session_logs"),
       relations: one("SELECT COUNT(*) AS n FROM memory_relations"),
       audit_events: one("SELECT COUNT(*) AS n FROM audit_events"),
+      vector_outbox: one("SELECT COUNT(*) AS n FROM vector_outbox"),
     },
   };
 }

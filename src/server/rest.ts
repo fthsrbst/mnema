@@ -45,6 +45,10 @@ import {
   growthStats,
   knowledgeIntegrity,
   verifyAuditChain,
+  flushVectorOutbox,
+  queueFullVectorProjection,
+  vectorStore,
+  verifyVectorProjectionParity,
   listPrompts,
   listSkills,
   ragStats,
@@ -102,6 +106,18 @@ export function buildRestRouter(): Router {
   const r = Router();
 
   r.get("/integrity", wrap((_req, res) => res.json(knowledgeIntegrity())));
+  r.get("/vector-projection", wrap((_req, res) => res.json(vectorStore.status())));
+  r.get("/vector-projection/verify", wrap(async (_req, res) => res.json(await verifyVectorProjectionParity())));
+  r.post("/vector-projection/rebuild", wrap((_req, res) => {
+    res.json({ queued: queueFullVectorProjection(), status: vectorStore.status() });
+  }));
+  r.post("/vector-projection/flush", wrap(async (req, res) => {
+    const limit = req.body?.limit === undefined ? undefined : Number(req.body.limit);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 1000)) {
+      return void res.status(400).json({ error: "validation_error", issues: [{ path: "limit", message: "must be an integer from 1 to 1000" }] });
+    }
+    res.json({ result: await flushVectorOutbox(limit), status: vectorStore.status() });
+  }));
   r.get("/audit", wrap((req, res) => res.json(listAuditEvents({
     actor: req.query.actor as string | undefined,
     action: req.query.action as string | undefined,

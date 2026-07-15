@@ -14,12 +14,15 @@
   "scripts": {
     "build": "tsc",
     "backup:copy": "tsx scripts/backup-copy.ts",
+    "benchmark:vector": "tsx scripts/vector-benchmark.ts",
+    "benchmark:vector:smoke": "tsx scripts/vector-benchmark.ts --rows=2000 --queries=30 --projects=10 --dim=128 --gate",
     "dev": "tsx src/server/index.ts",
     "eval:context": "tsx scripts/context-eval.ts",
     "eval:context:release": "tsx scripts/context-eval.ts --release",
     "migration:audit": "tsx scripts/migration-audit.ts",
     "smoke:security": "tsx scripts/security-smoke.ts",
     "smoke:generation": "tsx scripts/generation-smoke.ts",
+    "smoke:qdrant": "tsx scripts/qdrant-smoke.ts",
     "smoke": "tsx scripts/smoke.ts",
     "hub": "tsx src/cli/index.ts"
   },

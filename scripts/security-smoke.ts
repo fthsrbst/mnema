@@ -77,6 +77,12 @@ check(
 );
 check("REST policy recall feedback write", restScope("POST", "/recall/feedback") === "knowledge:write");
 check("REST policy reindex admin", restScope("POST", "/rag/reindex") === "admin:write");
+check("REST vector projection status is admin read", restScope("GET", "/vector-projection") === "admin:read");
+check("REST vector projection rebuild is admin write", restScope("POST", "/vector-projection/rebuild") === "admin:write");
+check(
+  "MCP vector projection administration denied to context reader",
+  Boolean(reader && !authorizeMcp(reader, mcp("vector_projection_rebuild", {})).ok)
+);
 
 const first = consumeRateLimit("reader", 1_000);
 const second = consumeRateLimit("reader", 1_001);

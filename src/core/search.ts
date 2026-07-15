@@ -132,20 +132,24 @@ export async function vecSearch(
   if (!vec) return [];
   const memoryFiltered = vecTable === "memories_vec" && Boolean(scope.memoryType || scope.memoryTag);
   const temporalDocumentFilter = vecTable === "chunks_vec" && scope.currentOnly !== false;
+  const requiresMemoryPostFilter = memoryFiltered && vectorStore.backend === "sqlite-vec";
+  const requiresTemporalPostFilter = temporalDocumentFilter && vectorStore.backend === "sqlite-vec";
   // sqlite-vec cannot express a multi-valued JSON tag constraint. Oversample
   // within the already-applied project partition, then filter before fusion.
   // At the configured 5k ceiling this covers the current/local profile fully;
   // external adapters must implement the same constraint natively.
-  const vectorLimit = memoryFiltered || temporalDocumentFilter
+  const vectorLimit = requiresMemoryPostFilter || requiresTemporalPostFilter
     ? Math.min(5000, Math.max(limit * 4, 80))
     : limit;
-  let rows = vectorStore.search(vecTable === "chunks_vec" ? "chunk" : "memory", toBuffer(vec), vectorLimit, {
+  let rows = await vectorStore.search(vecTable === "chunks_vec" ? "chunk" : "memory", toBuffer(vec), vectorLimit, {
     project: scope.project,
     includeGlobal: scope.includeGlobal,
     currentOnly: scope.currentOnly,
     documentKind: scope.documentKind,
+    memoryType: scope.memoryType,
+    memoryTag: scope.memoryTag,
   });
-  if (memoryFiltered && rows.length > 0) {
+  if (requiresMemoryPostFilter && rows.length > 0) {
     const placeholders = rows.map(() => "?").join(",");
     const conditions = [`id IN (${placeholders})`];
     const params: unknown[] = rows.map((row) => row.id);
@@ -160,7 +164,7 @@ export async function vecSearch(
     );
     rows = rows.filter((row) => allowed.has(row.id)).slice(0, limit);
   }
-  if (temporalDocumentFilter && rows.length > 0) {
+  if (requiresTemporalPostFilter && rows.length > 0) {
     const placeholders = rows.map(() => "?").join(",");
     const allowed = new Set(
       (getDb()

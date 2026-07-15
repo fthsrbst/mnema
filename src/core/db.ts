@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS recall_feedback(
   memory_id INTEGER,
   target_kind TEXT,
   target_id INTEGER,
+  target_uid TEXT,
   project TEXT,
   intent TEXT,
   rank INTEGER,
@@ -184,6 +185,25 @@ CREATE TABLE IF NOT EXISTS system_metadata(
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
+
+-- Durable projection queue for external vector indexes. The local sqlite-vec
+-- mutation commits in the same transaction as this entry; remote delivery is
+-- revision-guarded, idempotent, and retried out of band.
+CREATE TABLE IF NOT EXISTS vector_outbox(
+  entity TEXT NOT NULL CHECK(entity IN ('memory', 'chunk')),
+  row_id INTEGER NOT NULL,
+  operation TEXT NOT NULL CHECK(operation IN ('upsert', 'delete')),
+  payload TEXT,
+  embedding BLOB,
+  generation TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  last_error TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  PRIMARY KEY(entity, row_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vector_outbox_due ON vector_outbox(next_attempt_at, updated_at);
 `;
 
 /** Var olan DB'lere eşitleme kolonlarını ekler (uid, updated_at) ve backfill yapar. */
@@ -196,6 +216,7 @@ function migrate(database: Database.Database): void {
   addColumn("documents", "uid", "uid TEXT");
   addColumn("documents", "updated_at", "updated_at TEXT");
   addColumn("documents", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
+  addColumn("vector_outbox", "revision", "revision INTEGER NOT NULL DEFAULT 1");
   // Document lifecycle. Existing documents remain current reference material;
   // operators can archive/supersede stale versions explicitly after migration.
   addColumn("documents", "kind", "kind TEXT NOT NULL DEFAULT 'reference'");
@@ -227,6 +248,7 @@ function migrate(database: Database.Database): void {
   // or whole-context feedback and retain the delivered ranking evidence.
   addColumn("recall_feedback", "target_kind", "target_kind TEXT");
   addColumn("recall_feedback", "target_id", "target_id INTEGER");
+  addColumn("recall_feedback", "target_uid", "target_uid TEXT");
   addColumn("recall_feedback", "project", "project TEXT");
   addColumn("recall_feedback", "intent", "intent TEXT");
   addColumn("recall_feedback", "rank", "rank INTEGER");

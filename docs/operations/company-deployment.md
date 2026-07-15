@@ -27,6 +27,17 @@ HUB_RATE_LIMIT_PER_MINUTE=600
 HUB_AUTH_TOKENS=[{"id":"agent-reader","token":"use-a-secret-manager-generated-value","scopes":["context:read","knowledge:read","project:read","session:read"],"projects":["project-a"]}]
 ```
 
+For a measured scale-out deployment, replace the backend line and add:
+
+```dotenv
+HUB_VECTOR_BACKEND=qdrant
+HUB_QDRANT_URL=https://qdrant.internal.example
+HUB_QDRANT_API_KEY=<secret-manager-reference>
+HUB_QDRANT_COLLECTION_PREFIX=mnema
+```
+
+Non-local plain HTTP or unauthenticated Qdrant endpoints are rejected in team/enterprise profiles. After first start, run `vector_projection_rebuild`, drain the durable outbox, and require `vector_projection_verify.ok=true` before parity/load testing. This proves generation readiness, zero backlog, and exact local/remote counts. Do not delete the local sqlite-vec index: it is the safe degraded-mode fallback and the source for projection recovery.
+
 Keep `HUB_AUTH_TOKENS` in a secret manager or protected service environment, not in Git. Give each agent or integration a unique token ID. Rotate one policy at a time by temporarily accepting old and new tokens, update clients, then remove the old policy and restart.
 
 Bind Mnema to loopback behind a TLS reverse proxy or a private service mesh. Do not expose plain HTTP or use query-string credentials in a company profile. `/health` is intentionally public and contains no paths, secrets, provider errors, or knowledge data.
@@ -66,4 +77,4 @@ The local audit log is tamper-evident, not immutable. Export it to append-only c
 
 ## Multi-instance boundary
 
-The included rate limiter and audit chain are process/node local. Do not run multiple writers against the same SQLite file over a network filesystem. Before horizontal serving, move rate limiting to the gateway, export audit events centrally, replace local-first LWW with a server-authoritative revision protocol, and implement an external `VectorStore` adapter behind the existing port.
+The included rate limiter and audit chain are process/node local. Do not run multiple writers against the same SQLite file over a network filesystem. Before horizontal serving, move rate limiting to the gateway, export audit events centrally, and replace local-first LWW with a server-authoritative revision protocol. The Qdrant search projection can scale retrieval reads, but it does not make multiple Mnema writers safe by itself.

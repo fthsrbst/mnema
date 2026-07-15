@@ -40,6 +40,10 @@ import {
   type GraphNodeKind,
   migrateProjectReferences,
   verifyAuditChain,
+  flushVectorOutbox,
+  queueFullVectorProjection,
+  vectorStore,
+  verifyVectorProjectionParity,
   contextGetSchema,
   documentInputSchema,
   feedbackInputBaseSchema,
@@ -71,6 +75,47 @@ export function buildMcpServer(): McpServer {
       inputSchema: {},
     },
     async () => json(knowledgeIntegrity())
+  );
+
+  server.registerTool(
+    "vector_projection_status",
+    {
+      title: "Inspect vector projection health",
+      description: "Read the active vector backend, local generation readiness, and durable external-projection outbox depth.",
+      inputSchema: {},
+    },
+    async () => json(vectorStore.status())
+  );
+
+  server.registerTool(
+    "vector_projection_rebuild",
+    {
+      title: "Queue a full external vector projection rebuild",
+      description:
+        "Administrative recovery/migration operation. Queue every authoritative local memory and chunk vector for idempotent delivery to the configured external backend. This does not delete SQLite data.",
+      inputSchema: {},
+    },
+    async () => json({ queued: queueFullVectorProjection(), status: vectorStore.status() })
+  );
+
+  server.registerTool(
+    "vector_projection_verify",
+    {
+      title: "Verify external vector projection parity",
+      description: "Compare exact authoritative sqlite-vec counts with the active Qdrant generation and require a ready, empty outbox. Run before/after cutover and restore drills.",
+      inputSchema: {},
+    },
+    async () => json(await verifyVectorProjectionParity())
+  );
+
+  server.registerTool(
+    "vector_projection_flush",
+    {
+      title: "Flush external vector projection outbox",
+      description: "Attempt one bounded delivery batch now. Failed rows remain durable and receive exponential backoff.",
+      inputSchema: { limit: z.number().int().min(1).max(1000).optional() },
+    },
+    async ({ limit }) => json({ result: await flushVectorOutbox(limit), status: vectorStore.status() })
   );
 
   server.registerTool(

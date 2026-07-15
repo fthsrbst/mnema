@@ -41,8 +41,10 @@ function rowToRelation(row: RelationRow): MemoryRelation {
   return {
     id: row.uid,
     from_id: row.from_id,
+    from_uid: row.from_uid,
     from_title: row.from_title,
     to_id: row.to_id,
+    to_uid: row.to_uid,
     to_title: row.to_title,
     relation_type: row.relation_type,
     confidence: row.confidence,

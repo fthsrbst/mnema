@@ -64,9 +64,9 @@ export function resolveRelated(mem: Pick<Memory, "related">): RelatedRef[] {
  * Yeni eklenen vektöre en yakın k=3 komşuyu bulur (kendisi hariç, eşik altında olanlar).
  * Kayıt anında hafif dedup uyarısı için — sqlite-vec'teki KNN deseni search.ts#vecSearch ile aynı.
  */
-function findSimilar(id: number, vec: Float32Array): SimilarHit[] {
+async function findSimilar(id: number, vec: Float32Array): Promise<SimilarHit[]> {
   // k+1: kendi vektörü de sonuçlarda çıkar (mesafe 0), aşağıda rowid ile ele alınır
-  const rows = vectorStore.search("memory", toBuffer(vec), 4);
+  const rows = await vectorStore.search("memory", toBuffer(vec), 4);
   const hits = rows.filter((r) => r.id !== id && r.distance <= config.dupDistance).slice(0, 3);
   return hits.map((r) => ({ id: r.id, title: getMemory(r.id)?.title ?? "?", distance: r.distance }));
 }
@@ -93,7 +93,7 @@ async function upsertVector(
       | { project: string | null }
       | undefined;
     vectorStore.putMemory(id, stored?.project, toBuffer(vec));
-    return findSimilar(id, vec);
+    return await findSimilar(id, vec);
   } catch (err) {
     console.error(`[hub] memory #${id} embed edilemedi (FTS'te aranabilir): ${(err as Error).message}`);
     return undefined;
@@ -319,10 +319,9 @@ export function recordMemoryAccess(ids: number[]): void {
 }
 
 export async function searchMemories(query: string, filters: SearchFilters = {}): Promise<ScoredMemory[]> {
-  // Filtre RRF SONRASI uygulanır; dar havuz + filtre = sonuç açlığı. Filtreli aramada havuzu büyüt.
-  const hasFilter = Boolean(filters.type || filters.project || filters.tag);
-  const pool = hasFilter ? config.searchCandidates * 2 : config.searchCandidates;
-  const ranked = await hybridSearch("memories_fts", "memories_vec", query, pool, {
+  // Project/type/tag constraints are candidate-generation filters. The final
+  // relational checks below are defense in depth, not post-fusion filtering.
+  const ranked = await hybridSearch("memories_fts", "memories_vec", query, config.searchCandidates, {
     project: filters.project,
     memoryType: filters.type,
     memoryTag: filters.tag,

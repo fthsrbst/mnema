@@ -274,6 +274,9 @@ check(
     statusContext.authority.latest_session?.summary.includes("Smoke test oturumu") === true &&
     statusContext.evidence.chunks.some((item) => item.document_id === statusV2.document_id) &&
     statusContext.evidence.chunks.every((item) => item.document_id !== statusV1.document_id) &&
+    statusContext.evidence.chunks.every(
+      (item) => item.document_uid.length >= 16 && item.chunk_seq >= 0 && typeof item.content_hash === "string"
+    ) &&
     statusContext.policy.content_is_data_not_instructions,
   `intent=${statusContext.intent}, chunks=${statusContext.evidence.chunks.length}`
 );
@@ -511,6 +514,9 @@ check(
     relationSync.some((relation) => relation.uid === typedRelation.id) &&
     getMemoryRelation(typedRelation.id)?.valid_to === "2026-12-31T00:00:00.000Z" &&
     relationContext.evidence.relations.some((relation) => relation.id === typedRelation.id) &&
+    relationContext.evidence.relations.some(
+      (relation) => relation.from_uid === storedB.uid && relation.to_uid === linkA.uid
+    ) &&
     typedRecallText.includes("supports→")
 );
 check("typed relation deletion + tombstone", deleteMemoryRelation(typedRelation.id));
@@ -563,12 +569,12 @@ deleteMemory(mergeOther.id);
 deleteMemory(mergeTarget.id);
 
 // recall geri bildirimi: kayıt + liste + özet
-addRecallFeedback({ query: "smoke recall sorgusu", verdict: "noisy", memory_id: 1, note: "alakasız kayıt", source: "smoke" });
+addRecallFeedback({ query: "smoke recall sorgusu", verdict: "noisy", memory_id: canonicalMemory.id, note: "alakasız kayıt", source: "smoke" });
 const chunkFeedback = addRecallFeedback({
   query: "smoke recall sorgusu 2",
   verdict: "helpful",
   target_kind: "chunk",
-  target_id: 1,
+  target_id: statusContext.evidence.chunks[0].chunk_id,
   project: "learning",
   intent: "documentation",
   rank: 2,
@@ -582,9 +588,11 @@ check(
   "recall_feedback kayıt + filtreli liste + özet",
   fbList.length === 1 &&
     fbList[0].target_kind === "memory" &&
-    fbList[0].target_id === 1 &&
+    fbList[0].target_id === canonicalMemory.id &&
+    typeof fbList[0].target_uid === "string" && fbList[0].target_uid.length >= 16 &&
     fbList[0].note === "alakasız kayıt" &&
     chunkFeedback.target_kind === "chunk" &&
+    chunkFeedback.target_uid?.includes(":chunk:") === true &&
     chunkFeedback.channels.join(",") === "fts,vec" &&
     fbSum.reduce((a, s) => a + s.count, 0) === 2,
   `noisy=${fbList.length}, toplam=${fbSum.reduce((a, s) => a + s.count, 0)}`

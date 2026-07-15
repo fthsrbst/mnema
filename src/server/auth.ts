@@ -134,6 +134,10 @@ const MCP_SCOPES: Record<string, HubScope> = {
   integrity_check: "admin:read",
   audit_list: "admin:read",
   audit_verify: "admin:read",
+  vector_projection_status: "admin:read",
+  vector_projection_verify: "admin:read",
+  vector_projection_rebuild: "admin:write",
+  vector_projection_flush: "admin:write",
   graph_neighbors: "knowledge:read",
   graph_node: "knowledge:read",
 };
@@ -238,6 +242,8 @@ export function restScope(method: string, path: string): HubScope {
   if (path.startsWith("/sync")) return method === "GET" ? "sync:read" : "sync:write";
   if (path === "/outputs") return "knowledge:read";
   if (path === "/integrity") return "admin:read";
+  if (path === "/vector-projection" || path === "/vector-projection/verify") return "admin:read";
+  if (path.startsWith("/vector-projection/")) return "admin:write";
   if (path.startsWith("/audit")) return "admin:read";
   if (path.startsWith("/skills") || path.startsWith("/prompts")) return method === "GET" ? "admin:read" : "admin:write";
   return "admin:write";

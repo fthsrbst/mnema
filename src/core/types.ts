@@ -57,6 +57,8 @@ export interface RecallFeedback {
   verdict: FeedbackVerdict;
   target_kind: FeedbackTargetKind | null;
   target_id: number | null;
+  /** Stable cross-device identity resolved by the server from target_kind/id. */
+  target_uid: string | null;
   project: string | null;
   intent: Exclude<import("./context.js").ContextIntent, "auto"> | null;
   rank: number | null;
@@ -127,8 +129,10 @@ export type MemoryRelationType =
 export interface MemoryRelation {
   id: string;
   from_id: number;
+  from_uid: string;
   from_title: string;
   to_id: number;
+  to_uid: string;
   to_title: string;
   relation_type: MemoryRelationType;
   confidence: number;
@@ -142,7 +146,10 @@ export interface MemoryRelation {
 
 export interface ScoredChunk {
   chunk_id: number;
+  chunk_seq: number;
   document_id: number;
+  document_uid: string;
+  content_hash: string | null;
   document_title: string;
   uri: string | null;
   project: string | null;

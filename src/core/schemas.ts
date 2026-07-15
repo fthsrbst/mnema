@@ -204,6 +204,9 @@ export const feedbackInputSchema = feedbackInputBaseSchema.superRefine((value, c
     if (kind === "context" && id) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["target_id"], message: "context feedback must not include target_id" });
     }
+    if (kind === "context" && !value.delivery_id) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["delivery_id"], message: "context feedback requires delivery_id" });
+    }
   });
 
 const relationTimestamp = z.string().datetime({ offset: true });

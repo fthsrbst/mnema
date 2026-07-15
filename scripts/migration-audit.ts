@@ -23,6 +23,7 @@ try {
         memory_vectors: count("SELECT COUNT(*) AS n FROM memories_vec"),
         chunk_vectors: count("SELECT COUNT(*) AS n FROM chunks_vec"),
         current_documents: count("SELECT COUNT(*) AS n FROM documents WHERE enabled = 1 AND is_current = 1"),
+        vector_outbox: count("SELECT COUNT(*) AS n FROM vector_outbox"),
         memory_vec_schema: sqlFor("memories_vec"),
         chunk_vec_schema: sqlFor("chunks_vec"),
         memory_fts_schema: sqlFor("memories_fts"),
@@ -31,6 +32,12 @@ try {
           .filter((column) => column.pk > 0)
           .sort((a, b) => a.pk - b.pk)
           .map((column) => column.name),
+        vector_outbox_primary_key: (db.prepare("PRAGMA table_info(vector_outbox)").all() as { name: string; pk: number }[])
+          .filter((column) => column.pk > 0)
+          .sort((a, b) => a.pk - b.pk)
+          .map((column) => column.name),
+        vector_outbox_revision: (db.prepare("PRAGMA table_info(vector_outbox)").all() as { name: string }[])
+          .some((column) => column.name === "revision"),
         knowledge_integrity: knowledgeIntegrity(),
       },
       null,

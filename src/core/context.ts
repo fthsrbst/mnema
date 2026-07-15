@@ -50,6 +50,7 @@ export interface ContextSessionAuthority {
 
 export interface ContextMemoryEvidence {
   id: number;
+  uid: string;
   type: MemoryType;
   title: string;
   project: string | null;
@@ -70,7 +71,10 @@ export interface ContextMemoryEvidence {
 
 export interface ContextChunkEvidence {
   chunk_id: number;
+  chunk_seq: number;
   document_id: number;
+  document_uid: string;
+  content_hash: string | null;
   document_title: string;
   uri: string | null;
   project: string | null;
@@ -88,8 +92,10 @@ export interface ContextChunkEvidence {
 export interface ContextRelationEvidence {
   id: string;
   from_id: number;
+  from_uid: string;
   from_title: string;
   to_id: number;
+  to_uid: string;
   to_title: string;
   relation_type: MemoryRelationType;
   confidence: number;
@@ -221,6 +227,7 @@ function compactMemory(item: ScoredMemory, rank: number): ContextMemoryEvidence 
   const usesCanonical = Boolean(item.canonical_summary);
   return {
     id: item.id,
+    uid: item.uid,
     type: item.type,
     title: excerpt(item.title, 180),
     project: item.project,
@@ -243,7 +250,10 @@ function compactMemory(item: ScoredMemory, rank: number): ContextMemoryEvidence 
 function compactChunk(item: ScoredChunk, rank: number): ContextChunkEvidence {
   return {
     chunk_id: item.chunk_id,
+    chunk_seq: item.chunk_seq,
     document_id: item.document_id,
+    document_uid: item.document_uid,
+    content_hash: item.content_hash,
     document_title: excerpt(item.document_title, 180),
     uri: item.uri,
     project: item.project,
@@ -387,8 +397,10 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
       relations: [...relationMap.values()].slice(0, 8).map((relation) => ({
         id: relation.id,
         from_id: relation.from_id,
+        from_uid: relation.from_uid,
         from_title: excerpt(relation.from_title, 160),
         to_id: relation.to_id,
+        to_uid: relation.to_uid,
         to_title: excerpt(relation.to_title, 160),
         relation_type: relation.relation_type,
         confidence: relation.confidence,

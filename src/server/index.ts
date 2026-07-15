@@ -7,12 +7,15 @@ import {
   assertDeploymentSafety,
   embeddingsDisabledReason,
   embeddingsEnabled,
+  flushVectorOutbox,
+  ensureVectorProjectionQueued,
   getDb,
   hasVec,
   onWrite,
   recordAuditEvent,
   runDigest,
   syncWithPrimary,
+  vectorStore,
   vecError,
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
@@ -46,6 +49,7 @@ app.get("/health", (_req, res) => {
     version: "0.1.0",
     deployment_profile: config.deploymentProfile,
     vector_backend: config.vectorBackend,
+    vector_projection: vectorStore.status(),
     degraded,
   });
 });
@@ -210,6 +214,31 @@ app.listen(config.port, config.host, () => {
   console.log(`[hub] http://${config.host}:${config.port}  (MCP: /mcp, REST: /api, health: /health)`);
   console.log(`[hub] deployment profile: ${config.deploymentProfile}, vector backend: ${config.vectorBackend}`);
   console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${authenticationEnabled() ? "açık" : "KAPALI (local-dev)"}`);
+
+  if (config.vectorBackend === "qdrant") {
+    const initialProjection = ensureVectorProjectionQueued();
+    if (initialProjection.queued) {
+      console.log(`[hub] Qdrant full projection queued: memories=${initialProjection.memories}, chunks=${initialProjection.chunks}`);
+    }
+    let flushingVectors = false;
+    const flushVectors = async (): Promise<void> => {
+      if (flushingVectors) return;
+      flushingVectors = true;
+      try {
+        const result = await flushVectorOutbox();
+        if (result.processed > 0 || result.failed > 0 || result.discarded > 0) {
+          console.log(`[hub] Qdrant projection: processed=${result.processed}, failed=${result.failed}, discarded_stale_generation=${result.discarded}`);
+        }
+      } catch (err) {
+        console.error(`[hub] Qdrant projection flush failed: ${(err as Error).message}`);
+      } finally {
+        flushingVectors = false;
+      }
+    };
+    void flushVectors();
+    setInterval(flushVectors, config.qdrantFlushIntervalMs);
+    onWrite(() => void flushVectors());
+  }
 
   if (config.primaryUrls.length > 0) {
     console.log(`[hub] eşitleme: ${config.primaryUrls.join(", ")} ile her ${config.syncIntervalSec}sn (+ yazımda anında push)`);

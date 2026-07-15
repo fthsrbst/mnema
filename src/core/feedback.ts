@@ -25,13 +25,32 @@ export function addRecallFeedback(input: {
   input = feedbackInputSchema.parse(input);
   const targetKind = input.target_kind ?? (input.memory_id ? "memory" : null);
   const targetId = input.target_id ?? input.memory_id ?? null;
-  const info = getDb()
+  const db = getDb();
+  const targetUid = (() => {
+    if (targetKind === "memory" && targetId) {
+      return (db.prepare("SELECT uid FROM memories WHERE id = ?").get(targetId) as { uid: string } | undefined)?.uid ?? null;
+    }
+    if (targetKind === "document" && targetId) {
+      return (db.prepare("SELECT uid FROM documents WHERE id = ?").get(targetId) as { uid: string } | undefined)?.uid ?? null;
+    }
+    if (targetKind === "chunk" && targetId) {
+      const row = db
+        .prepare("SELECT d.uid AS document_uid, c.seq FROM chunks c JOIN documents d ON d.id = c.document_id WHERE c.id = ?")
+        .get(targetId) as { document_uid: string; seq: number } | undefined;
+      return row ? `${row.document_uid}:chunk:${row.seq}` : null;
+    }
+    return targetKind === "context" ? input.delivery_id ?? null : null;
+  })();
+  if (targetKind && targetKind !== "context" && targetId && !targetUid) {
+    throw new Error(`${targetKind} target #${targetId} not found; feedback must reference delivered current evidence`);
+  }
+  const info = db
     .prepare(
       `INSERT INTO recall_feedback(
-         query, verdict, target_kind, target_id, project, intent, rank, channels,
+         query, verdict, target_kind, target_id, target_uid, project, intent, rank, channels,
          delivery_id, memory_id, note, source, created_at
        ) VALUES (
-         @query, @verdict, @target_kind, @target_id, @project, @intent, @rank,
+         @query, @verdict, @target_kind, @target_id, @target_uid, @project, @intent, @rank,
          @channels, @delivery_id, @memory_id, @note, @source, ${NOW_MS}
        )`
     )
@@ -40,6 +59,7 @@ export function addRecallFeedback(input: {
       verdict: input.verdict,
       target_kind: targetKind,
       target_id: targetId,
+      target_uid: targetUid,
       project: input.project ?? null,
       intent: input.intent ?? null,
       rank: input.rank ?? null,
@@ -49,7 +69,7 @@ export function addRecallFeedback(input: {
       note: input.note ?? null,
       source: input.source ?? null,
     });
-  return rowToFeedback(getDb()
+  return rowToFeedback(db
     .prepare("SELECT * FROM recall_feedback WHERE id = ?")
     .get(Number(info.lastInsertRowid)) as Record<string, unknown>);
 }
