@@ -94,6 +94,22 @@ export function formatPresenceLines(presence: AgentPresenceView[]): string[] {
   return lines;
 }
 
+/** Son N saatte kapanmış (done/abandoned) kayıtlar — "son bitenler" listesi için. */
+export function agentRecent(hoursInput?: number): AgentPresenceView[] {
+  const hours = Number.isFinite(hoursInput) && (hoursInput as number) > 0 ? Math.min(Math.round(hoursInput as number), 24 * 30) : 24;
+  const db = getDb();
+  const cutoff = (
+    db.prepare(`SELECT strftime('%Y-%m-%d %H:%M:%f', 'now', '-${hours} hours') AS c`).get() as { c: string }
+  ).c;
+  const rows = db
+    .prepare(
+      "SELECT * FROM agent_presence WHERE status != 'active' AND COALESCE(finished_at, updated_at) >= ? ORDER BY COALESCE(finished_at, updated_at) DESC"
+    )
+    .all(cutoff) as AgentPresence[];
+  const ttlMs = config.presenceTtlMin * 60_000;
+  return rows.map((r) => ({ ...r, stale: Date.now() - Date.parse(r.heartbeat_at.replace(" ", "T") + "Z") > ttlMs }));
+}
+
 /**
  * done/abandoned + 7 günden eski kayıtları tombstone'la siler. Sync döngüsünden
  * önce çağrılır (server/index.ts) — ayrı bir bakım/purge noktası yok, ucuz olduğu

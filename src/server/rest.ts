@@ -9,6 +9,7 @@ import {
   agentActive,
   agentCheckin,
   agentCheckout,
+  agentRecent,
   feedbackSummary,
   feedbackQualityBreakdown,
   listRecallFeedback,
@@ -327,6 +328,10 @@ export function buildRestRouter(): Router {
     result ? res.json(result) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.get("/agents/active", wrap((req, res) => res.json(agentActive(req.query.project as string | undefined))));
+  r.get("/agents/recent", wrap((req, res) => {
+    const { hours } = req.query;
+    res.json(agentRecent(hours !== undefined ? Number(hours) : undefined));
+  }));
 
   // --- compute (yerel AI orkestrasyonu) ---
   r.get("/machines", wrap((_req, res) => res.json(listMachines())));
