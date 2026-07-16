@@ -1,3 +1,15 @@
+.cloud-standalone {
+  min-height: 100dvh;
+  padding: clamp(14px, 2.4vw, 32px);
+  overflow-x: hidden;
+  background: var(--bg);
+}
+
+.cloud-standalone__inner {
+  width: min(100%, 1320px);
+  margin: 0 auto;
+}
+
 .cloud-gate {
   --cloud-ink: #050505;
   --cloud-paper: #efeEE5;
@@ -140,6 +152,7 @@
 }
 
 @media (max-width: 620px) {
+  .cloud-standalone { padding: 4px; }
   .cloud-gate { margin: -4px; box-shadow: none; }
   .cloud-gate__mast { padding: 0 12px; }
   .cloud-gate__status span { display: none; }

@@ -258,6 +258,18 @@ function AppInner() {
   const activeSection = useMemo(() => sections.find((s) => s.id === section)!, [section, sections]);
   const activeTab = tabBySection[section];
 
+  if (cloudConfigured) {
+    return (
+      <main className="cloud-standalone">
+        <div className="cloud-standalone__inner">
+          <Suspense fallback={<Text type="supporting" color="secondary">{t("common.loading")}</Text>}>
+            <CloudAccount />
+          </Suspense>
+        </div>
+      </main>
+    );
+  }
+
   const goTo = (target: SectionId, tab: string) => {
     setSection(target);
     setTabBySection((prev) => ({ ...prev, [target]: tab }));
