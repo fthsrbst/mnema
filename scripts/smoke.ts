@@ -10,6 +10,9 @@ const {
   addDocument,
   addRecallFeedback,
   addSessionLog,
+  agentActive,
+  agentCheckin,
+  agentCheckout,
   extractFileText,
   applyChanges,
   bridge,
@@ -19,6 +22,7 @@ const {
   consolidateMemories,
   configuredEmbeddingGeneration,
   collectChanges,
+  deleteAsset,
   deleteMemory,
   deleteMemoryRelation,
   detachProjectReferences,
@@ -28,6 +32,7 @@ const {
   getMemoryRelation,
   getDocument,
   getDb,
+  listAssets,
   listMemories,
   listMemoryRelations,
   knowledgeIntegrity,
@@ -38,6 +43,7 @@ const {
   getProject,
   getProfessionalProfile,
   hasVec,
+  pruneStalePresence,
   recall,
   recentSessionLogs,
   formatRecall,
@@ -46,10 +52,12 @@ const {
   resolveRelated,
   recordDeletion,
   recordAuditEvent,
+  saveAsset,
   saveMemoryRelation,
   saveMemory,
   searchChunks,
   searchMemories,
+  seedAssetsFromDisk,
   updateMemory,
   updateMemoryRelation,
   upsertProfessionalProfile,
@@ -702,6 +710,132 @@ if (embeddingsEnabled()) {
 } else {
   check("sorgu embedding LRU cache (embedding kapalı — atlandı)", true);
 }
+
+// --- assets (skills/prompts DB authority) + seed + sync roundtrip ---
+const seedResult = seedAssetsFromDisk();
+check(
+  "seedAssetsFromDisk: repo skills/prompts DB'ye seed edilir",
+  seedResult.seeded > 0 &&
+    listAssets("skill").some((a) => a.name === "hub-memory") &&
+    listAssets("prompt").some((a) => a.name === "master"),
+  `seeded=${seedResult.seeded}`
+);
+const reseedResult = seedAssetsFromDisk();
+check("seedAssetsFromDisk idempotent (var olanın üzerine yazmaz)", reseedResult.seeded === 0);
+
+const assetA = saveAsset("skill", "smoke-test-skill", "# Smoke Test Skill\n\nversiyon 1");
+check(
+  "asset save + list",
+  listAssets("skill").some((a) => a.name === "smoke-test-skill" && a.content === assetA.content)
+);
+const assetsSyncSnapshot = collectChanges("1970-01-01 00:00:00").assets ?? [];
+check(
+  "assets sync payload alanı dolduruluyor",
+  assetsSyncSnapshot.some((a: { name: string; kind: string }) => a.name === "smoke-test-skill" && a.kind === "skill"),
+  `count=${assetsSyncSnapshot.length}`
+);
+
+// başka bir cihaz aynı (kind,name) için bağımsız (farklı) uid ile daha yeni içerik gönderiyor —
+// UNIQUE(kind,name) çakışması yerine LWW ile (kind,name) fallback eşleşmesinden güncellemeli,
+// yerel uid korunmalı (bkz. sync.ts applyChangesUnsafe assets bloğu).
+const assetSyncTs = "2031-01-01 00:00:00.000";
+applyChanges({
+  ...emptyPayload,
+  now: assetSyncTs,
+  assets: [
+    {
+      uid: "smokeasset0000000000000000000002",
+      kind: "skill",
+      name: "smoke-test-skill",
+      content: "# Smoke Test Skill\n\nversiyon 2 (başka cihaz)",
+      created_at: assetSyncTs,
+      updated_at: assetSyncTs,
+    },
+  ],
+});
+const afterAssetConflict = listAssets("skill").find((a) => a.name === "smoke-test-skill");
+check(
+  "assets sync: (kind,name) fallback eşleşmesi UNIQUE çakışması yerine LWW ile günceller (uid sabit kalır)",
+  afterAssetConflict?.content.includes("versiyon 2") === true && afterAssetConflict?.uid === assetA.uid,
+  `content="${afterAssetConflict?.content.slice(0, 30)}", uid_sabit=${afterAssetConflict?.uid === assetA.uid}`
+);
+check(
+  "asset delete + tombstone",
+  deleteAsset("skill", "smoke-test-skill") &&
+    !listAssets("skill").some((a) => a.name === "smoke-test-skill") &&
+    Boolean(getDb().prepare("SELECT 1 FROM deletions WHERE tbl = 'assets' AND uid = ?").get(assetA.uid))
+);
+
+// --- agent presence (advisory koordinasyon — kilit DEĞİL) ---
+const presenceCheckin = agentCheckin({
+  project: "ai-hub",
+  task: "smoke test görevi",
+  branch: "smoke/presence",
+  machine: "smoke-machine",
+});
+check(
+  "agent_checkin yeni kayıt açar",
+  presenceCheckin.status === "active" && presenceCheckin.project === "ai-hub" && presenceCheckin.uid.length === 32
+);
+check(
+  "agent_active aktif kaydı döner (stale değil)",
+  agentActive("ai-hub").some((p: { uid: string; stale: boolean }) => p.uid === presenceCheckin.uid && p.stale === false)
+);
+
+const heartbeatUpdate = agentCheckin({
+  project: "ai-hub",
+  task: "smoke test görevi (güncellendi)",
+  uid: presenceCheckin.uid,
+});
+check(
+  "agent_checkin aynı uid ile heartbeat/task günceller (yeni kayıt açmaz)",
+  heartbeatUpdate.uid === presenceCheckin.uid && heartbeatUpdate.task === "smoke test görevi (güncellendi)"
+);
+
+const bridgeWithPresence = bridge("/home/fatih/ai-hub");
+check(
+  "bridge advisory presence uyarısını enjekte eder",
+  bridgeWithPresence.includes("aktif agent var") && bridgeWithPresence.includes("smoke test görevi (güncellendi)")
+);
+
+// bayatlık: heartbeat_at'i TTL'in ötesine manuel geri al → agent_active + bridge "stale" göstermeli
+getDb()
+  .prepare("UPDATE agent_presence SET heartbeat_at = strftime('%Y-%m-%d %H:%M:%f','now','-999 minutes') WHERE uid = ?")
+  .run(presenceCheckin.uid);
+check(
+  "agent_active bayat heartbeat'i stale işaretler (kilit değil, sadece uyarı)",
+  agentActive("ai-hub").some((p: { uid: string; stale: boolean }) => p.uid === presenceCheckin.uid && p.stale === true)
+);
+check(
+  "bridge stale presence'ı 'muhtemelen düşmüş' notuyla ayrı gösterir",
+  bridge("/home/fatih/ai-hub").includes("muhtemelen düşmüş")
+);
+
+const checkedOut = agentCheckout({ uid: presenceCheckin.uid });
+check(
+  "agent_checkout status=done yazar ve finished_at doldurur",
+  checkedOut?.status === "done" && Boolean(checkedOut.finished_at)
+);
+check(
+  "agent_active checkout sonrası kaydı listelemez",
+  !agentActive("ai-hub").some((p: { uid: string }) => p.uid === presenceCheckin.uid)
+);
+check("agent_checkout bilinmeyen uid → null", agentCheckout({ uid: "0".repeat(32) }) === null);
+
+// pruning: done + 7 günden eski kayıt tombstone'la silinmeli (sync'e taşınabilsin)
+getDb()
+  .prepare(
+    `UPDATE agent_presence SET finished_at = strftime('%Y-%m-%d %H:%M:%f','now','-10 days'),
+     updated_at = strftime('%Y-%m-%d %H:%M:%f','now','-10 days') WHERE uid = ?`
+  )
+  .run(presenceCheckin.uid);
+const prunedCount = pruneStalePresence();
+check(
+  "pruneStalePresence: 7+ günlük done kaydı tombstone'la siler",
+  prunedCount >= 1 &&
+    !getDb().prepare("SELECT 1 FROM agent_presence WHERE uid = ?").get(presenceCheckin.uid) &&
+    Boolean(getDb().prepare("SELECT 1 FROM deletions WHERE tbl = 'agent_presence' AND uid = ?").get(presenceCheckin.uid))
+);
 
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });
