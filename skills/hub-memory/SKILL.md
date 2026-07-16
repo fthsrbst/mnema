@@ -35,6 +35,9 @@ Hub, tüm cihazlardaki tüm agentların paylaştığı hafızadır. Sen kapanın
 - **Dedup:** `memory_save` benzer kayıt uyarısı dönerse ciddiye al — mevcut kaydı `memory_update` ile zenginleştir, yeni açtığını `memory_delete` ile geri al.
 - Yanlışlanan bilgiyi gördüğün an düzelt (`memory_update`) veya sil (`memory_delete`). Çelişkili hafıza, hafızasızlıktan kötüdür.
 
+## Eş zamanlı çalışma (agent presence — tavsiye niteliğinde, kilit DEĞİL)
+Bir projede çalışmaya BAŞLARKEN `agent_checkin(project, task, branch?)` çağır; iş bitince aynı uid ile `agent_checkout(uid)`. Bridge çıktısındaki "aktif agent var" uyarısı veya `agent_active(project)` sonucu bir mutual-exclusion kilidi DEĞİLDİR — agent'lar crash edebilir, bu yüzden sert kilit yerine sadece koordinasyon sinyali kullanılır. Aktif bir kayıt görsen bile işine devam edebilirsin; sadece aynı dosyalarda çakışma riskine karşı dikkatli ol. "Muhtemelen düşmüş" notlu (stale, ~30dk+ nabızsız) kayıtları yok say.
+
 ## Oturum sonunda
 1. `session_log`: yapılanlar, yarım kalanlar, sıradaki adım — project alanına kanonik adı ver ("proje map'i yok" uyarısı dönerse adı düzelt veya map aç).
 2. Odak/adımlar değiştiyse `project_update` ile `current_focus` ve `next_steps` güncelle. **Map'i güncellemeden kapatma:** bayat map bir sonraki agent'ı aktif olarak yanıltır — sonraki oturum "profil yok" diyen 2 gün önceki map'e güvenip yanlış yola girebilir (yaşanmış vaka: jobpilot).
