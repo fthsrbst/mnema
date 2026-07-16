@@ -6,6 +6,7 @@ import { searchChunks } from "./documents.js";
 import { getProject, resolveProjectFromPath } from "./projects.js";
 import { recentSessionLogs } from "./sessions.js";
 import { listMemoryRelations } from "./relations.js";
+import { agentActive, formatPresenceLines } from "./presence.js";
 import type { ScoredChunk, ScoredMemory } from "./types.js";
 
 export interface RecallResult {
@@ -133,6 +134,9 @@ export function bridge(cwd?: string, projectName?: string): string {
   const proj = getProject(name);
   if (!proj) return "";
   const lines: string[] = ["<hub-bridge>", `Aktif proje (hub map): **${proj.name}**${proj.status ? ` [${proj.status}]` : ""}`];
+  // Advisory presence: kilit değil, sadece "kim ne üzerinde çalışıyor" sinyali — en üstte,
+  // agent görev planlamaya başlamadan önce görsün.
+  lines.push(...formatPresenceLines(agentActive(proj.name)));
   if (proj.summary) lines.push(`Özet: ${proj.summary}`);
   if (proj.current_focus) lines.push(`Mevcut odak: ${proj.current_focus}`);
   if (typeof proj.architecture === "string" && proj.architecture) lines.push(`Mimari: ${proj.architecture}`);

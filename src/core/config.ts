@@ -139,6 +139,9 @@ export const config = {
   // Tek kanallı eşleşme cezası: sadece FTS (anahtar kelime) bulduysa gürültü olasılığı
   // yüksek — iki kanalın (FTS+vektör) anlaştığı kayıtlar öne geçer.
   recallSingleSourcePenalty: envNumber("HUB_RECALL_SINGLE_SOURCE_PENALTY", 0.6, { min: 0, max: 10 }),
+  // Agent presence advisory sinyali: bu süreden eski heartbeat "stale" (muhtemelen düşmüş) sayılır.
+  // Kilit DEĞİL — sadece bridge/agent_active çıktısındaki bir uyarı eşiği.
+  presenceTtlMin: envNumber("HUB_PRESENCE_TTL_MIN", 30, { min: 1, max: 10_080, integer: true }),
 };
 
 if (config.vectorBackend === "qdrant" && !config.qdrantUrl) {

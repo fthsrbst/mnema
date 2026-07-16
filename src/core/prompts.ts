@@ -1,13 +1,12 @@
 /**
- * Rol bazlı prompt kütüphanesi: prompts/master.md (mühendis zihniyeti çekirdeği)
- * + prompts/roles/<rol>.md. Agent'lar MCP prompt_get ile çeker; master her role
- * otomatik eklenir — böylece alt modeller de aynı disiplinle çalışır.
+ * Rol bazlı prompt kütüphanesi: DB authority (assets tablosu, kind='prompt' —
+ * bkz. assets.ts). prompts/master.md + prompts/roles/<rol>.md yalnızca ilk
+ * kurulum seed'idir; sonraki yazımlar DB'ye düşer ve sync ile otomatik yayılır.
+ * DB'de rol promptları 'roles/<rol>' adıyla saklanır (master ile ad çakışmasın
+ * diye); prompt_get/prompt_list dış davranışı (rol adı 'roles/' önekisiz) AYNEN
+ * korunur — bkz. dbName().
  */
-import fs from "node:fs";
-import path from "node:path";
-
-const PROMPTS_DIR = "./prompts";
-const ROLES_DIR = path.join(PROMPTS_DIR, "roles");
+import { getAsset, listAssets, saveAsset } from "./assets.js";
 
 export interface PromptInfo {
   name: string;
@@ -25,26 +24,26 @@ function safeName(name: string): string {
   return name.replace(/[^a-z0-9-]/gi, "");
 }
 
+function dbName(role: string): string {
+  const clean = safeName(role);
+  return clean === "master" ? "master" : `roles/${clean}`;
+}
+
 export function listPrompts(): { master: PromptInfo | null; roles: PromptInfo[] } {
-  const read = (file: string, name: string): PromptInfo | null => {
-    if (!fs.existsSync(file)) return null;
-    return { name, description: parseFrontmatter(fs.readFileSync(file, "utf8")).description };
-  };
-  const master = read(path.join(PROMPTS_DIR, "master.md"), "master");
-  const roles = fs.existsSync(ROLES_DIR)
-    ? fs
-        .readdirSync(ROLES_DIR)
-        .filter((f) => f.endsWith(".md"))
-        .map((f) => read(path.join(ROLES_DIR, f), f.replace(/\.md$/, "")))
-        .filter((p): p is PromptInfo => p !== null)
-    : [];
+  const assets = listAssets("prompt");
+  const masterAsset = assets.find((a) => a.name === "master");
+  const master = masterAsset
+    ? { name: "master", description: parseFrontmatter(masterAsset.content).description }
+    : null;
+  const roles = assets
+    .filter((a) => a.name.startsWith("roles/"))
+    .map((a) => ({ name: a.name.slice("roles/".length), description: parseFrontmatter(a.content).description }));
   return { master, roles };
 }
 
 export function getPromptRaw(name: string): string | null {
-  const clean = safeName(name);
-  const file = clean === "master" ? path.join(PROMPTS_DIR, "master.md") : path.join(ROLES_DIR, `${clean}.md`);
-  return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+  const asset = getAsset("prompt", dbName(name));
+  return asset ? asset.content : null;
 }
 
 /** Rol prompt'unu master zihniyet çekirdeğiyle birleştirip döner. */
@@ -61,7 +60,5 @@ export function composePrompt(role: string): string | null {
 export function savePrompt(name: string, content: string): void {
   const clean = safeName(name);
   if (!clean) throw new Error("Geçersiz prompt adı (a-z, 0-9, - kullan)");
-  const file = clean === "master" ? path.join(PROMPTS_DIR, "master.md") : path.join(ROLES_DIR, `${clean}.md`);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, content);
+  saveAsset("prompt", dbName(clean), content);
 }

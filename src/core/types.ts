@@ -214,3 +214,40 @@ export interface SessionLog {
   created_at: string;
   updated_at: string;
 }
+
+export type AssetKind = "skill" | "prompt";
+
+/** DB-authority skill/prompt kaydı (bkz. src/core/assets.ts). */
+export interface AssetRecord {
+  id: number;
+  uid: string;
+  kind: AssetKind;
+  name: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AgentPresenceStatus = "active" | "done" | "abandoned";
+
+/** Advisory agent-presence kaydı — mutual-exclusion kilidi DEĞİL, koordinasyon sinyali. */
+export interface AgentPresence {
+  id: number;
+  uid: string;
+  machine: string;
+  agent: string;
+  project: string;
+  branch: string | null;
+  task: string;
+  status: AgentPresenceStatus;
+  started_at: string;
+  heartbeat_at: string;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** agent_active() dönüşü: bayatlık TTL'e göre işaretlenmiş kayıt. */
+export interface AgentPresenceView extends AgentPresence {
+  stale: boolean;
+}

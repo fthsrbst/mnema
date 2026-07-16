@@ -32,4 +32,6 @@ export * from "./sync.js";
 export * from "./admin.js";
 export * from "./prompts.js";
 export * from "./skills.js";
+export * from "./assets.js";
+export * from "./presence.js";
 export * from "./digest.js";

@@ -118,6 +118,22 @@ export interface SyncPayload {
   projects: { name: string; data: string; updated_at: string }[];
   sessions: { uid: string; project: string | null; summary: string; source: string | null; created_at: string; updated_at?: string }[];
   machines: { name: string; host: string; lmstudio_port: number | null; ollama_port?: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }[];
+  /** Eski peer'lar bu alanı hiç göndermez (bkz. applyChangesUnsafe: yokluğu boş dizi sayılır). */
+  assets?: { uid: string; kind: "skill" | "prompt"; name: string; content: string; created_at: string; updated_at: string }[];
+  agent_presence?: {
+    uid: string;
+    machine: string;
+    agent: string;
+    project: string;
+    branch: string | null;
+    task: string;
+    status: "active" | "done" | "abandoned";
+    started_at: string;
+    heartbeat_at: string;
+    finished_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }[];
   deletions: { uid: string; tbl: string; deleted_at: string }[];
 }
 
@@ -181,6 +197,15 @@ export function collectChanges(since: string): SyncPayload {
       .prepare("SELECT uid, project, summary, source, created_at, updated_at FROM session_logs WHERE updated_at >= ?")
       .all(since) as SyncPayload["sessions"],
     machines: db.prepare("SELECT name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
+    assets: db
+      .prepare("SELECT uid, kind, name, content, created_at, updated_at FROM assets WHERE updated_at >= ?")
+      .all(since) as SyncPayload["assets"],
+    agent_presence: db
+      .prepare(
+        `SELECT uid, machine, agent, project, branch, task, status, started_at, heartbeat_at, finished_at, created_at, updated_at
+         FROM agent_presence WHERE updated_at >= ?`
+      )
+      .all(since) as SyncPayload["agent_presence"],
     deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at >= ?").all(since) as SyncPayload["deletions"],
   };
 }
@@ -213,6 +238,8 @@ export interface ApplyResult {
   projects: number;
   sessions: number;
   machines: number;
+  assets: number;
+  agent_presence: number;
   deletions: number;
   vectors_skipped?: number;
 }
@@ -220,7 +247,10 @@ export interface ApplyResult {
 /** Uzaktan gelen değişiklikleri LWW ile uygula. */
 function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
   const db = getDb();
-  const result: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, deletions: 0, vectors_skipped: 0 };
+  const result: ApplyResult = {
+    memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0,
+    assets: 0, agent_presence: 0, deletions: 0, vectors_skipped: 0,
+  };
   const generationMatches = payload.embedding_generation
     ? payload.embedding_generation === configuredEmbeddingGeneration()
     : config.acceptLegacyVectors;
@@ -450,6 +480,58 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
     result.machines++;
   }
 
+  // (kind,name) fallback eşleşmesi de tutulur: birden çok cihaz aynı repo skill/prompt
+  // dosyalarını bağımsız seed ederse (deterministik seed uid'i olmayan eski veri, elle
+  // düzenleme, vb.) UNIQUE(kind,name) çakışması yerine LWW ile aynı satıra yakınsar.
+  for (const raw of payload.assets ?? []) {
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'assets' AND uid = ?").get(raw.uid) as
+      | { deleted_at: string }
+      | undefined;
+    if (tomb && tomb.deleted_at >= raw.updated_at) continue;
+    const local = db
+      .prepare("SELECT * FROM assets WHERE uid = ? OR (kind = ? AND name = ?) ORDER BY uid = ? DESC LIMIT 1")
+      .get(raw.uid, raw.kind, raw.name, raw.uid) as { id: number; kind: string; name: string; content: string; updated_at: string } | undefined;
+    const fp = (r: { kind: string; name: string; content: string }) => contentFingerprint([r.kind, r.name, r.content]);
+    if (local) {
+      if (!remoteWins(local.updated_at, raw.updated_at, () => fp(local), () => fp(raw))) continue;
+      db.prepare("UPDATE assets SET content=@content, updated_at=@updated_at WHERE id=@id").run({
+        content: raw.content, updated_at: raw.updated_at, id: local.id,
+      });
+    } else {
+      db.prepare(
+        `INSERT INTO assets(uid, kind, name, content, created_at, updated_at)
+         VALUES (@uid, @kind, @name, @content, @created_at, @updated_at)`
+      ).run(raw);
+    }
+    result.assets++;
+  }
+
+  for (const raw of payload.agent_presence ?? []) {
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'agent_presence' AND uid = ?").get(raw.uid) as
+      | { deleted_at: string }
+      | undefined;
+    if (tomb && tomb.deleted_at >= raw.updated_at) continue;
+    const local = db.prepare("SELECT * FROM agent_presence WHERE uid = ?").get(raw.uid) as
+      | { id: number; updated_at: string; machine: string; agent: string; project: string; branch: string | null; task: string; status: string; started_at: string; heartbeat_at: string; finished_at: string | null }
+      | undefined;
+    const fp = (r: { machine: string; agent: string; project: string; branch: string | null; task: string; status: string; heartbeat_at: string; finished_at: string | null }) =>
+      contentFingerprint([r.machine, r.agent, r.project, r.branch, r.task, r.status, r.heartbeat_at, r.finished_at]);
+    if (local) {
+      if (!remoteWins(local.updated_at, raw.updated_at, () => fp(local), () => fp(raw))) continue;
+      db.prepare(
+        `UPDATE agent_presence SET machine=@machine, agent=@agent, project=@project, branch=@branch, task=@task,
+         status=@status, started_at=@started_at, heartbeat_at=@heartbeat_at, finished_at=@finished_at, updated_at=@updated_at
+         WHERE uid=@uid`
+      ).run(raw);
+    } else {
+      db.prepare(
+        `INSERT INTO agent_presence(uid, machine, agent, project, branch, task, status, started_at, heartbeat_at, finished_at, created_at, updated_at)
+         VALUES (@uid, @machine, @agent, @project, @branch, @task, @status, @started_at, @heartbeat_at, @finished_at, @created_at, @updated_at)`
+      ).run(raw);
+    }
+    result.agent_presence++;
+  }
+
   for (const del of payload.deletions ?? []) {
     // deleted_at donmasın: geç gelen silme daha yeni ise tombstone'u ilerlet (LWW)
     db.prepare(
@@ -491,6 +573,18 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       const row = db.prepare(`SELECT updated_at FROM ${tbl} WHERE name = ?`).get(del.uid) as { updated_at: string } | undefined;
       if (row && row.updated_at <= del.deleted_at) {
         db.prepare(`DELETE FROM ${tbl} WHERE name = ?`).run(del.uid);
+        result.deletions++;
+      }
+    } else if (del.tbl === "assets") {
+      const row = db.prepare("SELECT id, updated_at FROM assets WHERE uid = ?").get(del.uid) as { id: number; updated_at: string } | undefined;
+      if (row && row.updated_at <= del.deleted_at) {
+        db.prepare("DELETE FROM assets WHERE id = ?").run(row.id);
+        result.deletions++;
+      }
+    } else if (del.tbl === "agent_presence") {
+      const row = db.prepare("SELECT id, updated_at FROM agent_presence WHERE uid = ?").get(del.uid) as { id: number; updated_at: string } | undefined;
+      if (row && row.updated_at <= del.deleted_at) {
+        db.prepare("DELETE FROM agent_presence WHERE id = ?").run(row.id);
         result.deletions++;
       }
     }
@@ -561,7 +655,7 @@ async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResul
     setSyncState({ last_pull: remote.now });
 
     const local = collectChanges(state.last_push);
-    let pushed: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, deletions: 0 };
+    let pushed: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, assets: 0, agent_presence: 0, deletions: 0 };
     const hasLocal = Object.entries(local).some(([k, v]) => k !== "now" && Array.isArray(v) && v.length > 0);
     if (hasLocal) {
       const pushRes = await fetch(`${primaryUrl}/api/sync/apply`, {

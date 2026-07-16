@@ -180,6 +180,41 @@ CREATE TABLE IF NOT EXISTS sync_state(
   last_push TEXT
 );
 
+-- Skill/prompt içeriği: DB authority (bkz. src/core/assets.ts). Repo'daki skills/*/SKILL.md
+-- ve prompts/**/*.md dosyaları yalnızca ilk kurulum seed'idir; sonraki yazımlar buraya
+-- düşer ve sync ile diğer cihazlara otomatik yayılır (git commit/push gerekmez).
+CREATE TABLE IF NOT EXISTS assets(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL CHECK(kind IN ('skill', 'prompt')),
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  UNIQUE(kind, name)
+);
+CREATE INDEX IF NOT EXISTS idx_assets_updated ON assets(updated_at);
+
+-- Advisory agent-presence koordinasyonu: mutual-exclusion kilidi DEĞİL, "kim ne üzerinde
+-- çalışıyor" sinyali. Bayatlık heartbeat_at + HUB_PRESENCE_TTL_MIN ile ele alınır (bkz. presence.ts).
+CREATE TABLE IF NOT EXISTS agent_presence(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  machine TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  project TEXT NOT NULL,
+  branch TEXT,
+  task TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('active', 'done', 'abandoned')) DEFAULT 'active',
+  started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  heartbeat_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  finished_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_presence_project_status ON agent_presence(project, status, heartbeat_at);
+CREATE INDEX IF NOT EXISTS idx_agent_presence_updated ON agent_presence(updated_at);
+
 CREATE TABLE IF NOT EXISTS system_metadata(
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,

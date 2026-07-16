@@ -171,6 +171,27 @@ export const sessionInputSchema = z
   })
   .strict();
 
+const presenceUid = z.string().trim().regex(/^[a-f0-9]{32}$/i);
+
+export const agentCheckinSchema = z
+  .object({
+    project: projectNameSchema,
+    task: z.string().trim().min(1).max(300),
+    branch: z.string().trim().min(1).max(200).nullable().optional(),
+    machine: z.string().trim().min(1).max(100).optional(),
+    agent: z.string().trim().min(1).max(100).optional(),
+    /** Verilmezse yeni kayıt açılır ve uid dönülür; verilirse heartbeat/task/branch günceller. */
+    uid: presenceUid.optional(),
+  })
+  .strict();
+
+export const agentCheckoutSchema = z
+  .object({
+    uid: presenceUid,
+    status: z.enum(["done", "abandoned"]).optional(),
+  })
+  .strict();
+
 export const feedbackInputBaseSchema = z
   .object({
     query: z.string().trim().min(1).max(10_000),
@@ -365,9 +386,35 @@ export const syncPayloadSchema = z.object({
     notes: z.string().max(20_000).nullable(),
     updated_at: syncTimestamp,
   }).strict()).max(10_000),
+  // Eski peer'lar bu alanı hiç göndermez → applyChanges yokluğunu boş dizi sayar.
+  assets: z.array(z.object({
+    uid: syncUid,
+    kind: z.enum(["skill", "prompt"]),
+    name: z.string().min(1).max(300),
+    content: z.string().min(1).max(2_000_000),
+    created_at: syncTimestamp,
+    updated_at: syncTimestamp,
+  }).strict()).max(100_000).optional(),
+  agent_presence: z.array(z.object({
+    uid: syncUid,
+    machine: z.string().min(1).max(100),
+    agent: z.string().min(1).max(100),
+    project: z.string().min(1).max(100),
+    branch: z.string().max(200).nullable(),
+    task: z.string().min(1).max(300),
+    status: z.enum(["active", "done", "abandoned"]),
+    started_at: syncTimestamp,
+    heartbeat_at: syncTimestamp,
+    finished_at: syncTimestamp.nullable(),
+    created_at: syncTimestamp,
+    updated_at: syncTimestamp,
+  }).strict()).max(100_000).optional(),
   deletions: z.array(z.object({
     uid: syncUid,
-    tbl: z.enum(["memories", "documents", "memory_relations", "projects", "session_logs", "machines"]),
+    tbl: z.enum([
+      "memories", "documents", "memory_relations", "projects", "session_logs",
+      "machines", "assets", "agent_presence",
+    ]),
     deleted_at: syncTimestamp,
   }).strict()).max(500_000),
 }).strict();
