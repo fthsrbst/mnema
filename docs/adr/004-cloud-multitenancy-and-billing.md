@@ -45,13 +45,16 @@ deduplicated by provider event id, and applied only when newer than stored state
   metadata.
 - Webhook handlers verify signatures before JSON parsing and persist event ids
   before side effects.
+- Billable project and document allocations use transaction-scoped Postgres RPCs;
+  authenticated clients do not have direct insert grants that could bypass quotas.
 - Tenant isolation is release-blocking and tested against Postgres-compatible RLS,
   not only mocked application code.
 
 ## Consequences
 
 - The local SQLite core remains simple and usable offline.
-- Cloud storage needs a Postgres adapter behind the existing core boundaries;
+- Cloud storage is exposed through a narrow Postgres/RLS knowledge gateway for
+  project maps, memories, documents, sessions, relations, and full-text search.
   SQLite files are not copied into a shared cloud database.
 - A user may belong to more than one organization, while each request has exactly
   one active organization.

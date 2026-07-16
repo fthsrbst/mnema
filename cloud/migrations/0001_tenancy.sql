@@ -126,6 +126,8 @@ create table if not exists public.memories (
 );
 create index if not exists memories_tenant_project_idx
   on public.memories(organization_id, project_id, updated_at desc);
+create index if not exists memories_search_idx
+  on public.memories using gin (to_tsvector('simple', title || ' ' || body));
 
 create table if not exists public.documents (
   organization_id uuid not null,
@@ -158,6 +160,8 @@ create table if not exists public.document_chunks (
   foreign key (organization_id, document_id)
     references public.documents(organization_id, id) on delete cascade
 );
+create index if not exists document_chunks_search_idx
+  on public.document_chunks using gin (to_tsvector('simple', coalesce(heading, '') || ' ' || content));
 
 create table if not exists public.session_logs (
   organization_id uuid not null,
@@ -239,6 +243,243 @@ create table if not exists public.audit_events (
   primary key (organization_id, id)
 );
 
+-- Writes that affect billable limits go through transaction-scoped RPCs.
+-- Locking the organization row serializes concurrent quota checks, so two
+-- requests cannot both observe the same remaining slot and over-allocate it.
+create or replace function app.active_plan(target_organization_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select coalesce((
+    select subscription.plan
+    from public.subscriptions subscription
+    where subscription.organization_id = target_organization_id
+      and subscription.status in ('trialing', 'active', 'past_due')
+    limit 1
+  ), 'free')
+$$;
+
+create or replace function app.create_project(
+  target_organization_id uuid,
+  project_slug text,
+  project_map jsonb default '{}'::jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  new_id uuid;
+  project_limit integer;
+begin
+  if not app.has_organization_role(target_organization_id, array['owner','admin','member']) then
+    raise exception 'insufficient organization role' using errcode = '42501';
+  end if;
+  perform 1 from public.organizations where id = target_organization_id for update;
+  project_limit := case app.active_plan(target_organization_id)
+    when 'starter' then 10
+    when 'pro' then 50
+    when 'team' then 250
+    else 2
+  end;
+  if (select count(*) from public.projects where organization_id = target_organization_id) >= project_limit then
+    raise exception 'project quota exceeded' using errcode = 'P0001', detail = 'project_quota_exceeded';
+  end if;
+  insert into public.projects(organization_id, slug, map)
+    values (target_organization_id, project_slug, coalesce(project_map, '{}'::jsonb))
+    returning id into new_id;
+  return new_id;
+end
+$$;
+
+create or replace function app.add_memory(
+  target_organization_id uuid,
+  target_project_id uuid,
+  memory_type text,
+  memory_title text,
+  memory_body text,
+  memory_tags text[] default '{}',
+  memory_importance real default 1
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  new_id uuid;
+  storage_limit_bytes bigint;
+  used_storage_bytes bigint;
+begin
+  if not app.has_organization_role(target_organization_id, array['owner','admin','member']) then
+    raise exception 'insufficient organization role' using errcode = '42501';
+  end if;
+  if memory_type not in ('fact','preference','decision','howto','context') then
+    raise exception 'invalid memory type' using errcode = '22023';
+  end if;
+  perform 1 from public.organizations where id = target_organization_id for update;
+  storage_limit_bytes := case app.active_plan(target_organization_id)
+    when 'starter' then 1024::bigint * 1024 * 1024
+    when 'pro' then 5120::bigint * 1024 * 1024
+    when 'team' then 20480::bigint * 1024 * 1024
+    else 100::bigint * 1024 * 1024
+  end;
+  select
+    coalesce((select sum(octet_length(title) + octet_length(body)) from public.memories where organization_id = target_organization_id), 0)
+    + coalesce((select sum(octet_length(content)) from public.document_chunks where organization_id = target_organization_id), 0)
+    into used_storage_bytes;
+  if used_storage_bytes + octet_length(memory_title) + octet_length(memory_body) > storage_limit_bytes then
+    raise exception 'storage quota exceeded' using errcode = 'P0001', detail = 'storage_quota_exceeded';
+  end if;
+  insert into public.memories(organization_id, project_id, type, title, body, tags, importance)
+    values (target_organization_id, target_project_id, memory_type, memory_title, memory_body,
+            coalesce(memory_tags, '{}'), memory_importance)
+    returning id into new_id;
+  return new_id;
+end
+$$;
+
+create or replace function app.add_document(
+  target_organization_id uuid,
+  target_project_id uuid,
+  document_uri text,
+  document_title text,
+  document_source text,
+  document_kind text,
+  document_content text
+)
+returns table(document_id uuid, chunk_id uuid)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  storage_limit_bytes bigint;
+  used_storage_bytes bigint;
+begin
+  if not app.has_organization_role(target_organization_id, array['owner','admin','member']) then
+    raise exception 'insufficient organization role' using errcode = '42501';
+  end if;
+  perform 1 from public.organizations where id = target_organization_id for update;
+  storage_limit_bytes := case app.active_plan(target_organization_id)
+    when 'starter' then 1024::bigint * 1024 * 1024
+    when 'pro' then 5120::bigint * 1024 * 1024
+    when 'team' then 20480::bigint * 1024 * 1024
+    else 100::bigint * 1024 * 1024
+  end;
+  select
+    coalesce((select sum(octet_length(title) + octet_length(body)) from public.memories where organization_id = target_organization_id), 0)
+    + coalesce((select sum(octet_length(content)) from public.document_chunks where organization_id = target_organization_id), 0)
+    into used_storage_bytes;
+  if used_storage_bytes + octet_length(document_content) > storage_limit_bytes then
+    raise exception 'storage quota exceeded' using errcode = 'P0001', detail = 'storage_quota_exceeded';
+  end if;
+  insert into public.documents(organization_id, project_id, uri, title, source, kind)
+    values (target_organization_id, target_project_id, document_uri, document_title, document_source,
+            coalesce(document_kind, 'reference'))
+    returning id into document_id;
+  insert into public.document_chunks(organization_id, document_id, sequence, content)
+    values (target_organization_id, document_id, 0, document_content)
+    returning id into chunk_id;
+  return next;
+end
+$$;
+
+create or replace function app.search_knowledge(
+  target_organization_id uuid,
+  search_query text,
+  result_limit integer default 20
+)
+returns table(
+  resource_type text,
+  resource_id uuid,
+  project_id uuid,
+  title text,
+  snippet text,
+  rank real
+)
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  with query as (select websearch_to_tsquery('simple', search_query) value),
+  candidates as (
+    select 'memory'::text resource_type, memory.id resource_id, memory.project_id,
+           memory.title, left(memory.body, 320) snippet,
+           ts_rank(to_tsvector('simple', memory.title || ' ' || memory.body), query.value) rank
+    from public.memories memory, query
+    where memory.organization_id = target_organization_id
+      and to_tsvector('simple', memory.title || ' ' || memory.body) @@ query.value
+    union all
+    select 'document'::text, document.id, document.project_id, document.title,
+           left(chunk.content, 320),
+           ts_rank(to_tsvector('simple', coalesce(chunk.heading, '') || ' ' || chunk.content), query.value)
+    from public.documents document
+    join public.document_chunks chunk
+      on chunk.organization_id = document.organization_id and chunk.document_id = document.id,
+      query
+    where document.organization_id = target_organization_id
+      and to_tsvector('simple', coalesce(chunk.heading, '') || ' ' || chunk.content) @@ query.value
+  )
+  select * from candidates order by rank desc limit least(greatest(result_limit, 1), 50)
+$$;
+
+revoke all on function app.active_plan(uuid) from public;
+revoke all on function app.create_project(uuid, text, jsonb) from public;
+revoke all on function app.add_memory(uuid, uuid, text, text, text, text[], real) from public;
+revoke all on function app.add_document(uuid, uuid, text, text, text, text, text) from public;
+revoke all on function app.search_knowledge(uuid, text, integer) from public;
+grant execute on function app.create_project(uuid, text, jsonb) to authenticated;
+grant execute on function app.add_memory(uuid, uuid, text, text, text, text[], real) to authenticated;
+grant execute on function app.add_document(uuid, uuid, text, text, text, text, text) to authenticated;
+grant execute on function app.search_knowledge(uuid, text, integer) to authenticated;
+
+create or replace function app.protect_membership_identity()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.organization_id <> old.organization_id or new.user_id <> old.user_id then
+    raise exception 'membership identity is immutable' using errcode = '42501';
+  end if;
+  return new;
+end
+$$;
+
+create or replace function app.prevent_ownerless_organization()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not exists (
+    select 1 from public.organization_members member
+    where member.organization_id = old.organization_id and member.role = 'owner'
+  ) then
+    raise exception 'organization must retain an owner' using errcode = '23514';
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end
+$$;
+
+drop trigger if exists protect_membership_identity on public.organization_members;
+create trigger protect_membership_identity
+before update on public.organization_members
+for each row execute function app.protect_membership_identity();
+
+drop trigger if exists prevent_ownerless_organization on public.organization_members;
+create constraint trigger prevent_ownerless_organization
+after update or delete on public.organization_members
+deferrable initially immediate
+for each row execute function app.prevent_ownerless_organization();
+
 -- Every tenant-owned table is both RLS-enabled and forced. FORCE protects
 -- against accidental access through table-owner application connections.
 alter table public.profiles enable row level security;
@@ -284,14 +525,26 @@ create policy organization_members_member_select on public.organization_members
   for select to authenticated using (app.is_organization_member(organization_id));
 create policy organization_members_admin_insert on public.organization_members
   for insert to authenticated
-  with check (app.has_organization_role(organization_id, array['owner', 'admin']));
+  with check (
+    app.has_organization_role(organization_id, array['owner'])
+    or (app.has_organization_role(organization_id, array['admin']) and role <> 'owner')
+  );
 create policy organization_members_admin_update on public.organization_members
   for update to authenticated
-  using (app.has_organization_role(organization_id, array['owner', 'admin']))
-  with check (app.has_organization_role(organization_id, array['owner', 'admin']));
+  using (
+    app.has_organization_role(organization_id, array['owner'])
+    or (app.has_organization_role(organization_id, array['admin']) and role <> 'owner')
+  )
+  with check (
+    app.has_organization_role(organization_id, array['owner'])
+    or (app.has_organization_role(organization_id, array['admin']) and role <> 'owner')
+  );
 create policy organization_members_admin_delete on public.organization_members
   for delete to authenticated
-  using (app.has_organization_role(organization_id, array['owner', 'admin']));
+  using (
+    app.has_organization_role(organization_id, array['owner'])
+    or (app.has_organization_role(organization_id, array['admin']) and role <> 'owner')
+  );
 
 -- Repeatable data-table policies. Reads require membership; writes require an
 -- owner/admin/member role. Tenant ids are checked on both old and new rows.
@@ -362,10 +615,10 @@ grant usage on schema public, app to authenticated;
 grant select, insert, update, delete on public.profiles to authenticated;
 grant select, update on public.organizations to authenticated;
 grant select, insert, update, delete on public.organization_members to authenticated;
-grant select, insert, update, delete on public.projects to authenticated;
-grant select, insert, update, delete on public.memories to authenticated;
-grant select, insert, update, delete on public.documents to authenticated;
-grant select, insert, update, delete on public.document_chunks to authenticated;
+grant select, update, delete on public.projects to authenticated;
+grant select, update, delete on public.memories to authenticated;
+grant select, update, delete on public.documents to authenticated;
+grant select, update, delete on public.document_chunks to authenticated;
 grant select, insert, update, delete on public.session_logs to authenticated;
 grant select, insert, update, delete on public.memory_relations to authenticated;
 grant select on public.audit_events to authenticated;

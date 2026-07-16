@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
+import { PLAN_ENTITLEMENTS, subscriptionHasAccess } from "./billing.js";
 import type { CloudRuntimeConfig } from "./cloud-config.js";
 import { createSupabasePaddleStore } from "./cloud-store.js";
 import { createPaddleCheckout, processPaddleWebhook } from "./paddle.js";
@@ -27,6 +28,16 @@ const membershipSchema = z.object({
     .nullable()
     .optional(),
 });
+type CloudMembership = z.infer<typeof membershipSchema>;
+
+const projectSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  map: z.unknown(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+const recordArraySchema = z.array(z.record(z.string(), z.unknown()));
 
 function bearer(req: Request): string {
   const header = req.headers.authorization;
@@ -69,6 +80,10 @@ function userHeaders(config: CloudRuntimeConfig, token: string, prefer?: string)
   };
 }
 
+function organizationId(req: Request): string {
+  return z.string().uuid().parse(req.header("x-mnema-organization-id"));
+}
+
 async function memberships(
   config: CloudRuntimeConfig,
   user: VerifiedCloudUser,
@@ -87,6 +102,54 @@ async function memberships(
   return z.array(membershipSchema).parse(await response.json());
 }
 
+async function requireMembership(
+  req: Request,
+  config: CloudRuntimeConfig,
+  user: VerifiedCloudUser,
+  request: typeof globalThis.fetch,
+  write = false
+): Promise<{ organizationId: string; membership: CloudMembership }> {
+  const selectedOrganizationId = organizationId(req);
+  const [membership] = await memberships(config, user, request, selectedOrganizationId);
+  if (!membership || (write && membership.role === "viewer")) throw new CloudHttpError(403, "forbidden");
+  return { organizationId: selectedOrganizationId, membership };
+}
+
+async function restJson(
+  response: globalThis.Response,
+  failureCode: string
+): Promise<unknown> {
+  if (response.ok) return response.status === 204 ? null : response.json();
+  const providerBody = await response.text();
+  if (providerBody.includes("project_quota_exceeded")) throw new CloudHttpError(409, "project_quota_exceeded");
+  if (providerBody.includes("storage_quota_exceeded")) throw new CloudHttpError(413, "storage_quota_exceeded");
+  if (response.status === 401 || response.status === 403) throw new CloudHttpError(403, "forbidden");
+  if (response.status === 409) throw new CloudHttpError(409, "conflict");
+  throw new CloudHttpError(502, failureCode);
+}
+
+async function rpc(
+  config: CloudRuntimeConfig,
+  user: VerifiedCloudUser,
+  request: typeof globalThis.fetch,
+  name: string,
+  body: Record<string, unknown>,
+  failureCode: string
+): Promise<unknown> {
+  return restJson(
+    await request(`${config.supabaseUrl}/rest/v1/rpc/${name}`, {
+      method: "POST",
+      headers: userHeaders(config, user.token),
+      body: JSON.stringify(body),
+    }),
+    failureCode
+  );
+}
+
+function tenantQuery(organizationId: string, extra: Record<string, string> = {}): URLSearchParams {
+  return new URLSearchParams({ organization_id: `eq.${organizationId}`, ...extra });
+}
+
 function sendCloudError(res: Response, error: unknown) {
   if (error instanceof CloudHttpError) return res.status(error.status).json({ error: error.code });
   if (error instanceof z.ZodError) return res.status(400).json({ error: "invalid_request" });
@@ -98,6 +161,7 @@ export function buildCloudAccountRouter(
   request: typeof globalThis.fetch = globalThis.fetch
 ) {
   const router = Router();
+  const billingStore = createSupabasePaddleStore(config, request);
   router.get("/session", async (req, res) => {
     try {
       const user = await verifyCloudUser(req, config, request);
@@ -125,9 +189,8 @@ export function buildCloudAccountRouter(
   router.post("/billing/checkout", async (req, res) => {
     try {
       const user = await verifyCloudUser(req, config, request);
-      const organizationId = z.string().uuid().parse(req.header("x-mnema-organization-id"));
-      const [membership] = await memberships(config, user, request, organizationId);
-      if (!membership || !["owner", "admin"].includes(membership.role)) throw new CloudHttpError(403, "forbidden");
+      const { organizationId, membership } = await requireMembership(req, config, user, request);
+      if (!["owner", "admin"].includes(membership.role)) throw new CloudHttpError(403, "forbidden");
       if (user.aal !== "aal2") throw new CloudHttpError(403, "mfa_required");
       const input = z.object({ plan: z.enum(["starter", "pro", "team"]), interval: z.enum(["monthly", "annual"]) }).parse(req.body);
       const checkout = await createPaddleCheckout(
@@ -141,6 +204,173 @@ export function buildCloudAccountRouter(
         { organizationId, userId: user.id, ...input }
       );
       res.status(201).json(checkout);
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.get("/billing/subscription", async (req, res) => {
+    try {
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId } = await requireMembership(req, config, user, request);
+      const subscription = await billingStore.getSubscription(organizationId);
+      const plan = subscription && subscriptionHasAccess(subscription.status) ? subscription.plan : "free";
+      res.json({
+        plan,
+        status: subscription?.status ?? "none",
+        currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
+        cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
+        entitlements: PLAN_ENTITLEMENTS[plan],
+      });
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.get("/knowledge/projects", async (req, res) => {
+    try {
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId } = await requireMembership(req, config, user, request);
+      const params = tenantQuery(organizationId, {
+        select: "id,slug,map,created_at,updated_at",
+        order: "updated_at.desc",
+      });
+      const rows = await restJson(
+        await request(`${config.supabaseUrl}/rest/v1/projects?${params}`, {
+          headers: userHeaders(config, user.token),
+        }),
+        "project_list_failed"
+      );
+      res.json({ projects: z.array(projectSchema).parse(rows) });
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.post("/knowledge/projects", async (req, res) => {
+    try {
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId } = await requireMembership(req, config, user, request, true);
+      const input = z.object({
+        slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/),
+        map: z.record(z.string(), z.unknown()).default({}),
+      }).parse(req.body);
+      const id = z.string().uuid().parse(await rpc(config, user, request, "create_project", {
+        target_organization_id: organizationId,
+        project_slug: input.slug,
+        project_map: input.map,
+      }, "project_create_failed"));
+      res.status(201).json({ id });
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.get("/knowledge/projects/:projectId", async (req, res) => {
+    try {
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId } = await requireMembership(req, config, user, request);
+      const projectId = z.string().uuid().parse(req.params.projectId);
+      const projectParams = tenantQuery(organizationId, {
+        id: `eq.${projectId}`,
+        select: "id,slug,map,created_at,updated_at",
+        limit: "1",
+      });
+      const scoped = (select: string, projectField = "project_id") => tenantQuery(organizationId, {
+        [projectField]: `eq.${projectId}`,
+        select,
+        order: "updated_at.desc",
+        limit: "100",
+      });
+      const [projectRows, memoriesRows, documentsRows, sessionsRows, relationRows] = await Promise.all([
+        restJson(await request(`${config.supabaseUrl}/rest/v1/projects?${projectParams}`, { headers: userHeaders(config, user.token) }), "project_get_failed"),
+        restJson(await request(`${config.supabaseUrl}/rest/v1/memories?${scoped("id,type,title,body,tags,importance,created_at,updated_at")}`, { headers: userHeaders(config, user.token) }), "memory_list_failed"),
+        restJson(await request(`${config.supabaseUrl}/rest/v1/documents?${scoped("id,uri,title,source,kind,is_current,created_at,updated_at")}`, { headers: userHeaders(config, user.token) }), "document_list_failed"),
+        restJson(await request(`${config.supabaseUrl}/rest/v1/session_logs?${scoped("id,summary,source,created_at,updated_at")}`, { headers: userHeaders(config, user.token) }), "session_list_failed"),
+        restJson(await request(`${config.supabaseUrl}/rest/v1/memory_relations?${tenantQuery(organizationId, { select: "id,from_memory_id,to_memory_id,relation_type,confidence,created_at,updated_at", limit: "500" })}`, { headers: userHeaders(config, user.token) }), "relation_list_failed"),
+      ]);
+      const [project] = z.array(projectSchema).parse(projectRows);
+      if (!project) throw new CloudHttpError(404, "project_not_found");
+      const memories = recordArraySchema.parse(memoriesRows);
+      const memoryIds = new Set(memories.map((memory) => String(memory.id)));
+      const relations = recordArraySchema.parse(relationRows).filter(
+        (relation) => memoryIds.has(String(relation.from_memory_id)) && memoryIds.has(String(relation.to_memory_id))
+      );
+      res.json({
+        project,
+        memories,
+        documents: recordArraySchema.parse(documentsRows),
+        sessions: recordArraySchema.parse(sessionsRows),
+        relations,
+      });
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.post("/knowledge/memories", async (req, res) => {
+    try {
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId } = await requireMembership(req, config, user, request, true);
+      const input = z.object({
+        projectId: z.string().uuid(),
+        type: z.enum(["fact", "preference", "decision", "howto", "context"]).default("fact"),
+        title: z.string().trim().min(1).max(240),
+        body: z.string().trim().min(1).max(50_000),
+        tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+        importance: z.number().min(0.5).max(2).default(1),
+      }).parse(req.body);
+      const id = z.string().uuid().parse(await rpc(config, user, request, "add_memory", {
+        target_organization_id: organizationId,
+        target_project_id: input.projectId,
+        memory_type: input.type,
+        memory_title: input.title,
+        memory_body: input.body,
+        memory_tags: input.tags,
+        memory_importance: input.importance,
+      }, "memory_create_failed"));
+      res.status(201).json({ id });
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.post("/knowledge/documents", async (req, res) => {
+    try {
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId } = await requireMembership(req, config, user, request, true);
+      const input = z.object({
+        projectId: z.string().uuid(),
+        uri: z.string().trim().min(1).max(1_000),
+        title: z.string().trim().min(1).max(240),
+        source: z.string().trim().max(240).nullable().default(null),
+        kind: z.string().trim().min(1).max(64).default("reference"),
+        content: z.string().min(1).max(2_000_000),
+      }).parse(req.body);
+      const result = z.array(z.object({ document_id: z.string().uuid(), chunk_id: z.string().uuid() })).parse(
+        await rpc(config, user, request, "add_document", {
+          target_organization_id: organizationId,
+          target_project_id: input.projectId,
+          document_uri: input.uri,
+          document_title: input.title,
+          document_source: input.source,
+          document_kind: input.kind,
+          document_content: input.content,
+        }, "document_create_failed")
+      );
+      res.status(201).json(result[0]);
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.get("/knowledge/search", async (req, res) => {
+    try {
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId } = await requireMembership(req, config, user, request);
+      const input = z.object({
+        q: z.string().trim().min(2).max(500),
+        limit: z.coerce.number().int().min(1).max(50).default(20),
+      }).parse(req.query);
+      const results = recordArraySchema.parse(await rpc(config, user, request, "search_knowledge", {
+        target_organization_id: organizationId,
+        search_query: input.q,
+        result_limit: input.limit,
+      }, "knowledge_search_failed"));
+      res.json({ results });
     } catch (error) {
       sendCloudError(res, error);
     }

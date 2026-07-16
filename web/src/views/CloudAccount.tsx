@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { cloudApi, cloudConfigured, supabase } from "../cloud";
 import { Button } from "../components/ui/Button";
-import { TextField } from "../components/ui/Field";
+import { TextArea, TextField } from "../components/ui/Field";
 import { Panel } from "../components/ui/Panel";
 import { Grid, HStack, VStack } from "../components/ui/Stack";
 import { Tag } from "../components/ui/Tag";
@@ -18,6 +18,39 @@ interface CloudOrganization {
 interface CloudSessionPayload {
   user: { id: string; email: string | null; aal: "aal1" | "aal2" };
   organizations: CloudOrganization[];
+}
+
+interface CloudProject {
+  id: string;
+  slug: string;
+  map: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CloudProjectDetail {
+  project: CloudProject;
+  memories: Array<Record<string, unknown>>;
+  documents: Array<Record<string, unknown>>;
+  sessions: Array<Record<string, unknown>>;
+  relations: Array<Record<string, unknown>>;
+}
+
+interface CloudSearchResult {
+  resource_type: string;
+  resource_id: string;
+  project_id: string;
+  title: string;
+  snippet: string;
+  rank: number;
+}
+
+interface CloudEntitlement {
+  plan: "free" | "starter" | "pro" | "team";
+  status: string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  entitlements: { projects: number; members: number; storageMb: number };
 }
 
 const plans = [
@@ -37,6 +70,13 @@ export function CloudAccount() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [activeOrganization, setActiveOrganization] = useState("");
+  const [projects, setProjects] = useState<CloudProject[]>([]);
+  const [projectSlug, setProjectSlug] = useState("");
+  const [projectSummary, setProjectSummary] = useState("");
+  const [selectedProject, setSelectedProject] = useState<CloudProjectDetail | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<CloudSearchResult[]>([]);
+  const [entitlement, setEntitlement] = useState<CloudEntitlement | null>(null);
   const [mfaFactorId, setMfaFactorId] = useState("");
   const [mfaQr, setMfaQr] = useState("");
   const [mfaSecret, setMfaSecret] = useState("");
@@ -50,12 +90,26 @@ export function CloudAccount() {
     setActiveOrganization((current) => current || payload.organizations[0]?.organization_id || "");
   };
 
+  const refreshProjects = async (organizationId: string) => {
+    if (!organizationId) {
+      setProjects([]);
+      return;
+    }
+    const payload = await cloudApi<{ projects: CloudProject[] }>("/knowledge/projects", {}, organizationId);
+    setProjects(payload.projects);
+  };
+
+  const openProject = async (project: CloudProject) => {
+    const detail = await cloudApi<CloudProjectDetail>(`/knowledge/projects/${project.id}`, {}, activeOrganization);
+    setSelectedProject(detail);
+  };
+
   useEffect(() => {
     if (!cloudClient) return;
     void cloudClient.auth.getSession().then(({ data }) => setSession(data.session));
     const { data } = cloudClient.auth.onAuthStateChange((_event, next) => setSession(next));
     return () => data.subscription.unsubscribe();
-  }, []);
+  }, [cloudClient]);
 
   useEffect(() => {
     if (!session) {
@@ -63,7 +117,21 @@ export function CloudAccount() {
       return;
     }
     void refreshAccount().catch((error) => setMessage((error as Error).message));
-  }, [session?.access_token]);
+  }, [session]);
+
+  useEffect(() => {
+    setSelectedProject(null);
+    setSearchResults([]);
+    if (!session || !activeOrganization) {
+      setProjects([]);
+      setEntitlement(null);
+      return;
+    }
+    void Promise.all([
+      refreshProjects(activeOrganization),
+      cloudApi<CloudEntitlement>("/billing/subscription", {}, activeOrganization).then(setEntitlement),
+    ]).catch((error) => setMessage((error as Error).message));
+  }, [session, activeOrganization]);
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
@@ -225,8 +293,114 @@ export function CloudAccount() {
       <Panel>
         <VStack gap={3}>
           <HStack hAlign="between" vAlign="center" wrap="wrap">
+            <VStack gap={1}>
+              <Heading level={3}>{tr ? "Bulut proje haritaları" : "Cloud project maps"}</Heading>
+              <Text type="supporting" color="secondary">
+                {tr ? "Haritalar, kararlar ve çözümler tenant RLS sınırı içinde saklanır." : "Maps, decisions, and solutions stay inside the tenant RLS boundary."}
+              </Text>
+            </VStack>
+            <Tag>{projects.length} {tr ? "proje" : "projects"}</Tag>
+          </HStack>
+          <Grid minWidth={280} gap={3}>
+            <VStack gap={2}>
+              {projects.map((project) => (
+                <button
+                  type="button"
+                  className="btn"
+                  key={project.id}
+                  data-active={selectedProject?.project.id === project.id}
+                  onClick={() => run(() => openProject(project))}
+                  style={{ justifyContent: "space-between" }}
+                >
+                  <span>{project.slug}</span>
+                  <span>{Object.keys(project.map ?? {}).length} map keys</span>
+                </button>
+              ))}
+              {projects.length === 0 && (
+                <Text type="supporting" color="secondary">{tr ? "Bu çalışma alanında henüz proje yok." : "No projects in this workspace yet."}</Text>
+              )}
+              <TextField label={tr ? "Yeni proje slug" : "New project slug"} value={projectSlug} onChange={(value) => setProjectSlug(value.toLowerCase())} />
+              <TextArea label={tr ? "Amaç ve kapsam" : "Purpose and scope"} value={projectSummary} onChange={setProjectSummary} rows={3} />
+              <Button
+                label={tr ? "Harita iskeletiyle oluştur" : "Create with map skeleton"}
+                variant="primary"
+                disabled={busy || !activeOrganization || !/^[a-z0-9][a-z0-9-]{1,62}$/.test(projectSlug) || !projectSummary.trim()}
+                onClick={() => run(async () => {
+                  await cloudApi("/knowledge/projects", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      slug: projectSlug,
+                      map: {
+                        summary: projectSummary.trim(),
+                        architecture: [],
+                        components: [],
+                        entry_points: [],
+                        commands: [],
+                        data_model: [],
+                        decisions: [],
+                        problem_solutions: [],
+                        docs: [],
+                      },
+                    }),
+                  }, activeOrganization);
+                  setProjectSlug("");
+                  setProjectSummary("");
+                  await refreshProjects(activeOrganization);
+                })}
+              />
+            </VStack>
+            <VStack gap={2}>
+              {selectedProject ? (
+                <>
+                  <HStack hAlign="between" vAlign="center">
+                    <Heading level={4}>{selectedProject.project.slug}</Heading>
+                    <HStack gap={1} wrap="wrap">
+                      <Tag>{selectedProject.memories.length} memories</Tag>
+                      <Tag>{selectedProject.documents.length} docs</Tag>
+                      <Tag>{selectedProject.relations.length} relations</Tag>
+                    </HStack>
+                  </HStack>
+                  <pre style={{ margin: 0, padding: 12, overflow: "auto", maxHeight: 320, background: "var(--bg-subtle)", borderRadius: 8, fontSize: 12 }}>
+                    {JSON.stringify(selectedProject.project.map, null, 2)}
+                  </pre>
+                </>
+              ) : (
+                <Text type="supporting" color="secondary">{tr ? "Detaylı haritasını açmak için bir proje seç." : "Select a project to open its detailed map."}</Text>
+              )}
+              <HStack gap={2} wrap="wrap">
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <TextField label={tr ? "Tenant içi arama" : "Search this tenant"} value={searchQuery} onChange={setSearchQuery} />
+                </div>
+                <Button
+                  label={tr ? "Ara" : "Search"}
+                  disabled={busy || !activeOrganization || searchQuery.trim().length < 2}
+                  onClick={() => run(async () => {
+                    const payload = await cloudApi<{ results: CloudSearchResult[] }>(`/knowledge/search?q=${encodeURIComponent(searchQuery.trim())}`, {}, activeOrganization);
+                    setSearchResults(payload.results);
+                  })}
+                />
+              </HStack>
+              {searchResults.map((result) => (
+                <Panel key={`${result.resource_type}:${result.resource_id}`} raised>
+                  <VStack gap={1}>
+                    <HStack hAlign="between"><strong>{result.title}</strong><Tag>{result.resource_type}</Tag></HStack>
+                    <Text type="supporting" color="secondary">{result.snippet}</Text>
+                  </VStack>
+                </Panel>
+              ))}
+            </VStack>
+          </Grid>
+        </VStack>
+      </Panel>
+
+      <Panel>
+        <VStack gap={3}>
+          <HStack hAlign="between" vAlign="center" wrap="wrap">
             <Heading level={3}>{tr ? "Abonelik" : "Subscription"}</Heading>
-            {active && <Tag>{active.organizations?.name ?? active.organization_id}</Tag>}
+            <HStack gap={1} wrap="wrap">
+              {entitlement && <Tag>{entitlement.plan.toUpperCase()} · {entitlement.entitlements.projects} projects · {entitlement.entitlements.storageMb} MB</Tag>}
+              {active && <Tag>{active.organizations?.name ?? active.organization_id}</Tag>}
+            </HStack>
           </HStack>
           <Grid minWidth={200} gap={3}>
             {plans.map((plan) => (

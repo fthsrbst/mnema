@@ -19,6 +19,7 @@
 | Webhook spoof/replay | HMAC over raw body, timestamp tolerance, durable provider event id, monotonic event time | Billing signature and reducer tests |
 | Service credential leak | Server-only environment secret, redacted logs, no client grants to billing tables | Deployment secret scan and SQL grant test |
 | Query bypass | No general-purpose service-role endpoint; explicit tenant repository methods | Code review and endpoint authorization matrix |
+| Quota bypass/race | Revoke direct inserts for billable records; serialize check-and-create RPCs on the organization row | Postgres quota and direct-insert tests |
 | Expensive abuse | Per-user and per-organization rate/usage limits before embeddings and LLM calls | Load/abuse tests before launch |
 | Data loss | Point-in-time recovery, encrypted backups, restore drills, export/delete workflow | Quarterly restore exercise |
 | Supply-chain compromise | Locked dependencies, automated audit, signed releases, secret scanning | CI gates |

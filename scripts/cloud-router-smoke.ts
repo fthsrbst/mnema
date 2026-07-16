@@ -14,7 +14,14 @@ function check(name: string, condition: boolean): void {
 
 const userId = "10000000-0000-4000-8000-000000000001";
 const organizationId = "20000000-0000-4000-8000-000000000001";
+const otherOrganizationId = "20000000-0000-4000-8000-000000000099";
 const createdOrganizationId = "20000000-0000-4000-8000-000000000002";
+const projectId = "30000000-0000-4000-8000-000000000001";
+const createdProjectId = "30000000-0000-4000-8000-000000000002";
+const memoryId = "40000000-0000-4000-8000-000000000001";
+const secondMemoryId = "40000000-0000-4000-8000-000000000002";
+const documentId = "50000000-0000-4000-8000-000000000001";
+const chunkId = "60000000-0000-4000-8000-000000000001";
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
 const token = `${encode({ alg: "none" })}.${encode({ sub: userId, aal: "aal2" })}.test`;
 const aal1Token = `${encode({ alg: "none" })}.${encode({ sub: userId, aal: "aal1" })}.test`;
@@ -38,6 +45,8 @@ const config: CloudRuntimeConfig = {
 
 let paddleCheckoutBody: Record<string, unknown> | null = null;
 let subscriptionSaved = false;
+let createdProjectBody: Record<string, unknown> | null = null;
+let knowledgeUsedUserToken = true;
 const claimed = new Set<string>();
 const fakeFetch: typeof globalThis.fetch = async (input, init) => {
   const url = String(input);
@@ -47,6 +56,8 @@ const fakeFetch: typeof globalThis.fetch = async (input, init) => {
     return Response.json({ id: userId, email: "owner@example.com" });
   }
   if (url.startsWith(`${config.supabaseUrl}/rest/v1/organization_members?`)) {
+    const selectedOrganization = new URL(url).searchParams.get("organization_id");
+    if (selectedOrganization && selectedOrganization !== `eq.${organizationId}`) return Response.json([]);
     return Response.json([
       {
         organization_id: organizationId,
@@ -57,6 +68,31 @@ const fakeFetch: typeof globalThis.fetch = async (input, init) => {
   }
   if (url === `${config.supabaseUrl}/rest/v1/rpc/create_organization`) {
     return Response.json(createdOrganizationId, { status: 200 });
+  }
+  if (url === `${config.supabaseUrl}/rest/v1/rpc/create_project`) {
+    createdProjectBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json(createdProjectId);
+  }
+  if (url === `${config.supabaseUrl}/rest/v1/rpc/add_memory`) return Response.json(secondMemoryId);
+  if (url === `${config.supabaseUrl}/rest/v1/rpc/add_document`) {
+    return Response.json([{ document_id: documentId, chunk_id: chunkId }]);
+  }
+  if (url === `${config.supabaseUrl}/rest/v1/rpc/search_knowledge`) {
+    return Response.json([{ resource_type: "memory", resource_id: memoryId, project_id: projectId, title: "Decision", snippet: "tenant-safe", rank: 0.9 }]);
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/projects?`)) {
+    knowledgeUsedUserToken &&= new Headers(init?.headers).get("authorization") === `Bearer ${token}`;
+    return Response.json([{ id: projectId, slug: "mnema", map: { architecture: ["api"] }, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/memories?`)) {
+    return Response.json([{ id: memoryId, type: "decision", title: "Decision", body: "tenant-safe", tags: [], importance: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/documents?`)) {
+    return Response.json([{ id: documentId, uri: "docs/design", title: "Design", source: "test", kind: "reference", is_current: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/session_logs?`)) return Response.json([]);
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/memory_relations?`)) {
+    return Response.json([{ id: "70000000-0000-4000-8000-000000000001", from_memory_id: memoryId, to_memory_id: memoryId, relation_type: "supports", confidence: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]);
   }
   if (url === "https://sandbox-api.paddle.com/transactions") {
     paddleCheckoutBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -100,6 +136,59 @@ const created = await fetch(`${base}/api/organizations`, {
   body: JSON.stringify({ slug: "new-org", name: "New Org" }),
 });
 check("authenticated account creates an organization through RPC", created.status === 201);
+
+const knowledgeHeaders = { ...authHeaders, "x-mnema-organization-id": organizationId };
+const projects = await fetch(`${base}/api/knowledge/projects`, { headers: knowledgeHeaders });
+const projectsJson = (await projects.json()) as { projects?: unknown[] };
+check("tenant knowledge gateway lists RLS-scoped projects", projects.status === 200 && projectsJson.projects?.length === 1);
+check("knowledge reads use the verified user JWT, never the service role", knowledgeUsedUserToken);
+
+const projectCreated = await fetch(`${base}/api/knowledge/projects`, {
+  method: "POST",
+  headers: knowledgeHeaders,
+  body: JSON.stringify({ slug: "new-project", map: { decisions: ["RLS"] } }),
+});
+check(
+  "project creation is bound to the selected tenant quota RPC",
+  projectCreated.status === 201 && createdProjectBody?.target_organization_id === organizationId
+);
+
+const projectDetail = await fetch(`${base}/api/knowledge/projects/${projectId}`, { headers: knowledgeHeaders });
+const projectDetailJson = (await projectDetail.json()) as { memories?: unknown[]; documents?: unknown[] };
+check(
+  "project map detail joins tenant memories and documents",
+  projectDetail.status === 200 && projectDetailJson.memories?.length === 1 && projectDetailJson.documents?.length === 1
+);
+
+const memoryCreated = await fetch(`${base}/api/knowledge/memories`, {
+  method: "POST",
+  headers: knowledgeHeaders,
+  body: JSON.stringify({ projectId, type: "howto", title: "Fix", body: "Use the tenant RPC" }),
+});
+check("memory creation uses the tenant-bound RPC", memoryCreated.status === 201);
+
+const documentCreated = await fetch(`${base}/api/knowledge/documents`, {
+  method: "POST",
+  headers: knowledgeHeaders,
+  body: JSON.stringify({ projectId, uri: "docs/new", title: "New doc", content: "Tenant content" }),
+});
+check("document creation uses the atomic storage-quota RPC", documentCreated.status === 201);
+
+const search = await fetch(`${base}/api/knowledge/search?q=tenant`, { headers: knowledgeHeaders });
+const searchJson = (await search.json()) as { results?: unknown[] };
+check("cloud knowledge search remains tenant-scoped", search.status === 200 && searchJson.results?.length === 1);
+
+const crossTenant = await fetch(`${base}/api/knowledge/projects`, {
+  headers: { ...authHeaders, "x-mnema-organization-id": otherOrganizationId },
+});
+check("gateway rejects a tenant header without membership", crossTenant.status === 403);
+
+const entitlement = await fetch(`${base}/api/billing/subscription`, { headers: knowledgeHeaders });
+const entitlementJson = (await entitlement.json()) as { plan?: string; entitlements?: { projects?: number } };
+check(
+  "missing subscription safely resolves to free-plan server entitlements",
+  entitlement.status === 200 && entitlementJson.plan === "free" && entitlementJson.entitlements?.projects === 2
+);
 
 const checkout = await fetch(`${base}/api/billing/checkout`, {
   method: "POST",
