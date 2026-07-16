@@ -117,7 +117,7 @@ export const config = {
     .map((u) => u.trim().replace(/\/$/, ""))
     .filter((u) => u.length > 0),
   primaryToken: process.env.HUB_PRIMARY_TOKEN ?? "",
-  syncIntervalSec: envNumber("HUB_SYNC_INTERVAL", 60, { min: 1, max: 86_400, integer: true }),
+  syncIntervalSec: envNumber("HUB_SYNC_INTERVAL", 1, { min: 1, max: 86_400, integer: true }),
   // Local writes remain authoritative immediately; this controls how quickly
   // they are mirrored to the primary after a burst of writes.
   syncDebounceMs: envNumber("HUB_SYNC_DEBOUNCE_MS", 250, { min: 0, max: 60_000, integer: true }),
