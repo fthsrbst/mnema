@@ -10,6 +10,8 @@ export interface CloudRuntimeConfig {
   trustProxyHops: number;
   rateLimitPerMinute: number;
   webhookRateLimitPerMinute: number;
+  rateLimitRedisUrl?: string;
+  communityApiEnabled?: boolean;
   paddle: {
     apiKey: string;
     webhookSecret: string;
@@ -20,6 +22,10 @@ export interface CloudRuntimeConfig {
 }
 
 const urlSchema = z.string().url().transform((value) => value.replace(/\/$/, ""));
+const redisUrlSchema = z.string().url().refine(
+  (value) => ["redis:", "rediss:"].includes(new URL(value).protocol),
+  "CLOUD_RATE_LIMIT_REDIS_URL must use redis:// or rediss://"
+);
 
 function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, min: number, max: number): number {
   const raw = env[name]?.trim();
@@ -47,6 +53,8 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
     "CLOUD_TRUST_PROXY_HOPS",
     "CLOUD_RATE_LIMIT_PER_MINUTE",
     "CLOUD_WEBHOOK_RATE_LIMIT_PER_MINUTE",
+    "CLOUD_RATE_LIMIT_REDIS_URL",
+    "CLOUD_ENABLE_COMMUNITY_API",
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
     "SUPABASE_ANON_KEY",
@@ -73,8 +81,12 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
   const httpsOnly = boolean(env, "CLOUD_HTTPS_ONLY", false);
   const appUrl = urlSchema.parse(required("CLOUD_APP_URL"));
   const approvedCheckoutUrl = urlSchema.parse(required("PADDLE_APPROVED_CHECKOUT_URL"));
+  const rateLimitRedisUrl = env.CLOUD_RATE_LIMIT_REDIS_URL?.trim();
   if (environment === "production" && (!httpsOnly || !appUrl.startsWith("https://") || !approvedCheckoutUrl.startsWith("https://"))) {
     throw new Error("Paddle production requires CLOUD_HTTPS_ONLY=true and HTTPS app/checkout URLs");
+  }
+  if (environment === "production" && !rateLimitRedisUrl) {
+    throw new Error("Paddle production requires CLOUD_RATE_LIMIT_REDIS_URL for shared abuse control");
   }
   return {
     appUrl,
@@ -85,6 +97,8 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
     trustProxyHops: integer(env, "CLOUD_TRUST_PROXY_HOPS", 0, 0, 5),
     rateLimitPerMinute: integer(env, "CLOUD_RATE_LIMIT_PER_MINUTE", 300, 10, 100_000),
     webhookRateLimitPerMinute: integer(env, "CLOUD_WEBHOOK_RATE_LIMIT_PER_MINUTE", 120, 10, 100_000),
+    rateLimitRedisUrl: rateLimitRedisUrl ? redisUrlSchema.parse(rateLimitRedisUrl) : undefined,
+    communityApiEnabled: boolean(env, "CLOUD_ENABLE_COMMUNITY_API", false),
     paddle: {
       apiKey: required("PADDLE_API_KEY"),
       webhookSecret: required("PADDLE_WEBHOOK_SECRET"),

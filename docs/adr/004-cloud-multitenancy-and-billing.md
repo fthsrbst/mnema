@@ -60,13 +60,17 @@ one database transaction that locks and rechecks the deletion and billing state.
   mutations require MFA (`aal2`).
 - Billing tables have no grants or RLS policies for the authenticated client role.
 - Cross-tenant foreign keys are composite `(organization_id, id)` constraints.
+- Guarded functions live in the exposed `app` schema, and every PostgREST RPC
+  request selects that profile explicitly; tenant tables stay in `public`.
 - Service-role credentials never reach the browser, MCP clients, logs, or audit
   metadata.
 - Webhook handlers verify signatures before JSON parsing and persist event ids
   before side effects.
-- Public Cloud routes send restrictive browser headers and use a process-local
-  IP/token limiter; production scale-out additionally requires a shared edge
-  limiter.
+- Public Cloud routes send restrictive browser headers. Sandbox can use the
+  process-local limiter, while production requires one atomic Redis/Valkey
+  counter store shared by every Node replica and fails closed if it is lost.
+- Hosted Cloud disables the Community REST/MCP authority unless an operator
+  explicitly enables it together with scoped Community authentication.
 - The browser receives only Supabase's public key. Server-only Supabase and
   Paddle credentials are never used as application bearer tokens.
 - Opaque Supabase secret keys are sent only as API keys; the legacy

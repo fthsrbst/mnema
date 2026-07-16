@@ -47,6 +47,11 @@ export interface CloudRateLimitOptions {
   windowMs?: number;
   now?: () => number;
   namespace?: string;
+  store?: CloudRateLimitStore;
+}
+
+export interface CloudRateLimitStore {
+  consume(key: string, windowMs: number): Promise<{ count: number; resetAfterMs: number }>;
 }
 
 interface RateBucket {
@@ -60,37 +65,61 @@ function requestIdentity(req: Request): string {
   const credentialHash = credential
     ? createHash("sha256").update(credential).digest("hex").slice(0, 24)
     : "anonymous";
-  return `${req.ip}:${credentialHash}`;
+  return createHash("sha256").update(`${req.ip}\0${credentialHash}`).digest("hex").slice(0, 32);
 }
 
-/** Process-local defense in depth; production still needs a shared edge limiter. */
+/** Uses a shared store when configured; otherwise remains process-local defense in depth. */
 export function createCloudRateLimiter(options: CloudRateLimitOptions): RequestHandler {
   const limit = Math.max(1, Math.trunc(options.limit));
   const windowMs = Math.max(1_000, Math.trunc(options.windowMs ?? 60_000));
   const now = options.now ?? Date.now;
   const buckets = new Map<string, RateBucket>();
   let operations = 0;
+  const apply = (
+    res: Parameters<RequestHandler>[1],
+    next: Parameters<RequestHandler>[2],
+    count: number,
+    resetAt: number,
+    timestamp: number,
+    backend: "distributed" | "process"
+  ): void => {
+    res.setHeader("X-RateLimit-Limit", String(limit));
+    res.setHeader("X-RateLimit-Remaining", String(Math.max(0, limit - count)));
+    res.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1_000)));
+    res.setHeader("X-RateLimit-Backend", backend);
+    if (count > limit) {
+      const retryAfter = Math.max(1, Math.ceil((resetAt - timestamp) / 1_000));
+      res.setHeader("Retry-After", String(retryAfter));
+      res.status(429).json({ error: "rate_limited", retry_after_seconds: retryAfter });
+      return;
+    }
+    next();
+  };
   return (req, res, next) => {
     const timestamp = now();
     const key = `${options.namespace ?? "cloud"}:${requestIdentity(req)}`;
+    if (options.store) {
+      void options.store.consume(key, windowMs).then(({ count, resetAfterMs }) => {
+        if (res.headersSent) return;
+        apply(res, next, count, timestamp + resetAfterMs, timestamp, "distributed");
+      }).catch((error) => {
+        console.error(`[hub] Cloud distributed rate limit failed: ${(error as Error).name}`);
+        if (res.headersSent) return;
+        res.setHeader("Retry-After", "5");
+        res.status(503).json({ error: "rate_limit_unavailable" });
+      });
+      return;
+    }
     const existing = buckets.get(key);
     const bucket = !existing || existing.resetAt <= timestamp
       ? { count: 0, resetAt: timestamp + windowMs }
       : existing;
     bucket.count += 1;
     buckets.set(key, bucket);
-    res.setHeader("X-RateLimit-Limit", String(limit));
-    res.setHeader("X-RateLimit-Remaining", String(Math.max(0, limit - bucket.count)));
-    res.setHeader("X-RateLimit-Reset", String(Math.ceil(bucket.resetAt / 1_000)));
-    if (bucket.count > limit) {
-      const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - timestamp) / 1_000));
-      res.setHeader("Retry-After", String(retryAfter));
-      return void res.status(429).json({ error: "rate_limited", retry_after_seconds: retryAfter });
-    }
     operations += 1;
     if (operations % 1_000 === 0) {
       for (const [candidate, value] of buckets) if (value.resetAt <= timestamp) buckets.delete(candidate);
     }
-    next();
+    apply(res, next, bucket.count, bucket.resetAt, timestamp, "process");
   };
 }

@@ -23,6 +23,7 @@ import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
 import { ProfessionalProfile } from "./views/ProfessionalProfile";
 import { getToken, setToken, setUnauthorizedHandler } from "./api";
+import { cloudConfigured } from "./cloud";
 import { I18nContext, useI18n, useProvideI18n, type Lang, type TKey } from "./i18n";
 
 type SectionId = "overview" | "memory" | "projects" | "system";
@@ -100,6 +101,15 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
     ],
   },
 ];
+const CLOUD_SECTIONS: typeof SECTIONS = [{
+  id: "system",
+  labelKey: "nav.cloud",
+  icon: "system",
+  tabs: [
+    { id: "cloud", labelKey: "nav.cloud" },
+    { id: "settings", labelKey: "nav.settings" },
+  ],
+}];
 
 /** Timeline satırına tıklandığında hangi (bölüm, sekme) çiftine gidileceğini eşler. */
 const TIMELINE_TARGETS: Record<"memories" | "sessions" | "rag", { section: SectionId; tab: string }> = {
@@ -130,30 +140,32 @@ function Settings() {
   return (
     <VStack gap={4}>
       <Heading level={3}>{t("settings.title")}</Heading>
-      <Panel>
-        <VStack gap={3}>
-          <TextField
-            label={t("settings.tokenLabel")}
-            type="password"
-            value={token}
-            onChange={(v) => {
-              setTokenValue(v);
-              setSaved(false);
-            }}
-          />
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <Button
-              label={t("common.save")}
-              variant="primary"
-              onClick={() => {
-                setToken(token);
-                setSaved(true);
+      {!cloudConfigured && (
+        <Panel>
+          <VStack gap={3}>
+            <TextField
+              label={t("settings.tokenLabel")}
+              type="password"
+              value={token}
+              onChange={(v) => {
+                setTokenValue(v);
+                setSaved(false);
               }}
             />
-            {saved && <Text type="supporting" color="secondary">{t("settings.saved")}</Text>}
-          </div>
-        </VStack>
-      </Panel>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Button
+                label={t("common.save")}
+                variant="primary"
+                onClick={() => {
+                  setToken(token);
+                  setSaved(true);
+                }}
+              />
+              {saved && <Text type="supporting" color="secondary">{t("settings.saved")}</Text>}
+            </div>
+          </VStack>
+        </Panel>
+      )}
       <Panel>
         <VStack gap={2}>
           <span className="u-label">{t("settings.language")}</span>
@@ -220,17 +232,18 @@ function TokenGate({ onSubmit }: { onSubmit: (token: string) => void }) {
 function AppInner() {
   const { t } = useI18n();
   const [railExpanded, setRailExpanded] = useState(false);
-  const [section, setSection] = useState<SectionId>("overview");
+  const sections = cloudConfigured ? CLOUD_SECTIONS : SECTIONS;
+  const [section, setSection] = useState<SectionId>(cloudConfigured ? "system" : "overview");
   const [tabBySection, setTabBySection] = useState<Record<SectionId, string>>({
     overview: "dashboard",
     memory: "memories",
     projects: "projects",
-    system: "machines",
+    system: cloudConfigured ? "cloud" : "machines",
   });
   const [needsToken, setNeedsToken] = useState(false);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => setNeedsToken(true));
+    setUnauthorizedHandler(cloudConfigured ? null : () => setNeedsToken(true));
     return () => setUnauthorizedHandler(null);
   }, []);
 
@@ -242,7 +255,7 @@ function AppInner() {
     return () => media.removeEventListener("change", refresh);
   }, []);
 
-  const activeSection = useMemo(() => SECTIONS.find((s) => s.id === section)!, [section]);
+  const activeSection = useMemo(() => sections.find((s) => s.id === section)!, [section, sections]);
   const activeTab = tabBySection[section];
 
   const goTo = (target: SectionId, tab: string) => {
@@ -250,7 +263,7 @@ function AppInner() {
     setTabBySection((prev) => ({ ...prev, [target]: tab }));
   };
 
-  if (needsToken) {
+  if (needsToken && !cloudConfigured) {
     return (
       <TokenGate
         onSubmit={(token) => {
@@ -261,7 +274,7 @@ function AppInner() {
     );
   }
 
-  const railItems: RailItem[] = SECTIONS.map((s) => ({ id: s.id, label: t(s.labelKey), icon: s.icon }));
+  const railItems: RailItem[] = sections.map((s) => ({ id: s.id, label: t(s.labelKey), icon: s.icon }));
 
   const renderTab = () => {
     switch (activeTab) {

@@ -54,6 +54,40 @@ try {
 }
 check("a partial secret-key Cloud configuration fails closed", partialCloudConfigRejected);
 
+const productionCloudEnv: NodeJS.ProcessEnv = {
+  CLOUD_APP_URL: "https://app.mnema.example",
+  CLOUD_HTTPS_ONLY: "true",
+  SUPABASE_URL: "https://project.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_public",
+  SUPABASE_SECRET_KEY: "sb_secret_private",
+  PADDLE_API_KEY: "pdl_live_api",
+  PADDLE_WEBHOOK_SECRET: "pdl_live_webhook",
+  PADDLE_ENVIRONMENT: "production",
+  PADDLE_APPROVED_CHECKOUT_URL: "https://app.mnema.example/billing/complete",
+  PADDLE_PRICE_STARTER_MONTHLY: "pri_starter_month",
+  PADDLE_PRICE_STARTER_ANNUAL: "pri_starter_year",
+  PADDLE_PRICE_PRO_MONTHLY: "pri_pro_month",
+  PADDLE_PRICE_PRO_ANNUAL: "pri_pro_year",
+  PADDLE_PRICE_TEAM_MONTHLY: "pri_team_month",
+  PADDLE_PRICE_TEAM_ANNUAL: "pri_team_year",
+};
+let productionWithoutSharedLimitRejected = false;
+try {
+  loadCloudRuntimeConfig(productionCloudEnv);
+} catch {
+  productionWithoutSharedLimitRejected = true;
+}
+check("production Cloud requires a shared rate-limit store", productionWithoutSharedLimitRejected);
+const productionConfig = loadCloudRuntimeConfig({
+  ...productionCloudEnv,
+  CLOUD_RATE_LIMIT_REDIS_URL: "rediss://rate-user:rate-password@cache.mnema.example:6379",
+});
+check(
+  "production Cloud accepts TLS Redis and disables Community APIs by default",
+  productionConfig?.rateLimitRedisUrl?.startsWith("rediss://") === true &&
+    productionConfig.communityApiEnabled === false
+);
+
 const secret = "pdl_ntfset_test_secret";
 const timestamp = 1_750_000_000;
 const rawBody = JSON.stringify({ event_id: "evt_1", event_type: "subscription.updated" });

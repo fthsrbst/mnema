@@ -1,0 +1,105 @@
+name: mnema-cloud
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?set VITE_SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?set VITE_SUPABASE_PUBLISHABLE_KEY}
+        VITE_PADDLE_CLIENT_TOKEN: ${VITE_PADDLE_CLIENT_TOKEN:?set VITE_PADDLE_CLIENT_TOKEN}
+        VITE_PADDLE_ENVIRONMENT: ${VITE_PADDLE_ENVIRONMENT:-sandbox}
+    restart: unless-stopped
+    env_file:
+      - path: ${MNEMA_ENV_FILE:-.env.cloud}
+        required: true
+    environment:
+      NODE_ENV: production
+      HUB_HOST: 0.0.0.0
+      HUB_PORT: 8033
+      CLOUD_APP_URL: https://${MNEMA_DOMAIN:?set MNEMA_DOMAIN}
+      CLOUD_HTTPS_ONLY: "true"
+      CLOUD_TRUST_PROXY_HOPS: "1"
+      CLOUD_ENABLE_COMMUNITY_API: "false"
+      CLOUD_RATE_LIMIT_REDIS_URL: redis://:${VALKEY_PASSWORD:?set VALKEY_PASSWORD}@valkey:6379
+      PADDLE_APPROVED_CHECKOUT_URL: https://${MNEMA_DOMAIN:?set MNEMA_DOMAIN}/billing/complete
+    depends_on:
+      valkey:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+      - edge
+    mem_limit: 1g
+    cpus: 1.5
+
+  valkey:
+    image: valkey/valkey:8.1.8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "", "--appendonly", "no", "--requirepass", "${VALKEY_PASSWORD:?set VALKEY_PASSWORD}"]
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set VALKEY_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "VALKEYCLI_AUTH=$$VALKEY_PASSWORD valkey-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /data:size=64m,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+    mem_limit: 192m
+    cpus: 0.5
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    environment:
+      MNEMA_DOMAIN: ${MNEMA_DOMAIN:?set MNEMA_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+      - edge
+    mem_limit: 256m
+    cpus: 0.5
+
+networks:
+  edge:
+  backend:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:

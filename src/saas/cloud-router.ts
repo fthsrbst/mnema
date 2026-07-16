@@ -85,12 +85,18 @@ async function verifyCloudUser(
   return { id: user.id, email: user.email ?? null, aal: claims.aal === "aal2" ? "aal2" : "aal1", token };
 }
 
-function userHeaders(config: CloudRuntimeConfig, token: string, prefer?: string): Record<string, string> {
+function userHeaders(
+  config: CloudRuntimeConfig,
+  token: string,
+  prefer?: string,
+  profile?: "app"
+): Record<string, string> {
   return {
     apikey: config.supabasePublicKey,
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
     ...(prefer ? { Prefer: prefer } : {}),
+    ...(profile ? { "Accept-Profile": profile, "Content-Profile": profile } : {}),
   };
 }
 
@@ -160,7 +166,7 @@ async function rpc(
   return restJson(
     await request(`${config.supabaseUrl}/rest/v1/rpc/${name}`, {
       method: "POST",
-      headers: userHeaders(config, user.token),
+      headers: userHeaders(config, user.token, undefined, "app"),
       body: JSON.stringify(body),
     }),
     failureCode
@@ -260,7 +266,7 @@ export function buildCloudAccountRouter(
       const input = z.object({ slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/), name: z.string().trim().min(1).max(120) }).parse(req.body);
       const response = await request(`${config.supabaseUrl}/rest/v1/rpc/create_organization`, {
         method: "POST",
-        headers: userHeaders(config, user.token),
+        headers: userHeaders(config, user.token, undefined, "app"),
         body: JSON.stringify({ organization_slug: input.slug, organization_name: input.name }),
       });
       if (!response.ok) throw new CloudHttpError(response.status === 409 ? 409 : 502, "organization_create_failed");

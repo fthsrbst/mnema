@@ -12,6 +12,14 @@ export function cloudServiceHeaders(config: CloudRuntimeConfig, prefer?: string)
   };
 }
 
+function cloudServiceRpcHeaders(config: CloudRuntimeConfig): Record<string, string> {
+  return {
+    ...cloudServiceHeaders(config),
+    "Accept-Profile": "app",
+    "Content-Profile": "app",
+  };
+}
+
 export async function checkedCloudResponse(response: Response, operation: string): Promise<Response> {
   if (!response.ok) throw new Error(`Cloud billing store ${operation} failed with status ${response.status}`);
   return response;
@@ -67,7 +75,7 @@ export async function purgeDueOrganizations(
   const response = await checkedCloudResponse(
     await request(`${rest}/rpc/purge_due_organizations`, {
       method: "POST",
-      headers: cloudServiceHeaders(config),
+      headers: cloudServiceRpcHeaders(config),
       body: JSON.stringify({ due_before: now.toISOString(), batch_limit: 100 }),
     }),
     "purge organizations"
@@ -103,7 +111,7 @@ export function createSupabasePaddleStore(
       const response = await checkedCloudResponse(
         await request(`${rest}/rpc/claim_billing_webhook`, {
           method: "POST",
-          headers: cloudServiceHeaders(config),
+          headers: cloudServiceRpcHeaders(config),
           body: JSON.stringify({ provider_name: "paddle", provider_event_id: eventId, body_sha256: payloadSha256 }),
         }),
         "begin event"
@@ -168,7 +176,7 @@ export function createSupabasePaddleStore(
       const response = await checkedCloudResponse(
         await request(`${rest}/rpc/apply_subscription_snapshot`, {
           method: "POST",
-          headers: cloudServiceHeaders(config),
+          headers: cloudServiceRpcHeaders(config),
           body: JSON.stringify({
             target_organization_id: organizationId,
             provider_name: snapshot.provider,

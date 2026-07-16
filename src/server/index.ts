@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
@@ -24,6 +25,7 @@ import {
   buildCloudAccountRouter,
   buildCloudWebhookRouter,
   cloudSecurityHeaders,
+  connectCloudRateLimitStore,
   createCloudRateLimiter,
   loadCloudRuntimeConfig,
   purgeDueOrganizations,
@@ -44,6 +46,13 @@ const app = express();
 app.disable("x-powered-by");
 assertDeploymentSafety();
 const cloudConfig = loadCloudRuntimeConfig();
+const communityEnabled = !cloudConfig || Boolean(cloudConfig.communityApiEnabled);
+if (cloudConfig?.communityApiEnabled && !authenticationEnabled()) {
+  throw new Error("CLOUD_ENABLE_COMMUNITY_API=true requires scoped Community authentication");
+}
+const cloudRateLimitConnection = cloudConfig?.rateLimitRedisUrl
+  ? await connectCloudRateLimitStore(cloudConfig.rateLimitRedisUrl)
+  : null;
 if (cloudConfig?.trustProxyHops) app.set("trust proxy", cloudConfig.trustProxyHops);
 app.use(cloudSecurityHeaders({ supabaseUrl: cloudConfig?.supabaseUrl, httpsOnly: cloudConfig?.httpsOnly }));
 if (cloudConfig) {
@@ -51,7 +60,11 @@ if (cloudConfig) {
   // intentionally mounted before the global JSON parser and self-host auth.
   app.use(
     "/cloud/api/billing/webhook",
-    createCloudRateLimiter({ limit: cloudConfig.webhookRateLimitPerMinute, namespace: "cloud-webhook" }),
+    createCloudRateLimiter({
+      limit: cloudConfig.webhookRateLimitPerMinute,
+      namespace: "cloud-webhook",
+      store: cloudRateLimitConnection?.store,
+    }),
     express.raw({ type: "application/json", limit: "1mb" }),
     buildCloudWebhookRouter(cloudConfig)
   );
@@ -61,7 +74,11 @@ app.use(express.json({ limit: "10mb" }));
 if (cloudConfig) {
   app.use(
     "/cloud/api",
-    createCloudRateLimiter({ limit: cloudConfig.rateLimitPerMinute, namespace: "cloud-api" }),
+    createCloudRateLimiter({
+      limit: cloudConfig.rateLimitPerMinute,
+      namespace: "cloud-api",
+      store: cloudRateLimitConnection?.store,
+    }),
     buildCloudAccountRouter(cloudConfig)
   );
 }
@@ -69,18 +86,22 @@ if (cloudConfig) {
 app.get("/health", (_req, res) => {
   // Auth'suz uç: ham hata mesajları (dosya yolu içerebilir) sızdırılmaz — sadece sabit kodlar.
   // Detaylı neden auth'lu /api/rag/stats içinde (degraded_detail).
-  const vec_error = vecError() ? "vec_load_failed" : undefined;
-  const embeddings_reason = embeddingsDisabledReason() ? "embeddings_disabled" : undefined;
+  const vec_error = communityEnabled && vecError() ? "vec_load_failed" : undefined;
+  const embeddings_reason = communityEnabled && embeddingsDisabledReason() ? "embeddings_disabled" : undefined;
   const degraded = vec_error || embeddings_reason ? { vec_error, embeddings_reason } : null;
   res.json({
     ok: true,
-    vec: hasVec(),
-    embeddings: embeddingsEnabled(),
+    vec: communityEnabled ? hasVec() : false,
+    embeddings: communityEnabled ? embeddingsEnabled() : false,
     version: "0.1.0",
     deployment_profile: config.deploymentProfile,
-    vector_backend: config.vectorBackend,
-    vector_projection: vectorStore.status(),
+    community: communityEnabled ? "enabled" : "disabled",
+    vector_backend: communityEnabled ? config.vectorBackend : null,
+    vector_projection: communityEnabled ? vectorStore.status() : null,
     cloud: cloudConfig ? "configured" : "disabled",
+    cloud_rate_limit: cloudConfig
+      ? (cloudRateLimitConnection ? "distributed" : "process")
+      : "disabled",
     degraded,
   });
 });
@@ -89,6 +110,19 @@ app.get("/health", (_req, res) => {
 // veri her zaman /api üzerinden ve token'lıdır. /outputs ise üretilen medya (kullanıcı verisi)
 // içerdiğinden auth'un ARKASINDA servis edilir (aşağıda) — Funnel açıkken internete sızmasın.
 app.use("/", express.static("./web/dist"));
+
+// Hosted Cloud defaults to a Cloud-only public surface. Paddle return URLs and
+// auth redirects still receive the SPA shell, while Community REST/MCP remain
+// unreachable unless an operator explicitly enables and authenticates them.
+app.get("*", (req, res, next) => {
+  const acceptsHtml = (req.header("accept") ?? "").includes("text/html");
+  if (!cloudConfig || communityEnabled || req.path.startsWith("/cloud/api") || !acceptsHtml) return next();
+  res.sendFile(resolve("./web/dist/index.html"));
+});
+app.use((_req, res, next) => {
+  if (!communityEnabled) return void res.status(404).json({ error: "community_api_disabled" });
+  next();
+});
 
 // Bearer/scoped-token auth (health and static UI shell excluded).
 // ?token= desteği: claude.ai/ChatGPT/Gemini connector'ları özel header koyamıyor —
@@ -239,12 +273,16 @@ const reject = (res: express.Response) =>
 app.get("/mcp", (_req, res) => reject(res));
 app.delete("/mcp", (_req, res) => reject(res));
 
-getDb(); // şemayı baştan kur, sorun varsa açılışta patlasın
+if (communityEnabled) getDb(); // şemayı baştan kur, sorun varsa açılışta patlasın
 
 app.listen(config.port, config.host, () => {
   console.log(`[hub] http://${config.host}:${config.port}  (MCP: /mcp, REST: /api, health: /health)`);
-  console.log(`[hub] deployment profile: ${config.deploymentProfile}, vector backend: ${config.vectorBackend}`);
-  console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${authenticationEnabled() ? "açık" : "KAPALI (local-dev)"}`);
+  if (communityEnabled) {
+    console.log(`[hub] deployment profile: ${config.deploymentProfile}, vector backend: ${config.vectorBackend}`);
+    console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${authenticationEnabled() ? "açık" : "KAPALI (local-dev)"}`);
+  } else {
+    console.log(`[hub] hosted Cloud-only profile, shared rate limit: ${cloudRateLimitConnection ? "ready" : "not configured (sandbox only)"}`);
+  }
 
   if (cloudConfig) {
     let purgingOrganizations = false;
@@ -266,7 +304,7 @@ app.listen(config.port, config.host, () => {
     setInterval(purgeOrganizations, 60 * 60 * 1_000);
   }
 
-  if (config.vectorBackend === "qdrant") {
+  if (communityEnabled && config.vectorBackend === "qdrant") {
     const initialProjection = ensureVectorProjectionQueued();
     if (initialProjection.queued) {
       console.log(`[hub] Qdrant full projection queued: memories=${initialProjection.memories}, chunks=${initialProjection.chunks}`);
@@ -291,7 +329,7 @@ app.listen(config.port, config.host, () => {
     onWrite(() => void flushVectors());
   }
 
-  if (config.primaryUrls.length > 0) {
+  if (communityEnabled && config.primaryUrls.length > 0) {
     console.log(
       `[hub] eşitleme: ${config.primaryUrls.join(", ")} ile her ${config.syncIntervalSec}sn ` +
       `(+ yazımdan ${config.syncDebounceMs}ms sonra push)`
@@ -343,7 +381,7 @@ app.listen(config.port, config.host, () => {
 
   // Gece özeti: dakikada bir saat kontrolü ile hafif zamanlayıcı (node-cron yok — sıfır bağımlılık).
   // Aynı gün ikinci kez tetiklenmeye karşı runDigest zaten memories'te o günün başlığını kontrol eder.
-  setInterval(() => {
+  if (communityEnabled) setInterval(() => {
     const now = new Date();
     const hh = now.getHours();
     const mm = now.getMinutes();
