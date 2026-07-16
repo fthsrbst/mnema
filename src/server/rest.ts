@@ -36,6 +36,7 @@ import {
   graphSeed,
   type GraphNodeKind,
   deleteProject,
+  detachProjectReferences,
   deleteSessionLog,
   deleteSkill,
   getDocument,
@@ -60,6 +61,7 @@ import {
   saveSkill,
   updateDocumentMeta,
   getProject,
+  getProfessionalProfile,
   listDocuments,
   listMemories,
   listMemoryRelations,
@@ -73,11 +75,13 @@ import {
   searchMemories,
   updateMemory,
   updateMemoryRelation,
+  upsertProfessionalProfile,
   upsertProject,
   type FeedbackVerdict,
   type MemoryType,
   type ProjectMap,
   contextGetSchema,
+  professionalProfileInputSchema,
   documentMetaPatchSchema,
   memoryRelationInputSchema,
   memoryConsolidateSchema,
@@ -246,9 +250,18 @@ export function buildRestRouter(): Router {
     }));
   }));
 
+  // --- professional profile (global identity domain, deliberately not a project) ---
+  r.get("/profile", wrap((_req, res) => res.json(getProfessionalProfile())));
+  r.put("/profile", wrap(async (req, res) => {
+    res.json(await upsertProfessionalProfile(professionalProfileInputSchema.parse(req.body)));
+  }));
+
   // --- projects ---
   r.post("/projects/migrate-references", wrap((req, res) => {
     res.json(migrateProjectReferences(String(req.body.from ?? ""), String(req.body.to ?? "")));
+  }));
+  r.post("/projects/:name/detach-references", wrap((req, res) => {
+    res.json(detachProjectReferences(req.params.name));
   }));
   r.get("/projects", wrap((_req, res) => res.json(listProjects())));
   r.get("/projects/:name", wrap((req, res) => {

@@ -21,6 +21,7 @@ const {
   collectChanges,
   deleteMemory,
   deleteMemoryRelation,
+  detachProjectReferences,
   embedOne,
   feedbackSummary,
   getMemory,
@@ -35,6 +36,7 @@ const {
   embeddingsEnabled,
   embeddingGenerationState,
   getProject,
+  getProfessionalProfile,
   hasVec,
   recall,
   recentSessionLogs,
@@ -50,6 +52,7 @@ const {
   searchMemories,
   updateMemory,
   updateMemoryRelation,
+  upsertProfessionalProfile,
   upsertProject,
   usageStats,
   listAuditEvents,
@@ -249,6 +252,45 @@ check(
     getDocument(legacyDocument.document_id)?.project === "canonical-project" &&
     recentSessionLogs({ project: "canonical-project", limit: 5 }).some((item) => item.summary === "Legacy project session"),
   JSON.stringify(migratedRefs)
+);
+
+upsertProject({ name: "professional-profile", status: "active", summary: "Legacy pseudo-project" });
+const profileMemory = await saveMemory({
+  title: "Professional identity fixture",
+  body: "This profile fixture must become global without losing its stable memory record.",
+  project: "professional-profile",
+});
+const profileSource = await addDocument({
+  title: "Profile source fixture",
+  text: "# Source\n\nThis source document must remain available after the pseudo-project is detached.",
+  uri: "professional-profile/source/smoke",
+  project: "professional-profile",
+  language: "en",
+});
+addSessionLog("Profile migration session", "professional-profile", "smoke");
+const detachedProfile = detachProjectReferences("professional-profile");
+check(
+  "pseudo-project detach: references become global without data loss",
+  detachedProfile.memories === 1 &&
+    detachedProfile.documents === 1 &&
+    detachedProfile.sessions === 1 &&
+    getMemory(profileMemory.id)?.project === null &&
+    getDocument(profileSource.document_id)?.project === null &&
+    recentSessionLogs({ limit: 50 }).some((item) => item.summary === "Profile migration session" && item.project === null),
+  JSON.stringify(detachedProfile)
+);
+const profileBundle = await upsertProfessionalProfile({
+  markdown:
+    "# Fatih Serbest\n\n## Verified facts\n\nBorn in Manisa. Final GPA: 3.25. Vitriol internship ended on 2026-06-16.\n\n## Provenance\n\nUser-confirmed smoke fixture.",
+  source: "smoke",
+  language: "en",
+});
+check(
+  "professional profile: first-class global document bundle",
+  profileBundle.canonical?.uri === "profiles/fatih-serbest/canonical" &&
+    getDocument(profileBundle.canonical.id)?.project === null &&
+    getProfessionalProfile().sources.some((source) => source.id === profileSource.document_id),
+  `canonical=${profileBundle.canonical?.uri}, sources=${profileBundle.sources.length}`
 );
 
 const rec = await recall("sqlite vektör kararı");

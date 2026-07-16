@@ -14,11 +14,11 @@
 
 Claude Code, Cursor, opencode, Codex CLI, and custom agents each keep their own
 context today — decisions made in one tool are invisible to the others, and
-switching devices means starting from zero. Mnema is a small self-hosted
-server (MCP + REST) that gives all of them one common brain: structured
-memory, hybrid document search (RAG), project maps, and role-based system
-prompts. It runs on a Raspberry Pi 5 on your own network and follows you
-across every machine and every agent.
+switching devices means starting from zero. Mnema is a local-first shared
+context server (MCP + REST) that gives all of them one common brain: structured
+memory, hybrid document search (RAG), detailed project maps, and role-based
+system prompts. Run it on a laptop, desktop, home server, VM, container, or
+Raspberry Pi; the deployment target is yours.
 
 ## Why this exists
 
@@ -35,9 +35,9 @@ Multi-agent workflows have a context problem:
 
 Mnema is a deliberately small answer to that: one server, one SQLite file,
 one protocol (MCP) that every agent already speaks, plus REST for anything
-that doesn't. No vector database cluster, no message queue, no Docker layer —
-just enough infrastructure to make memory persistent and searchable across
-tools and devices.
+that doesn't. No mandatory vector database cluster, message queue, Docker
+layer, or cloud account — just enough infrastructure to make memory persistent
+and searchable across tools and devices.
 
 ## Features
 
@@ -51,9 +51,11 @@ tools and devices.
 - **RAG document store** — ingest notes, READMEs, research write-ups, or
   learning summaries; markdown-aware chunking, automatic embedding, hybrid
   retrieval with source references.
-- **Project maps** — one YAML-backed record per project: summary, stack,
-  decisions, current focus, next steps. Any agent, any device, calls
-  `project_get("name")` and has full context instantly.
+- **Project maps** — one evidence-backed record per project: architecture,
+  components and dependencies, entry points, commands, conventions, data
+  model, decisions with rationale, solved problems, documents, current focus,
+  next steps, and graph links. Any agent calls `project_get("name")` and knows
+  where to work without rediscovering the repository.
 - **Role-based system prompts** — a library of prompts (senior software
   architect, code reviewer, debugging specialist, security engineer,
   frontend engineer, devops/SRE, ML engineer) with a shared "engineering
@@ -64,7 +66,8 @@ tools and devices.
   both driven from any connected agent via `local_llm` / `media_generate`.
 - **Cross-device sync** — a local-first, last-write-wins sync model so
   memories and project maps created on one machine reconcile cleanly with
-  the primary (Pi) instance.
+  the primary instance. Runtime data moves through Mnema's sync protocol,
+  never through the source-code Git repository.
 - **Knowledge lifecycle** — canonical document identity, current/archive and
   supersession metadata, versioned embedding generations, multilingual
   canonical summaries, and typed temporal memory relations.
@@ -81,41 +84,41 @@ tools and devices.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Raspberry Pi 5 — "hub"  (Tailscale IP: 100.x.x.x)             │
-│                                                                │
-│  ┌────────────────────────────────────────────┐               │
-│  │ hub-server (Node 22, systemd)                │              │
-│  │  ├── MCP endpoint   /mcp   (Streamable HTTP)  │             │
-│  │  ├── REST API       /api/* (scripts, agents)  │             │
-│  │  └── Web UI         /      (dashboard, PWA)   │             │
-│  └───────────────┬────────────────────────────┘               │
-│                  │                                            │
-│  ┌───────────────▼────────────────────────────┐               │
-│  │ SQLite (single file: hub.db)                  │             │
-│  │  ├── memories      (structured memory)        │             │
-│  │  ├── documents     (RAG source docs)           │             │
-│  │  ├── chunks + vec  (sqlite-vec embeddings)     │             │
-│  │  ├── chunks_fts    (FTS5 BM25 index)           │             │
-│  │  └── projects      (project maps)              │             │
-│  └────────────────────────────────────────────┘               │
-│                                                                │
-│  Nightly backup: sqlite backup + markdown export → git push   │
-└──────────────────────────────────────────────────────────────┘
-         ▲ Tailscale (private network; Funnel optional for public access)
-         │
-   ┌─────┴──────────────────────────────────────┐
-   │ Devices (desktop, laptop, phone)             │
-   │  ├── Claude Code  → MCP (Streamable HTTP)    │
-   │  ├── Cursor / Windsurf → MCP (mcp.json)      │
-   │  ├── opencode     → MCP (opencode.json)      │
-   │  ├── Codex CLI    → MCP (config.toml)        │
-   │  ├── claude.ai / ChatGPT / Gemini → MCP (Funnel + ?token=) │
-   │  └── custom scripts → REST API               │
-   └────────────────────────────────────────────┘
+│ Mnema node — laptop, desktop, server, VM, container, or Pi    │
+│                                                               │
+│  MCP /mcp ─┐                                                  │
+│  REST /api ├─▶ one domain core ─▶ SQLite authority            │
+│  Web UI / ─┘                      ├─ FTS5 + sqlite-vec         │
+│                                  ├─ project maps + graph       │
+│                                  └─ optional vector projection │
+└───────────────────────────────┬───────────────────────────────┘
+                                │ Mnema sync (not Git)
+        ┌───────────────────────┴───────────────────────┐
+        │ Claude Code · Cursor · opencode · Codex · API │
+        └───────────────────────────────────────────────┘
 ```
 
-Embedding calls (Gemini API) are made from the Pi only — clients send raw
-text, so the API key lives in exactly one place.
+Embedding calls are made by the Mnema node only — clients send raw text, so
+provider credentials stay in exactly one place. With no embedding key Mnema
+continues in FTS-only mode.
+
+## Community and Cloud
+
+The public repository is the canonical Mnema codebase. The reusable
+`mnema-kit` library remains a separate repository; runtime databases, customer
+content, and secrets are never committed to either one.
+
+- **Community / self-hosted:** free, MIT licensed, SQLite-authoritative, and
+  fully local-first.
+- **Mnema Cloud (in development):** accounts and organizations backed by
+  Supabase Auth + Postgres, forced row-level security on every tenant-owned
+  table, and provider-neutral subscription state with a Paddle-first
+  Merchant-of-Record adapter.
+
+See [ADR-004](docs/adr/004-cloud-multitenancy-and-billing.md), the
+[cloud threat model](docs/security/cloud-threat-model.md), and the
+[pricing hypothesis](docs/product/cloud-pricing.md). Run `npm run smoke:cloud`
+to execute authorization, webhook, and Postgres tenant-isolation checks.
 
 For the full data model and phased build plan, see [`PLAN.md`](PLAN.md).
 
@@ -157,16 +160,17 @@ Without `GEMINI_API_KEY` the server still runs — it falls back to FTS-only
 (keyword) search instead of hybrid search. Nothing crashes; you lose semantic
 recall until you add a key.
 
-### Raspberry Pi deploy
+### Optional Raspberry Pi deploy
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fthsrbst/mnema/main/deploy/setup-pi.sh | bash
 ```
 
-This installs Node 22, clones the repo, builds server + web UI, generates a
-`.env` with a random `HUB_TOKEN`, installs a systemd unit (`hub@<user>`), and
-schedules a nightly backup cron job. See [`deploy/setup-pi.sh`](deploy/setup-pi.sh)
-and [`deploy/clients.md`](deploy/clients.md) for details.
+This optional target installs Node 22, clones the repo, builds server + web UI,
+generates a `.env` with a random `HUB_TOKEN`, installs a systemd unit
+(`hub@<user>`), and schedules local backups. See
+[`deploy/setup-pi.sh`](deploy/setup-pi.sh) and
+[`deploy/clients.md`](deploy/clients.md) for details.
 
 ## Connecting agents
 

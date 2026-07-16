@@ -18,12 +18,14 @@ import {
   deleteMemory,
   deleteMemoryRelation,
   deleteProject,
+  detachProjectReferences,
   listPrompts,
   knowledgeIntegrity,
   listAuditEvents,
   listSkills,
   saveSkill,
   getProject,
+  getProfessionalProfile,
   listProjects,
   listMemoryRelations,
   recall,
@@ -34,6 +36,7 @@ import {
   searchMemories,
   updateMemory,
   updateMemoryRelation,
+  upsertProfessionalProfile,
   upsertProject,
   type MemoryType,
   type ProjectMap,
@@ -45,6 +48,7 @@ import {
   vectorStore,
   verifyVectorProjectionParity,
   contextGetSchema,
+  professionalProfileInputSchema,
   documentInputSchema,
   feedbackInputBaseSchema,
   memoryInputBaseSchema,
@@ -397,6 +401,28 @@ export function buildMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "profile_get",
+    {
+      title: "Get the canonical professional profile",
+      description:
+        "Return Fatih Serbest's global professional profile and its source-document metadata. This identity domain is not a project map. Use it for CV tailoring, introductions, job-fit analysis, and evidence-backed career claims.",
+      inputSchema: {},
+    },
+    async () => json(getProfessionalProfile())
+  );
+
+  server.registerTool(
+    "profile_update",
+    {
+      title: "Update the canonical professional profile",
+      description:
+        "Replace the canonical profile document while keeping source CVs unchanged. User-confirmed corrections outrank conflicting source fields; include provenance in the markdown.",
+      inputSchema: professionalProfileInputSchema.shape,
+    },
+    async (args) => json(await upsertProfessionalProfile(args))
+  );
+
+  server.registerTool(
     "project_list",
     {
       title: "Projeleri listele",
@@ -469,6 +495,17 @@ export function buildMcpServer(): McpServer {
       const proj = appendToProject(name, "decisions", decision);
       return proj ? json(proj) : json({ error: `proje '${name}' yok` });
     }
+  );
+
+  server.registerTool(
+    "project_detach_references",
+    {
+      title: "Detach knowledge from a pseudo-project",
+      description:
+        "Administrative migration for a namespace that was incorrectly modeled as a project. Rewrites its memories, documents, sessions, and vector partitions to global scope; the project map remains until explicitly deleted.",
+      inputSchema: { name: z.string() },
+    },
+    async ({ name }) => json(detachProjectReferences(name))
   );
 
   server.registerTool(

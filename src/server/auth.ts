@@ -122,6 +122,9 @@ const MCP_SCOPES: Record<string, HubScope> = {
   project_add_decision: "project:write",
   project_delete: "project:write",
   project_migrate_references: "admin:write",
+  project_detach_references: "admin:write",
+  profile_get: "knowledge:read",
+  profile_update: "knowledge:write",
   session_recent: "session:read",
   session_log: "session:write",
   machine_status: "compute:execute",
@@ -233,7 +236,9 @@ export function restScope(method: string, path: string): HubScope {
   if (path === "/timeline" || path.startsWith("/stats/")) return "knowledge:read";
   if (path.startsWith("/rag/reindex")) return "admin:write";
   if (path.startsWith("/rag")) return method === "GET" ? "knowledge:read" : "knowledge:write";
+  if (path === "/profile") return method === "GET" ? "knowledge:read" : "knowledge:write";
   if (path === "/projects/migrate-references") return "admin:write";
+  if (/^\/projects\/[^/]+\/detach-references$/.test(path)) return "admin:write";
   if (path.startsWith("/projects")) return method === "GET" ? "project:read" : "project:write";
   if (path.startsWith("/graph")) return "knowledge:read";
   if (path.startsWith("/sessions")) return method === "GET" ? "session:read" : "session:write";

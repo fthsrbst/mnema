@@ -107,15 +107,18 @@ export interface ProjectReferenceMigrationResult {
   sessions: number;
 }
 
-/**
- * Atomically rewrites project references and vec partition metadata. This is an
- * administrative data migration, not a project-map rename/delete operation.
- */
-export function migrateProjectReferences(fromRaw: string, toRaw: string): ProjectReferenceMigrationResult {
-  const from = projectNameSchema.parse(fromRaw);
-  const to = projectNameSchema.parse(toRaw);
-  if (from === to) return { from, to, memories: 0, documents: 0, sessions: 0 };
-  if (!isKnownProjectName(to)) throw new Error(`target project '${to}' has no canonical project map`);
+export interface ProjectReferenceDetachResult {
+  from: string;
+  to: null;
+  memories: number;
+  documents: number;
+  sessions: number;
+}
+
+function rewriteProjectReferences(
+  from: string,
+  to: string | null
+): ProjectReferenceMigrationResult | ProjectReferenceDetachResult {
   const db = getDb();
   const memoryVectors = vectorStore.available()
     ? (db.prepare("SELECT id FROM memories WHERE project = ?").all(from) as { id: number }[])
@@ -149,4 +152,27 @@ export function migrateProjectReferences(fromRaw: string, toRaw: string): Projec
   })();
   if (result.memories + result.documents + result.sessions > 0) notifyWrite();
   return result;
+}
+
+/**
+ * Atomically rewrites project references and vec partition metadata. This is an
+ * administrative data migration, not a project-map rename/delete operation.
+ */
+export function migrateProjectReferences(fromRaw: string, toRaw: string): ProjectReferenceMigrationResult {
+  const from = projectNameSchema.parse(fromRaw);
+  const to = projectNameSchema.parse(toRaw);
+  if (from === to) return { from, to, memories: 0, documents: 0, sessions: 0 };
+  if (!isKnownProjectName(to)) throw new Error(`target project '${to}' has no canonical project map`);
+  return rewriteProjectReferences(from, to) as ProjectReferenceMigrationResult;
+}
+
+/**
+ * Removes a pseudo-project namespace while preserving its knowledge as global
+ * data. This is intentionally separate from deleteProject so a normal project
+ * can never lose its scope merely because its map was deleted.
+ */
+export function detachProjectReferences(nameRaw: string): ProjectReferenceDetachResult {
+  const from = projectNameSchema.parse(nameRaw);
+  if (!getProject(from)) throw new Error(`project '${from}' has no project map`);
+  return rewriteProjectReferences(from, null) as ProjectReferenceDetachResult;
 }

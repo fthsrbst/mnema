@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MNEMA — One memory for every AI agent</title>
-<meta name="description" content="Mnema is a self-hosted shared memory server for AI agents. Memory, RAG, project maps and auto-recall over MCP + REST. Runs on a Raspberry Pi, syncs across your devices. Open source, MIT.">
+<meta name="description" content="Mnema is local-first shared context for AI agents: memory, RAG, detailed project maps and auto-recall over MCP + REST. Self-host anywhere or use Mnema Cloud. Open source, MIT.">
 <meta property="og:title" content="MNEMA — One memory for every AI agent">
-<meta property="og:description" content="Self-hosted shared memory for AI agents. Hybrid search memory, RAG, project maps, auto-recall — 24 MCP tools, one SQLite file, your own hardware.">
+<meta property="og:description" content="Local-first shared context for AI agents. Hybrid memory, RAG, project maps and auto-recall — self-hosted Community edition plus secure Mnema Cloud.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Mnema">
 <meta name="twitter:card" content="summary">
@@ -28,6 +28,7 @@
   --mono:'IBM Plex Mono',monospace;
   --pix:'Silkscreen',monospace;
   --crt:'VT323',monospace;
+  --ascii:ui-monospace,Consolas,'Cascadia Mono','DejaVu Sans Mono','Liberation Mono',monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -93,7 +94,7 @@ section{position:relative}
 .hero__meta b{color:var(--phos);font-weight:400}
 .asciiwrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
 .asciilogo{
-  font-family:var(--mono);
+  font-family:var(--ascii);
   font-size:clamp(9px,2.05vw,22px);
   line-height:1.12;
   color:var(--phos);
@@ -202,6 +203,7 @@ section{position:relative}
   background:var(--phos);
 }
 .fcard pre.icon{
+  font-family:var(--ascii);
   font-size:11px;line-height:1.15;color:var(--phos);margin-bottom:14px;
   text-shadow:0 0 10px rgba(166,255,107,.3);
 }
@@ -224,6 +226,7 @@ section{position:relative}
   -webkit-overflow-scrolling:touch;
 }
 .arch__pre{
+  font-family:var(--ascii);
   font-size:clamp(10px,1.15vw,13px);line-height:1.18;color:var(--paper);
   padding:clamp(16px,3vw,34px);white-space:pre;min-width:max-content;
 }
@@ -273,6 +276,27 @@ section{position:relative}
 }
 .tracks__total b{color:var(--phos);font-weight:400}
 
+/* ---------- pricing ---------- */
+.pricing{border-bottom:1px solid var(--paper)}
+.pricegrid{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  border-top:1px solid var(--paper);border-left:1px solid var(--paper);
+  margin-bottom:24px;
+}
+@media(max-width:960px){.pricegrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.pricegrid{grid-template-columns:1fr}}
+.pricecard{border-right:1px solid var(--paper);border-bottom:1px solid var(--paper);padding:24px;position:relative}
+.pricecard--focus{background:#071006;box-shadow:inset 0 0 0 2px var(--phos)}
+.pricecard__name{font-family:var(--pix);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--phos)}
+.pricecard__price{font-family:var(--crt);font-size:42px;line-height:1;margin:14px 0 5px}
+.pricecard__price small{font-family:var(--mono);font-size:11px;color:var(--grey)}
+.pricecard__for{color:var(--grey);font-size:12px;min-height:38px;margin-bottom:15px}
+.pricecard ul{list-style:none;font-size:12px}
+.pricecard li{padding:7px 0;border-top:1px dashed var(--phos-dim)}
+.pricecard li::before{content:"■";color:var(--phos);margin-right:8px;font-size:8px}
+.pricing__note{color:var(--grey);font-size:12px;max-width:78ch;margin-bottom:clamp(44px,7vh,80px)}
+.pricing__note b{color:var(--paper);font-weight:500}
+
 /* ---------- quickstart ---------- */
 .qs{border-bottom:1px solid var(--paper)}
 .qs__grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:22px}
@@ -315,7 +339,7 @@ footer{padding:clamp(40px,7vh,72px) 0 90px;position:relative}
   font-family:var(--pix);font-size:9px;letter-spacing:.3em;color:var(--grey);
   text-align:center;margin-top:6px;text-transform:uppercase;
 }
-.foot__ascii{color:var(--phos-dim);font-size:10px;line-height:1.25;margin-bottom:26px;overflow-x:auto;white-space:pre}
+.foot__ascii{font-family:var(--ascii);color:var(--phos-dim);font-size:10px;line-height:1.25;margin-bottom:26px;overflow-x:auto;white-space:pre}
 
 /* focus */
 a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
@@ -330,7 +354,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:
 
 <div class="ticker" aria-hidden="true">
   <div class="ticker__inner">
-    <span>MNEMA <b>///</b> one memory for every AI agent</span><span><b>■</b> self-hosted</span><span><b>■</b> open source · MIT</span><span><b>■</b> MCP + REST</span><span><b>■</b> SQLite + FTS5 + sqlite-vec</span><span><b>■</b> runs on a Raspberry Pi</span><span><b>■</b> local-first LWW sync</span><span>MNEMA <b>///</b> one memory for every AI agent</span><span><b>■</b> self-hosted</span><span><b>■</b> open source · MIT</span><span><b>■</b> MCP + REST</span><span><b>■</b> SQLite + FTS5 + sqlite-vec</span><span><b>■</b> runs on a Raspberry Pi</span><span><b>■</b> local-first LWW sync</span>
+    <span>MNEMA <b>///</b> one memory for every AI agent</span><span><b>■</b> local-first</span><span><b>■</b> open source · MIT</span><span><b>■</b> MCP + REST</span><span><b>■</b> self-host anywhere</span><span><b>■</b> secure cloud option</span><span><b>■</b> local-first LWW sync</span><span>MNEMA <b>///</b> one memory for every AI agent</span><span><b>■</b> local-first</span><span><b>■</b> open source · MIT</span><span><b>■</b> MCP + REST</span><span><b>■</b> self-host anywhere</span><span><b>■</b> secure cloud option</span><span><b>■</b> local-first LWW sync</span>
   </div>
 </div>
 
@@ -355,13 +379,14 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:
     <h1 class="hero__tag">One memory for <em>every</em> AI agent.</h1>
     <p class="hero__sub">
       Claude Code, Cursor, opencode, Codex CLI — each forgets when the session ends.
-      Mnema is a small <b>self-hosted server</b> that gives them all one common brain:
-      structured memory, hybrid RAG, project maps and auto-recall. One SQLite file,
-      one protocol (MCP), your own hardware.
+      Mnema is a <b>local-first context layer</b> that gives them all one common brain:
+      structured memory, hybrid RAG, detailed project maps and auto-recall. Self-host
+      it anywhere, or choose a managed cloud workspace when you need a team account.
     </p>
     <nav class="cta" aria-label="Primary">
-      <a class="btn btn--solid" href="https://github.com/fthsrbst/mnema">View on GitHub</a>
+      <a class="btn btn--solid" href="https://github.com/fthsrbst/mnema">Star on GitHub</a>
       <a class="btn" href="#quickstart">Quick start</a>
+      <a class="btn" href="#pricing">Cloud plans</a>
     </nav>
     <div class="hero__stamps" aria-hidden="true">
       <span class="stamp stamp--go">Self-hosted</span>
@@ -369,7 +394,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:
       <span class="stamp">TypeScript</span>
       <span class="stamp">SQLite</span>
       <span class="stamp">MCP</span>
-      <span class="stamp">No cloud required</span>
+      <span class="stamp">Cloud optional</span>
     </div>
   </div>
 </header>
@@ -459,9 +484,9 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:
 █ ▓ █ ██
 █▄▄▄█ ▀▀</pre>
         <h3>Project maps</h3>
-        <p>One structured record per project: architecture, module map,
-        decisions, current focus, next steps. Agents stop re-discovering
-        your codebase — <code>project_get("name")</code> and go.</p>
+        <p>One evidence-backed record per project: architecture, components,
+        dependencies, data model, decisions, solved problems, documents and
+        graph links. <code>project_get("name")</code> and go.</p>
         <span class="tag">project_get / project_update</span>
       </article>
       <article class="fcard reveal">
@@ -470,7 +495,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:
  ▐ MCP ▌
 ◄██► ◄██►</pre>
         <h3>MCP + REST</h3>
-        <p>24 MCP tools over Streamable HTTP for agents; a mirror REST API for
+        <p>A broad MCP toolset over Streamable HTTP for agents; a mirror REST API for
         scripts and the web UI. One implementation, two doors. Works with
         Claude Code, Cursor, opencode, Codex CLI, ChatGPT&hellip;</p>
         <span class="tag">/mcp · /api/*</span>
@@ -499,7 +524,7 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:
       </article>
       <article class="fcard reveal">
         <pre class="icon" aria-hidden="true">
-PC ◄═══► Pi
+PC ◄═══► NODE
      ║
     Mac</pre>
         <h3>Cross-device sync</h3>
@@ -531,10 +556,10 @@ PC ◄═══► Pi
       <h2 class="shead__t" id="arch-t">Signal path</h2>
       <span class="shead__d">devices ↔ hub ↔ storage</span>
     </div>
-    <div class="arch__scroll reveal" role="img" aria-label="Architecture diagram: desktop and laptop devices connect over a private Tailscale mesh via MCP and REST to a hub server on a Raspberry Pi 5, which stores everything in a single SQLite file with FTS5 and sqlite-vec indexes, with nightly backups.">
+    <div class="arch__scroll reveal" role="img" aria-label="Architecture diagram: desktop and laptop agents connect over MCP and REST to a Mnema node on any host, which stores everything in a single SQLite authority with FTS5 and sqlite-vec indexes and encrypted backups.">
 <pre class="arch__pre" aria-hidden="true">
 <span class="d">┌──────────────┐</span>              <span class="g">┌──────────────────────────────────┐</span>              <span class="d">┌──────────────┐</span>
-<span class="d">│   DESKTOP    │</span>              <span class="g">│  RASPBERRY PI 5 ·· always-on hub │</span>              <span class="d">│    LAPTOP    │</span>
+<span class="d">│   DESKTOP    │</span>              <span class="g">│  MNEMA NODE ·· CHOOSE YOUR HOST  │</span>              <span class="d">│    LAPTOP    │</span>
 <span class="d">│              │</span>              <span class="g">│                                  │</span>              <span class="d">│              │</span>
 <span class="d">│  Claude Code │</span>──── MCP ────▶<span class="g">│  ┌────────────────────────────┐  │</span>◀──── MCP ────<span class="d">│  Cursor      │</span>
 <span class="d">│  Cursor      │</span>              <span class="g">│  │ mnema server · Node 22     │  │</span>              <span class="d">│  opencode    │</span>
@@ -550,7 +575,7 @@ PC ◄═══► Pi
                               <span class="g">│  │  chunks_fts · FTS5 BM25    │  │</span>
                               <span class="g">│  └────────────────────────────┘  │</span>
                               <span class="g">│                                  │</span>
-                              <span class="g">│  nightly: sqlite backup ──▶ git  │</span>
+                              <span class="g">│  encrypted backup ·· never Git   │</span>
                               <span class="g">└──────────────────────────────────┘</span>
 </pre>
     </div>
@@ -564,7 +589,7 @@ PC ◄═══► Pi
     <div class="shead">
       <span class="shead__no">04</span>
       <h2 class="shead__t" id="tools-t">Tool tracklist</h2>
-      <span class="shead__d">MNM-001 · 24 tracks</span>
+      <span class="shead__d">MNM-001 · foundational API</span>
     </div>
     <p class="tracks__note">Every capability is an MCP tool. Point any MCP client at
     <code>/mcp</code> and the full set is callable — same tools, every agent, every device.</p>
@@ -594,15 +619,56 @@ PC ◄═══► Pi
       <li class="track reveal"><span class="track__no">23.</span><span class="track__body"><span class="track__name">workflow_list</span><span class="track__desc">ComfyUI workflow registry</span></span><span class="wave" aria-hidden="true"></span></li>
       <li class="track reveal"><span class="track__no">24.</span><span class="track__body"><span class="track__name">media_generate</span><span class="track__desc">image &amp; video via ComfyUI, one API</span></span><span class="wave" aria-hidden="true"></span></li>
     </ol>
-    <p class="tracks__total">total running time: <b>24 tools</b> · all in daily use · REST mirrors every track</p>
+    <p class="tracks__total"><b>24 foundational tools shown</b> · the live toolset continues to grow · REST mirrors the core</p>
   </div>
 </section>
 
-<!-- ============ 05 QUICK START ============ -->
-<section class="qs" id="quickstart" aria-labelledby="qs-t">
+<!-- ============ 05 PRICING ============ -->
+<section class="pricing" id="pricing" aria-labelledby="pricing-t">
   <div class="shell">
     <div class="shead">
       <span class="shead__no">05</span>
+      <h2 class="shead__t" id="pricing-t">Choose your authority</h2>
+      <span class="shead__d">community stays free · cloud stays optional</span>
+    </div>
+    <div class="pricegrid">
+      <article class="pricecard reveal">
+        <div class="pricecard__name">Community</div>
+        <div class="pricecard__price">$0</div>
+        <p class="pricecard__for">Self-host on hardware you control.</p>
+        <ul><li>Full open-source server</li><li>SQLite authority + own sync</li><li>No account or lock-in</li></ul>
+      </article>
+      <article class="pricecard reveal">
+        <div class="pricecard__name">Cloud Free</div>
+        <div class="pricecard__price">$0</div>
+        <p class="pricecard__for">Evaluate managed Mnema.</p>
+        <ul><li>2 projects</li><li>1 member · 100 MB</li><li>100k embedding tokens</li></ul>
+      </article>
+      <article class="pricecard pricecard--focus reveal">
+        <div class="pricecard__name">Starter</div>
+        <div class="pricecard__price">$9 <small>/ month</small></div>
+        <p class="pricecard__for">An individual developer's durable workspace.</p>
+        <ul><li>10 projects</li><li>1 member · 1 GB</li><li>1M embedding tokens</li></ul>
+      </article>
+      <article class="pricecard reveal">
+        <div class="pricecard__name">Pro / Team</div>
+        <div class="pricecard__price">$19+ <small>/ month</small></div>
+        <p class="pricecard__for">Power users and small teams.</p>
+        <ul><li>3–10 members</li><li>5–20 GB</li><li>Longer audit retention</li></ul>
+      </article>
+    </div>
+    <p class="pricing__note"><b>Security model:</b> Supabase Auth, one organization per active tenant context,
+      forced Postgres row-level security, composite tenant foreign keys, MFA for billing/destructive actions,
+      and signed idempotent billing webhooks. Prices are a pre-launch hypothesis; annual billing will reduce
+      fixed transaction cost. Taxes are handled by a Merchant of Record.</p>
+  </div>
+</section>
+
+<!-- ============ 06 QUICK START ============ -->
+<section class="qs" id="quickstart" aria-labelledby="qs-t">
+  <div class="shell">
+    <div class="shead">
+      <span class="shead__no">06</span>
       <h2 class="shead__t" id="qs-t">Quick start</h2>
       <span class="shead__d">node 22+ · any OS</span>
     </div>
@@ -628,7 +694,7 @@ PC ◄═══► Pi
 <span class="o">→ http://127.0.0.1:8033</span></pre>
       </div>
       <div class="term reveal">
-        <div class="term__bar"><b>RASPBERRY PI ·· always-on deploy</b><span class="dots">·····</span></div>
+        <div class="term__bar"><b>OPTIONAL ·· raspberry pi deploy</b><span class="dots">·····</span></div>
         <pre><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/\
   fthsrbst/mnema/master/deploy/setup-pi.sh | bash
 
@@ -675,9 +741,9 @@ PC ◄═══► Pi
           <a href="#quickstart">Quick start</a>
           <a href="#tools">Tools</a>
         </nav>
-        <p class="foot__fine">© 2026 Fatih Serbest · MIT License · Mnema is a personal-scale tool —
-        one user, a handful of devices, zero cloud dependencies. Built with TypeScript, SQLite,
-        Express &amp; MCP.</p>
+        <p class="foot__fine">© 2026 Fatih Serbest · MIT License · Mnema is local-first:
+        self-hosted Community edition plus an optional secure multi-tenant cloud. Built with
+        TypeScript, SQLite/Postgres, Express &amp; MCP.</p>
       </div>
       <figure class="barcode" aria-hidden="true">
         <svg width="196" height="52" viewBox="0 0 196 52" role="presentation">

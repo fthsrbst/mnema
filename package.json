@@ -1,7 +1,7 @@
 {
-  "name": "ai-hub",
+  "name": "mnema",
   "version": "0.1.0",
-  "description": "Ortak AI hafızası: MCP + REST üzerinden hafıza, RAG ve proje mapleri (Raspberry Pi hub)",
+  "description": "Local-first shared memory, RAG, project maps and context for AI agents over MCP + REST",
   "type": "module",
   "private": true,
   "engines": {
@@ -22,6 +22,9 @@
     "migration:audit": "tsx scripts/migration-audit.ts",
     "reset:knowledge": "tsx scripts/reset-knowledge.ts",
     "smoke:security": "tsx scripts/security-smoke.ts",
+    "smoke:saas-security": "tsx scripts/saas-security-smoke.ts",
+    "smoke:tenant": "tsx scripts/tenant-isolation-smoke.ts",
+    "smoke:cloud": "npm run smoke:saas-security && npm run smoke:tenant",
     "smoke:generation": "tsx scripts/generation-smoke.ts",
     "smoke:qdrant": "tsx scripts/qdrant-smoke.ts",
     "smoke": "tsx scripts/smoke.ts",
@@ -38,6 +41,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.5",
     "@types/better-sqlite3": "^7.6.12",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.0",

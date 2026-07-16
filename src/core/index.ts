@@ -22,6 +22,7 @@ export * from "./audit.js";
 export * from "./documents.js";
 export * from "./extract.js";
 export * from "./projects.js";
+export * from "./profiles.js";
 export * from "./sessions.js";
 export * from "./recall.js";
 export * from "./context.js";

@@ -77,11 +77,23 @@ check(
 );
 check("REST policy recall feedback write", restScope("POST", "/recall/feedback") === "knowledge:write");
 check("REST policy reindex admin", restScope("POST", "/rag/reindex") === "admin:write");
+check("REST profile read uses knowledge scope", restScope("GET", "/profile") === "knowledge:read");
+check("REST profile update uses knowledge write", restScope("PUT", "/profile") === "knowledge:write");
+check(
+  "REST pseudo-project detach is admin-only",
+  restScope("POST", "/projects/professional-profile/detach-references") === "admin:write"
+);
 check("REST vector projection status is admin read", restScope("GET", "/vector-projection") === "admin:read");
 check("REST vector projection rebuild is admin write", restScope("POST", "/vector-projection/rebuild") === "admin:write");
 check(
   "MCP vector projection administration denied to context reader",
   Boolean(reader && !authorizeMcp(reader, mcp("vector_projection_rebuild", {})).ok)
+);
+check("MCP profile read allowed to knowledge reader", Boolean(reader && authorizeMcp(reader, mcp("profile_get", {})).ok));
+check("MCP profile update denied to read-only principal", Boolean(reader && !authorizeMcp(reader, mcp("profile_update", { markdown: "x" })).ok));
+check(
+  "MCP pseudo-project detach denied to non-admin",
+  Boolean(reader && !authorizeMcp(reader, mcp("project_detach_references", { name: "professional-profile" })).ok)
 );
 
 const first = consumeRateLimit("reader", 1_000);
