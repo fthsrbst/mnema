@@ -21,7 +21,7 @@ export function cloudSecurityHeaders(options: CloudSecurityHeadersOptions = {}):
     "form-action 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    "font-src 'self'",
+    "font-src 'self' data:",
     "img-src 'self' data: blob:",
     `connect-src ${connectSources.join(" ")}`,
     "frame-src https://*.paddle.com https://*.paddle.io",

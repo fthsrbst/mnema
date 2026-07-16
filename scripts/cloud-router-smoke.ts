@@ -212,6 +212,7 @@ const limitedProbe = await fetch(`${base}/limit-probe`);
 check(
   "Cloud edge sets CSP/HSTS, hides Express, and rate-limits abuse",
   headerProbe.headers.get("content-security-policy")?.includes(config.supabaseUrl) === true &&
+    headerProbe.headers.get("content-security-policy")?.includes("font-src 'self' data:") === true &&
     headerProbe.headers.get("strict-transport-security") !== null &&
     headerProbe.headers.get("x-powered-by") === null && limitedProbe.status === 429
 );
