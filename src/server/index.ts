@@ -13,8 +13,10 @@ import {
   getDb,
   hasVec,
   onWrite,
+  pruneStalePresence,
   recordAuditEvent,
   runDigest,
+  seedAssetsFromDisk,
   syncWithPrimary,
   vectorStore,
   vecError,
@@ -223,6 +225,7 @@ app.use("/api", (req, res, next) => {
     req.path.startsWith("/rag/search") ||
     req.path === "/rag/documents" ||
     req.path.startsWith("/sessions") ||
+    req.path === "/agents/active" ||
     req.path.startsWith("/graph");
   if (restricted && requiresExplicitProject && project === undefined) {
     return void res.status(403).json({ error: "forbidden", reason: "explicit project required for this principal" });
@@ -275,7 +278,14 @@ const reject = (res: express.Response) =>
 app.get("/mcp", (_req, res) => reject(res));
 app.delete("/mcp", (_req, res) => reject(res));
 
-if (communityEnabled) getDb(); // şemayı baştan kur, sorun varsa açılışta patlasın
+if (communityEnabled) {
+  getDb(); // şemayı baştan kur, sorun varsa açılışta patlasın
+  // Skill/prompt DB authority: ilk açılışta repo dosyalarını seed eder (idempotent —
+  // zaten DB'de olanın üzerine yazmaz). Sonraki yazımlar DB'de kalır, sync ile yayılır.
+  const seeded = seedAssetsFromDisk();
+  if (seeded.seeded > 0) console.log(`[hub] assets seed: ${seeded.seeded} skill/prompt disk'ten DB'ye içe aktarıldı`);
+  pruneStalePresence();
+}
 
 app.listen(config.port, config.host, () => {
   console.log(`[hub] http://${config.host}:${config.port}  (MCP: /mcp, REST: /api, health: /health)`);
@@ -348,11 +358,15 @@ app.listen(config.port, config.host, () => {
       }
       syncing = true;
       try {
+        // Presence prune sync'ten önce: 7+ günlük done/abandoned kayıtlar tombstone'lanır,
+        // böylece bu turda gönderilecek silme kümesine de girerler. Ayrı bir bakım
+        // noktası yok; ucuz olduğu için sync öncesi burada yeterli.
+        pruneStalePresence();
         const res = await syncWithPrimary(config.primaryUrls, config.primaryToken);
         if (res.ok) {
           const p = res.pulled!, q = res.pushed!;
-          const total = p.memories + p.documents + (p.relations ?? 0) + p.projects + p.sessions + p.machines + p.deletions +
-                        q.memories + q.documents + (q.relations ?? 0) + q.projects + q.sessions + q.machines + q.deletions;
+          const total = p.memories + p.documents + (p.relations ?? 0) + p.projects + p.sessions + p.machines + (p.assets ?? 0) + (p.agent_presence ?? 0) + p.deletions +
+                        q.memories + q.documents + (q.relations ?? 0) + q.projects + q.sessions + q.machines + (q.assets ?? 0) + (q.agent_presence ?? 0) + q.deletions;
           if (total > 0) console.log(`[hub] sync (${res.url}): alınan ${JSON.stringify(p)}, gönderilen ${JSON.stringify(q)}`);
         } else {
           // Erişilemezse sessizce devam — local-first, primary dönünce kaldığı yerden sürer.
@@ -379,6 +393,12 @@ app.listen(config.port, config.host, () => {
         void runSync();
       }, config.syncDebounceMs);
     });
+  }
+
+  // Primary yoksa (tek-node kurulum) presence prune sync döngüsüne binmez —
+  // bağımsız düşük frekanslı bir zamanlayıcı yeterli (ucuz, günde birkaç kez de olsa sorun değil).
+  if (communityEnabled && config.primaryUrls.length === 0) {
+    setInterval(() => pruneStalePresence(), 6 * 60 * 60 * 1_000);
   }
 
   // Gece özeti: dakikada bir saat kontrolü ile hafif zamanlayıcı (node-cron yok — sıfır bağımlılık).

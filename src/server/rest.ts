@@ -6,6 +6,9 @@ import {
   addDocument,
   addRecallFeedback,
   addSessionLog,
+  agentActive,
+  agentCheckin,
+  agentCheckout,
   feedbackSummary,
   feedbackQualityBreakdown,
   listRecallFeedback,
@@ -317,6 +320,14 @@ export function buildRestRouter(): Router {
   }));
   r.delete("/sessions/:id", wrap((req, res) => res.json({ deleted: deleteSessionLog(Number(req.params.id)) })));
 
+  // --- agent presence (advisory koordinasyon — kilit DEĞİL, bkz. presence.ts) ---
+  r.post("/agents/checkin", wrap((req, res) => res.json(agentCheckin(req.body))));
+  r.post("/agents/checkout", wrap((req, res) => {
+    const result = agentCheckout(req.body);
+    result ? res.json(result) : res.status(404).json({ error: "bulunamadı" });
+  }));
+  r.get("/agents/active", wrap((req, res) => res.json(agentActive(req.query.project as string | undefined))));
+
   // --- compute (yerel AI orkestrasyonu) ---
   r.get("/machines", wrap((_req, res) => res.json(listMachines())));
   r.get("/machines/status", wrap(async (_req, res) => res.json(await machinesStatus())));
@@ -343,15 +354,16 @@ export function buildRestRouter(): Router {
     res.json(files);
   }));
 
-  // --- skills (repo'daki skills/ klasörü; düzenleme sonrası git commit + hub sync kullanıcıda) ---
+  // --- skills (DB authority, assets tablosu — bkz. assets.ts/skills.ts. Kalıcılık ve
+  // cihazlar arası dağıtım sync ile otomatik; git commit/push GEREKMEZ.) ---
   r.get("/skills", wrap((_req, res) => res.json(listSkills())));
   r.put("/skills/:name", wrap((req, res) => {
     saveSkill(req.params.name, String(req.body.content ?? ""));
-    res.json({ ok: true, note: "Kalıcı olması için: git commit + push + her cihazda hub sync" });
+    res.json({ ok: true, note: "DB'ye yazıldı, diğer cihazlara sync ile otomatik yayılır. Yerel dosyaya materyalize etmek için o cihazda: hub sync" });
   }));
   r.delete("/skills/:name", wrap((req, res) => res.json({ deleted: deleteSkill(req.params.name) })));
 
-  // --- prompts (rol bazlı master prompt kütüphanesi) ---
+  // --- prompts (rol bazlı master prompt kütüphanesi; DB authority — bkz. assets.ts/prompts.ts) ---
   r.get("/prompts", wrap((_req, res) => res.json(listPrompts())));
   r.get("/prompts/:name", wrap((req, res) => {
     const raw = req.query.raw === "1";
@@ -362,7 +374,7 @@ export function buildRestRouter(): Router {
   }));
   r.put("/prompts/:name", wrap((req, res) => {
     savePrompt(req.params.name, String(req.body.content ?? ""));
-    res.json({ ok: true, note: "Kalıcı olması için: git commit + push (Pi'de git pull)" });
+    res.json({ ok: true, note: "DB'ye yazıldı, diğer cihazlara sync ile otomatik yayılır." });
   }));
 
   // --- sync (cihazlar arası eşitleme) ---

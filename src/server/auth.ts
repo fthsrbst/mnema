@@ -127,6 +127,9 @@ const MCP_SCOPES: Record<string, HubScope> = {
   profile_update: "knowledge:write",
   session_recent: "session:read",
   session_log: "session:write",
+  agent_checkin: "session:write",
+  agent_checkout: "session:write",
+  agent_active: "session:read",
   machine_status: "compute:execute",
   machine_register: "admin:write",
   local_llm: "compute:execute",
@@ -212,6 +215,8 @@ const PROJECT_SENSITIVE_TOOLS = new Set([
   "rag_add",
   "session_recent",
   "session_log",
+  "agent_checkin",
+  "agent_active",
 ]);
 
 export function authorizeMcp(principal: Principal, body: unknown): { ok: true } | { ok: false; reason: string } {
@@ -242,6 +247,7 @@ export function restScope(method: string, path: string): HubScope {
   if (path.startsWith("/projects")) return method === "GET" ? "project:read" : "project:write";
   if (path.startsWith("/graph")) return "knowledge:read";
   if (path.startsWith("/sessions")) return method === "GET" ? "session:read" : "session:write";
+  if (path.startsWith("/agents")) return method === "GET" ? "session:read" : "session:write";
   if (path.startsWith("/machines") || path === "/llm" || path.startsWith("/workflow") || path === "/image" || path === "/media")
     return method === "GET" || path === "/llm" || path === "/image" || path === "/media" ? "compute:execute" : "admin:write";
   if (path.startsWith("/sync")) return method === "GET" ? "sync:read" : "sync:write";

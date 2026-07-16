@@ -4,6 +4,9 @@ import {
   addDocument,
   addRecallFeedback,
   addSessionLog,
+  agentActive,
+  agentCheckin,
+  agentCheckout,
   generateImage,
   listWorkflows,
   localLlm,
@@ -47,6 +50,8 @@ import {
   queueFullVectorProjection,
   vectorStore,
   verifyVectorProjectionParity,
+  agentCheckinSchema,
+  agentCheckoutSchema,
   contextGetSchema,
   professionalProfileInputSchema,
   documentInputSchema,
@@ -533,7 +538,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Skill oluştur/güncelle",
       description:
-        "skills/<ad>/SKILL.md yazar — AI ile yeni skill üretmek için kullan. İçerik SKILL.md formatında olmalı: '---\\nname: <ad>\\ndescription: <ne zaman kullanılacağı>\\n---' frontmatter + markdown gövde (adımlar, kurallar, örnekler). Cihazlara dağıtım: git commit + her cihazda `hub sync`.",
+        "Skill oluşturur/günceller — AI ile yeni skill üretmek için kullan. İçerik SKILL.md formatında olmalı: '---\\nname: <ad>\\ndescription: <ne zaman kullanılacağı>\\n---' frontmatter + markdown gövde (adımlar, kurallar, örnekler). Kalıcılık ve cihazlar arası dağıtım OTOMATİKTİR (DB authority + sync) — git commit/push GEREKMEZ. Bir cihazda ~/.claude/skills'e dosya olarak materyalize etmek için o cihazda `hub sync` çalıştır.",
       inputSchema: {
         name: z.string().describe("kebab-case skill adı"),
         content: z.string().describe("SKILL.md tam içeriği (frontmatter dahil)"),
@@ -583,6 +588,41 @@ export function buildMcpServer(): McpServer {
       inputSchema: { project: z.string().optional(), limit: z.number().int().min(1).max(30).optional() },
     },
     async ({ project, limit }) => json(recentSessionLogs({ project, limit }))
+  );
+
+  server.registerTool(
+    "agent_checkin",
+    {
+      title: "Agent varlığını bildir (advisory, kilit değil)",
+      description:
+        "Bir projede çalışmaya BAŞLARKEN çağır: hangi cihaz/branch'te ne yaptığını diğer agent'lara bildirir. Bu bir mutual-exclusion KİLİDİ DEĞİLDİR — sadece koordinasyon sinyalidir; başka bir agent aktif görünse bile çalışmaya devam edebilirsin, dikkatli ol. uid vermeden çağırırsan yeni kayıt açılır ve uid döner — işin sürerken periyodik (heartbeat) veya task değiştikçe aynı uid ile tekrar çağır. İş bitince agent_checkout ile kapat.",
+      inputSchema: agentCheckinSchema.shape,
+    },
+    async (args) => json(agentCheckin(args))
+  );
+
+  server.registerTool(
+    "agent_checkout",
+    {
+      title: "Agent varlığını kapat",
+      description: "İş BİTİNCE çağır (agent_checkin'den dönen uid ile): durumu 'done' (varsayılan) veya 'abandoned' yapar. Çağırmayı unutursan kayıt kilitlenmez — heartbeat_at bayatlayınca diğer agent'lara 'muhtemelen düşmüş' olarak görünür.",
+      inputSchema: agentCheckoutSchema.shape,
+    },
+    async (args) => {
+      const result = agentCheckout(args);
+      return result ? json(result) : json({ error: `agent_presence uid bulunamadı: ${(args as { uid?: string }).uid}` });
+    }
+  );
+
+  server.registerTool(
+    "agent_active",
+    {
+      title: "Bu projede aktif agent'ları listele",
+      description:
+        "Bir projede şu an aktif (checkin yapılmış, henüz checkout edilmemiş) agent kayıtlarını döner. Stale (bayat) kayıtlar 'stale: true' işaretlenir — HUB_PRESENCE_TTL_MIN'den (varsayılan 30dk) eski heartbeat, muhtemelen agent düştü demektir. SONUÇ BİR KİLİT DEĞİLDİR: aktif kayıt görsen de kendi işine devam edebilirsin, sadece dikkatli koordine ol (aynı dosyaları eşzamanlı değiştirmek gibi çakışmalardan kaçın).",
+      inputSchema: { project: z.string().optional() },
+    },
+    async ({ project }) => json(agentActive(project))
   );
 
   server.registerTool(
