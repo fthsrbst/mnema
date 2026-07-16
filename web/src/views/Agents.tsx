@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { VStack, HStack } from "../components/ui/Stack";
+import { VStack, HStack, Grid } from "../components/ui/Stack";
 import { Panel } from "../components/ui/Panel";
 import { Heading, Text } from "../components/ui/Typography";
 import { StatusDot, Tag } from "../components/ui/Tag";
 import { EmptyState } from "../components/ui/EmptyState";
 import { DataTable, type Column } from "../components/ui/DataTable";
-import { OfficeCanvas } from "../components/agents/OfficeCanvas";
 import { fetchActiveAgents, fetchRecentAgents, type AgentPresence } from "../api";
 import { useI18n } from "../i18n";
 
@@ -48,10 +47,10 @@ export function Agents() {
     const end = endIso ? parseTs(endIso) : Date.now();
     if (Number.isNaN(start) || Number.isNaN(end)) return "—";
     const mins = Math.max(0, Math.round((end - start) / 60000));
-    if (mins < 60) return `${mins} dk`;
+    if (mins < 60) return `${mins} ${t("agents.durMin")}`;
     const hours = Math.floor(mins / 60);
     const rem = mins % 60;
-    return `${hours} sa ${rem} dk`;
+    return `${hours} ${t("agents.durHour")} ${rem} ${t("agents.durMin")}`;
   }
 
   const statusLabel = (a: AgentPresence): string => {
@@ -68,7 +67,7 @@ export function Agents() {
       setConnLost(false);
       hasLoadedOnce.current = true;
     } catch {
-      // Sunucu erişilemez/401 — son bilinen sahneyi koru, sadece rozet göster.
+      // Sunucu erişilemez/401 — son bilinen durumu koru, sadece rozet göster.
       setConnLost(true);
     }
   }, []);
@@ -92,15 +91,8 @@ export function Agents() {
     [activeAgents, recentAgents, selected]
   );
 
-  const liveColumns: Column<AgentPresence>[] = [
-    { key: "machine", header: t("agents.colMachine"), render: (a) => a.machine },
-    { key: "agent", header: t("agents.colAgent"), render: (a) => a.agent },
-    { key: "project", header: t("agents.colProject"), render: (a) => <Tag>{a.project}</Tag> },
-    { key: "branch", header: t("agents.colBranch"), render: (a) => a.branch ?? t("agents.noBranch") },
-    { key: "task", header: t("agents.colTask"), render: (a) => <span style={{ display: "block", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.task}</span> },
-    { key: "status", header: t("agents.colStatus"), render: (a) => <StatusDot variant={statusVariant(a.status, a.stale)} label={statusLabel(a)} pulsing={a.status === "active" && !a.stale} /> },
-    { key: "heartbeat", header: t("agents.colHeartbeat"), render: (a) => formatRelative(a.heartbeat_at) },
-  ];
+  const freshCount = activeAgents.filter((a) => !a.stale).length;
+  const staleCount = activeAgents.length - freshCount;
 
   const recentColumns: Column<AgentPresence>[] = [
     { key: "machine", header: t("agents.colMachine"), render: (a) => a.machine },
@@ -108,7 +100,13 @@ export function Agents() {
     { key: "project", header: t("agents.colProject"), render: (a) => <Tag>{a.project}</Tag> },
     { key: "task", header: t("agents.colTask"), render: (a) => <span style={{ display: "block", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.task}</span> },
     { key: "status", header: t("agents.colStatus"), render: (a) => <StatusDot variant={statusVariant(a.status, a.stale)} label={statusLabel(a)} /> },
-    { key: "finished", header: t("agents.colHeartbeat"), render: (a) => formatRelative(a.finished_at ?? a.updated_at) },
+    { key: "finished", header: t("agents.colFinished"), render: (a) => formatRelative(a.finished_at ?? a.updated_at) },
+  ];
+
+  const summary: { label: string; value: number; variant: "success" | "warning" | "neutral" }[] = [
+    { label: t("agents.summaryActive"), value: freshCount, variant: "success" },
+    { label: t("agents.summaryStale"), value: staleCount, variant: "warning" },
+    { label: t("agents.summaryFinished"), value: recentAgents.length, variant: "neutral" },
   ];
 
   return (
@@ -121,23 +119,61 @@ export function Agents() {
         {connLost && <StatusDot variant="error" label={t("agents.connectionLost")} />}
       </HStack>
 
+      <HStack gap={4} wrap="wrap">
+        {summary.map((s) => (
+          <Panel key={s.label} style={{ flex: "1 1 140px" }}>
+            <VStack gap={1}>
+              <StatusDot variant={s.variant} label={s.label} />
+              <Heading level={3}>{s.value}</Heading>
+            </VStack>
+          </Panel>
+        ))}
+      </HStack>
+
       <HStack gap={4} wrap="wrap" style={{ alignItems: "stretch" }}>
         <div style={{ flex: "3 1 480px", minWidth: 0 }}>
-          <Panel padded={false} className="office-scene-panel">
-            <div className="office-scene-wrap">
-              <OfficeCanvas
-                agents={activeAgents}
-                selectedUid={selected}
-                onSelect={setSelected}
-                ariaLabel={t("agents.canvasLabel")}
-              />
-              {hasLoadedOnce.current && activeAgents.length === 0 && (
-                <div className="office-scene-empty">
-                  <EmptyState title={t("agents.empty")} description={t("agents.emptyDesc")} />
-                </div>
-              )}
-            </div>
-          </Panel>
+          <VStack gap={3}>
+            <span className="u-label">{t("agents.liveTitle")}</span>
+            {activeAgents.length === 0 ? (
+              <Panel>
+                <EmptyState title={t("agents.empty")} description={t("agents.emptyDesc")} />
+              </Panel>
+            ) : (
+              <Grid minWidth={280} gap={4}>
+                {activeAgents.map((a) => (
+                  <Panel
+                    key={a.uid}
+                    className={[
+                      "agent-card",
+                      a.stale && "agent-card--stale",
+                      a.uid === selected && "agent-card--selected",
+                    ].filter(Boolean).join(" ")}
+                    onClick={() => setSelected(a.uid)}
+                  >
+                    <VStack gap={2}>
+                      <HStack hAlign="between" vAlign="center">
+                        <Text>{a.machine}</Text>
+                        <StatusDot
+                          variant={statusVariant(a.status, a.stale)}
+                          label={statusLabel(a)}
+                          pulsing={a.status === "active" && !a.stale}
+                        />
+                      </HStack>
+                      <HStack gap={2} vAlign="center" wrap="wrap">
+                        <Tag>{a.project}</Tag>
+                        <Text type="supporting" color="secondary">{a.branch ?? t("agents.noBranch")}</Text>
+                      </HStack>
+                      <Text type="supporting">{a.task}</Text>
+                      <HStack hAlign="between">
+                        <Text type="supporting" color="secondary">{formatRelative(a.heartbeat_at)}</Text>
+                        <Text type="supporting" color="secondary">{formatDuration(a.started_at, a.finished_at)}</Text>
+                      </HStack>
+                    </VStack>
+                  </Panel>
+                ))}
+              </Grid>
+            )}
+          </VStack>
         </div>
 
         <div style={{ flex: "1 1 260px", minWidth: 0 }}>
@@ -190,23 +226,6 @@ export function Agents() {
           </Panel>
         </div>
       </HStack>
-
-      <Panel>
-        <VStack gap={3}>
-          <span className="u-label">{t("agents.liveTitle")}</span>
-          {activeAgents.length === 0 ? (
-            <Text type="supporting" color="secondary">{t("agents.empty")}</Text>
-          ) : (
-            <DataTable
-              data={activeAgents}
-              columns={liveColumns}
-              rowKey={(a) => a.uid}
-              onRowClick={(a) => setSelected(a.uid)}
-              isRowActive={(a) => a.uid === selected}
-            />
-          )}
-        </VStack>
-      </Panel>
 
       <Panel>
         <VStack gap={3}>

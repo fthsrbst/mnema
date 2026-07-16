@@ -188,12 +188,12 @@ const dict = {
   "machines.probing": { tr: "Servisler yoklanıyor...", en: "Probing services..." },
   "machines.newDialogTitle": { tr: "Yeni makine ekle", en: "Add new machine" },
 
-  // --- agents (ofis sahnesi) ---
+  // --- agents (canlı agent durumu) ---
   "agents.title": { tr: "Agent'lar", en: "Agents" },
-  "agents.subtitle": { tr: "Cihazlarda çalışan agentlar — canlı ofis sahnesi", en: "Agents running across your devices — live office scene" },
+  "agents.subtitle": { tr: "Cihazlarda çalışan agent'ların canlı durumu", en: "Live status of agents across your devices" },
   "agents.connectionLost": { tr: "Bağlantı yok", en: "Connection lost" },
   "agents.empty": { tr: "Şu an çalışan agent yok", en: "No agents running right now" },
-  "agents.emptyDesc": { tr: "Bir agent agent_checkin ile bildirdiğinde burada masasına oturur.", en: "When an agent checks in via agent_checkin, it takes a seat here." },
+  "agents.emptyDesc": { tr: "Bir agent agent_checkin ile bildirdiğinde burada görünür.", en: "When an agent checks in via agent_checkin, it shows up here." },
   "agents.liveTitle": { tr: "Canlı", en: "Live" },
   "agents.recentTitle": { tr: "Son bitenler (24 sa)", en: "Recently finished (24h)" },
   "agents.recentEmpty": { tr: "Son 24 saatte biten agent yok", en: "No agents finished in the last 24h" },
@@ -209,7 +209,7 @@ const dict = {
   "agents.statusDone": { tr: "bitti", en: "done" },
   "agents.statusAbandoned": { tr: "terk edildi", en: "abandoned" },
   "agents.detailTitle": { tr: "Detay", en: "Detail" },
-  "agents.detailEmpty": { tr: "Detay için bir karaktere veya satıra tıkla", en: "Click a character or a row to see details" },
+  "agents.detailEmpty": { tr: "Detay için bir karta veya satıra tıkla", en: "Click a card or a row to see details" },
   "agents.detailMachine": { tr: "Makine", en: "Machine" },
   "agents.detailAgentLabel": { tr: "Agent etiketi", en: "Agent label" },
   "agents.detailProject": { tr: "Proje", en: "Project" },
@@ -224,7 +224,12 @@ const dict = {
   "agents.daysAgo": { tr: "gün önce", en: "d ago" },
   "agents.justNow": { tr: "az önce", en: "just now" },
   "agents.noBranch": { tr: "—", en: "—" },
-  "agents.canvasLabel": { tr: "Agent ofis sahnesi", en: "Agent office scene" },
+  "agents.summaryActive": { tr: "Aktif", en: "Active" },
+  "agents.summaryStale": { tr: "Bayat", en: "Stale" },
+  "agents.summaryFinished": { tr: "Biten (24 sa)", en: "Finished (24h)" },
+  "agents.colFinished": { tr: "Bitti", en: "Finished" },
+  "agents.durMin": { tr: "dk", en: "m" },
+  "agents.durHour": { tr: "sa", en: "h" },
   "agents.runningBadge": { tr: "agent çalışıyor", en: "agent(s) running" },
 
   // --- skills ---
@@ -402,7 +407,7 @@ const dict = {
   "dashboard.heroCaption": { tr: "Hafıza, oturum ve doküman büyümenizi tek bakışta izleyin.", en: "Track your memory, session, and document growth at a glance." },
   "dashboard.activeAgentsTitle": { tr: "Aktif Agent'lar", en: "Active Agents" },
   "dashboard.activeAgentsNone": { tr: "Şu an çalışan agent yok", en: "No agents running right now" },
-  "dashboard.activeAgentsView": { tr: "Ofis sahnesini gör →", en: "View office scene →" },
+  "dashboard.activeAgentsView": { tr: "Agent'ları gör →", en: "View agents →" },
 
   // --- graph ---
   "graph.searchPlaceholder": { tr: "Düğüm ara (proje, etiket, hafıza)...", en: "Search nodes (project, tag, memory)..." },

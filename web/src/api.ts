@@ -140,7 +140,7 @@ export interface Skill {
   content: string;
 }
 
-// --- agent presence ("Agents" ofis görünümü) ---
+// --- agent presence ("Agents" görünümü) ---
 
 export type AgentPresenceStatus = "active" | "done" | "abandoned";
 

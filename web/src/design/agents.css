@@ -1,35 +1,15 @@
-/* Agents ofis sahnesi — katı 1-bit pixel-art canvas + destekleyici tablo/rozet stilleri. */
+/* Agents görünümü — kart grid'i + destekleyici tablo/rozet stilleri. */
 
-.office-scene-panel {
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-panel);
+.agent-card {
+  cursor: pointer;
 }
 
-.office-scene-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--sp-4);
-  min-height: 220px;
-  overflow-x: auto;
+.agent-card--stale {
+  opacity: 0.55;
 }
 
-.office-canvas {
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-  display: block;
-  cursor: default;
-}
-
-.office-scene-empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-panel);
+.agent-card--selected {
+  border-color: var(--accent);
 }
 
 /* --- tıklanabilir tablo satırları (Agents: canlı/son bitenler) --- */
