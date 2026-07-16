@@ -1,0 +1,13 @@
+{
+	admin off
+	email {$ACME_EMAIL}
+}
+
+{$MNEMA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:8033
+	log {
+		output stdout
+		format json
+	}
+}

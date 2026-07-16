@@ -6,6 +6,7 @@ import {
   cloudSecurityHeaders,
   createCloudRateLimiter,
   purgeDueOrganizations,
+  type CloudRateLimitStore,
   type CloudRuntimeConfig,
 } from "../src/saas/index.js";
 
@@ -65,6 +66,12 @@ let memberRemoved = false;
 const claimed = new Set<string>();
 const fakeFetch: typeof globalThis.fetch = async (input, init) => {
   const url = String(input);
+  if (url.includes("/rest/v1/rpc/")) {
+    const headers = new Headers(init?.headers);
+    if (headers.get("Accept-Profile") !== "app" || headers.get("Content-Profile") !== "app") {
+      throw new Error("Cloud RPC request did not select the app PostgREST schema");
+    }
+  }
   if (url === `${config.supabaseUrl}/auth/v1/user`) {
     const auth = new Headers(init?.headers).get("authorization");
     if (!auth?.startsWith("Bearer ")) return new Response("", { status: 401 });
@@ -197,6 +204,21 @@ const app = express();
 app.disable("x-powered-by");
 app.use(cloudSecurityHeaders({ supabaseUrl: config.supabaseUrl, httpsOnly: true }));
 app.get("/limit-probe", createCloudRateLimiter({ limit: 2, namespace: "smoke" }), (_req, res) => res.json({ ok: true }));
+const distributedCounts = new Map<string, number>();
+const distributedStore: CloudRateLimitStore = {
+  async consume(key) {
+    const count = (distributedCounts.get(key) ?? 0) + 1;
+    distributedCounts.set(key, count);
+    return { count, resetAfterMs: 60_000 };
+  },
+};
+const distributedOptions = { limit: 2, namespace: "distributed-smoke", store: distributedStore };
+app.get("/distributed-a", createCloudRateLimiter(distributedOptions), (_req, res) => res.json({ ok: true }));
+app.get("/distributed-b", createCloudRateLimiter(distributedOptions), (_req, res) => res.json({ ok: true }));
+app.get("/distributed-failure", createCloudRateLimiter({
+  limit: 2,
+  store: { async consume() { throw new Error("store offline"); } },
+}), (_req, res) => res.json({ should_not_run: true }));
 app.use("/webhook", express.raw({ type: "application/json" }), buildCloudWebhookRouter(config, fakeFetch));
 app.use(express.json());
 app.use("/api", buildCloudAccountRouter(config, fakeFetch));
@@ -215,6 +237,20 @@ check(
     headerProbe.headers.get("content-security-policy")?.includes("font-src 'self' data:") === true &&
     headerProbe.headers.get("strict-transport-security") !== null &&
     headerProbe.headers.get("x-powered-by") === null && limitedProbe.status === 429
+);
+const distributedFirst = await fetch(`${base}/distributed-a`);
+await fetch(`${base}/distributed-b`);
+const distributedLimited = await fetch(`${base}/distributed-a`);
+check(
+  "Cloud replicas share one distributed rate-limit counter",
+  distributedFirst.headers.get("x-ratelimit-backend") === "distributed" &&
+    distributedLimited.status === 429
+);
+const distributedFailure = await fetch(`${base}/distributed-failure`);
+check(
+  "Cloud distributed rate-limit failure is fail-closed",
+  distributedFailure.status === 503 &&
+    (await distributedFailure.json() as { error?: string }).error === "rate_limit_unavailable"
 );
 
 const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };

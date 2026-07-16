@@ -15,6 +15,16 @@ jobs:
   build-test-security:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      valkey:
+        image: valkey/valkey:8.1.8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,6 +49,12 @@ jobs:
         run: npm run build
       - name: Lint and build web
         run: npm --prefix web run lint && npm --prefix web run build
+      - name: Hosted container manifest and image
+        env:
+          MNEMA_ENV_FILE: .env.cloud.example
+        run: |
+          docker compose --env-file deploy/cloud/.env.cloud.example -f deploy/cloud/compose.yaml config --quiet
+          docker compose --env-file deploy/cloud/.env.cloud.example -f deploy/cloud/compose.yaml build
       - name: Community regression suite
         env:
           GEMINI_API_KEY: ""
@@ -46,6 +62,8 @@ jobs:
       - name: Self-host authorization suite
         run: npm run smoke:security
       - name: Cloud tenant and billing suite
+        env:
+          CLOUD_TEST_REDIS_URL: redis://127.0.0.1:6379
         run: npm run smoke:cloud
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high

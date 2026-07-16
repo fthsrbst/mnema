@@ -110,7 +110,7 @@ content, and secrets are never committed to either one.
 
 - **Community / self-hosted:** free, MIT licensed, SQLite-authoritative, and
   fully local-first.
-- **Mnema Cloud (in development):** accounts and organizations backed by
+- **Mnema Cloud (provider-staging gated):** accounts and organizations backed by
   Supabase Auth + Postgres, forced row-level security on every tenant-owned
   table, verified-email team invitations, portable exports and delayed deletion,
   plus provider-neutral subscription state with Paddle checkout and customer
@@ -121,7 +121,8 @@ See [ADR-004](docs/adr/004-cloud-multitenancy-and-billing.md), the
 [pricing hypothesis](docs/product/cloud-pricing.md). Run `npm run smoke:cloud`
 to execute authorization, webhook, and Postgres tenant-isolation checks.
 The [cloud deployment runbook](docs/operations/cloud-deployment.md) covers
-Supabase, Paddle, secret boundaries, and launch verification. Repository and
+Supabase, Paddle, secret boundaries, the hardened Caddy + Valkey container
+profile, real-user staging probes, and launch verification. Repository and
 runtime-data ownership are defined in
 [Repository and data boundaries](docs/architecture/repository-boundaries.md).
 

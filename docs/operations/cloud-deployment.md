@@ -9,7 +9,10 @@ restore exercises remain required before launch.
 1. Create a Supabase project in the selected data region.
 2. Enable email confirmation and configure the production Site URL / redirect
    allowlist. Set an appropriate password policy and leaked-password protection.
-3. Apply `cloud/migrations/0001_tenancy.sql`.
+3. Apply `cloud/migrations/0001_tenancy.sql`, then add the migration's `app`
+   schema to the project's exposed API schemas. Mnema selects that schema with
+   PostgREST `Accept-Profile` / `Content-Profile` headers for every guarded RPC;
+   leave tenant tables in `public` behind forced RLS.
 4. Confirm TOTP enrollment/challenge is enabled.
 5. Prefer `SUPABASE_PUBLISHABLE_KEY=sb_publishable_...` for public requests and
    `SUPABASE_SECRET_KEY=sb_secret_...` for server work. Legacy anon/service-role
@@ -58,8 +61,15 @@ Copy `.env.cloud.example` into the deployment secret manager, not into Git.
   to the exact number of trusted proxies; a wrong value makes IP enforcement
   unreliable.
 - `CLOUD_RATE_LIMIT_PER_MINUTE` and
-  `CLOUD_WEBHOOK_RATE_LIMIT_PER_MINUTE` protect a single Node process. Put a
-  shared limiter/WAF in front of horizontally scaled production instances.
+  `CLOUD_WEBHOOK_RATE_LIMIT_PER_MINUTE` set policy. Sandbox may use the
+  process-local store; Paddle production fails startup unless
+  `CLOUD_RATE_LIMIT_REDIS_URL` points to shared Redis/Valkey. Counter keys hash
+  IP/token identity and contain no bearer token or raw IP. Store failure is
+  fail-closed with `503 rate_limit_unavailable`.
+- Hosted Cloud defaults `CLOUD_ENABLE_COMMUNITY_API=false`. This prevents the
+  local Community REST/MCP authority from being exposed beside tenant APIs.
+  If an operator explicitly enables it, scoped Community authentication is
+  mandatory.
 
 With no cloud variables, Mnema starts in Community/self-hosted mode and the
 Cloud page reports that it is disabled. A partial cloud configuration fails at
@@ -70,6 +80,29 @@ transactional service-only RPC locks the tenant, rechecks both due time and
 billing state, then purges only if the subscription is absent or canceled. Run
 exactly the same worker logic from a singleton scheduled job if the web
 deployment can scale to zero or has multiple replicas.
+
+### Single-server production container profile
+
+`deploy/cloud/compose.yaml` is the reference profile for the planned rented
+server: a non-root/read-only Node container, private Valkey rate-limit store,
+and Caddy automatic HTTPS edge. Valkey is intentionally non-persistent because
+rate counters are disposable; Supabase remains tenant data authority.
+
+```bash
+cd deploy/cloud
+cp .env.cloud.example .env.cloud
+chmod 600 .env.cloud
+# Fill real domain/public build values and server-only staging secrets.
+docker compose --env-file .env.cloud config --quiet
+docker compose --env-file .env.cloud build --pull
+docker compose --env-file .env.cloud up -d
+docker compose --env-file .env.cloud ps
+curl -fsS https://YOUR_DOMAIN/health
+```
+
+Keep only ports 22, 80, and 443 open on the host. Do not publish Valkey or the
+Node port. Back up Caddy's volumes for ACME continuity, but treat Supabase PITR
+and provider exports—not container volumes—as Cloud customer-data recovery.
 
 ## 4. Data lifecycle
 
@@ -98,3 +131,17 @@ simulator for duplicate/retry/out-of-order/canceled cases, complete a sandbox
 checkout and customer-portal round trip, revoke a user session, exercise export
 and delayed deletion, test shared-edge throttling, scan response headers, and
 restore a backup into a separate staging project.
+
+The destructive staging helpers require an explicit acknowledgement and clean
+up their generated principals/tenants. They never print passwords or tokens:
+
+```bash
+export CLOUD_STAGING_CONFIRM=mnema-staging
+npm run staging:supabase  # two real users, same-tenant success, cross-tenant denial
+npm run staging:paddle    # validates six sandbox prices and creates one draft checkout
+```
+
+Email delivery, a human TOTP ceremony, paid checkout completion, provider
+webhook retry/cancel/refund, and a Supabase backup restore remain manual launch
+gates because a mocked or admin-confirmed account cannot prove those external
+systems.
