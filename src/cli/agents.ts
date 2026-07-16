@@ -292,21 +292,21 @@ function connectExtras(): string[] {
 
 export interface ConnectResult {
   detected: AgentInfo[];
-  syncResult: ReturnType<typeof sync> | null;
+  syncResult: Awaited<ReturnType<typeof sync>> | null;
   extrasUpdated: string[];
 }
 
 /** Tespit edilen tüm agentlara hub MCP konfigini yazar. Idempotent. */
-export function connectAgents(): ConnectResult {
+export async function connectAgents(): Promise<ConnectResult> {
   const detected = detectAgents();
   const cfg = loadCliConfig();
 
-  let syncResult: ReturnType<typeof sync> | null = null;
-  // sync() repoPath ister (skills kopyalama + Claude Code/Cursor/opencode/Codex MCP).
+  let syncResult: Awaited<ReturnType<typeof sync>> | null = null;
+  // sync() repoPath ister (skills materyalizasyonu + Claude Code/Cursor/opencode/Codex MCP).
   // repoPath yoksa (ör. public kullanıcı sadece CLI'ı kurduysa) sadece extras'ı dene.
   if (cfg.repoPath) {
     try {
-      syncResult = sync();
+      syncResult = await sync();
     } catch (err) {
       console.error(`uyarı: sync() başarısız: ${(err as Error).message}`);
     }

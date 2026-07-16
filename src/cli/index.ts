@@ -249,11 +249,13 @@ program
 
 program
   .command("sync")
-  .description("skills/ → ~/.claude/skills + CLAUDE.md yönetilen blok senkronu")
-  .action(() => {
+  .description("~/.claude/skills materyalizasyonu (hub DB'den) + CLAUDE.md yönetilen blok senkronu")
+  .action(async () => {
     try {
-      const res = sync();
-      console.log(`skiller kopyalandı: ${res.skillsCopied.join(", ") || "(yok)"}`);
+      const res = await sync();
+      console.log(`skiller yazıldı: ${res.skillsCopied.join(", ") || "(yok)"}`);
+      if (res.skillsRemoved.length) console.log(`skiller kaldırıldı (hub'dan silinmiş): ${res.skillsRemoved.join(", ")}`);
+      if (res.skillsSyncError) console.log(`uyarı: skill materyalizasyonu atlandı (sunucuya ulaşılamadı): ${res.skillsSyncError}`);
       console.log(`CLAUDE.md güncellendi: ${res.claudeMdUpdated}`);
       console.log(`MCP konfigleri: ${res.mcpUpdated.length ? res.mcpUpdated.join(", ") + " güncellendi" : "değişiklik yok"}`);
     } catch (err) {
@@ -264,13 +266,15 @@ program
 program
   .command("agents [action]")
   .description("Kurulu AI agent uygulamalarını tespit et / hub'a bağla: hub agents [detect|connect]")
-  .action((action: string = "detect") => {
+  .action(async (action: string = "detect") => {
     try {
       if (action === "connect") {
-        const res = connectAgents();
+        const res = await connectAgents();
         printAgentsTable(detectAgents());
         if (res.syncResult) {
-          console.log(`\nskiller kopyalandı: ${res.syncResult.skillsCopied.join(", ") || "(yok)"}`);
+          console.log(`\nskiller yazıldı: ${res.syncResult.skillsCopied.join(", ") || "(yok)"}`);
+          if (res.syncResult.skillsRemoved.length) console.log(`skiller kaldırıldı: ${res.syncResult.skillsRemoved.join(", ")}`);
+          if (res.syncResult.skillsSyncError) console.log(`uyarı: skill materyalizasyonu atlandı: ${res.syncResult.skillsSyncError}`);
           console.log(`CLAUDE.md güncellendi: ${res.syncResult.claudeMdUpdated}`);
           console.log(
             `MCP konfigleri (sync): ${res.syncResult.mcpUpdated.length ? res.syncResult.mcpUpdated.join(", ") + " güncellendi" : "değişiklik yok"}`

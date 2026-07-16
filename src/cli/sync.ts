@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadCliConfig } from "./client.js";
+import { api, loadCliConfig } from "./client.js";
 
 const BLOCK_START = "<!-- hub:start -->";
 const BLOCK_END = "<!-- hub:end -->";
@@ -19,6 +19,7 @@ Tüm cihazlarda ortak bir hafıza/RAG/proje sunucusu var: **hub** MCP server'ı.
 - Bir projede çalışıyorsan ve bridge gelmediyse \`project_get(name)\` — özet, kararlar, odak, sıradaki adımlar.
 - "Bunu daha önce nasıl çözmüştük / neden X kullanıyoruz" → \`memory_search\`; doküman/not arşivi → \`rag_search\`; "nerede kalmıştım" → \`session_recent\`.
 - Ciddi mühendislik işinde \`prompt_get\` ile role uygun promptu çek (\`prompt_list\`: architect, code-reviewer, debugging, security, frontend, devops, ml). Alt modele iş devrederken (\`local_llm\` dahil) bunu system prompt yap.
+- Bir projede çalışmaya başlarken \`agent_checkin(project, task, branch?)\` çağır; işin bitince aynı uid ile \`agent_checkout(uid)\`. \`agent_active(project)\`/bridge çıktısındaki "aktif agent var" uyarısı bir KİLİT DEĞİLDİR — sadece koordinasyon sinyali; stale (bayat, ~30dk+) kayıt muhtemelen düşmüş bir agent'tır.
 
 **3. Çalışırken yaz (kalite kuralları):**
 - Kaydet: teknik karar + GEREKÇE (\`memory_save\` type=decision), zor bug'ın kök nedeni (type=howto), kullanıcı tercihi (type=preference). Ölçüt: "başka cihazdaki agent 2 hafta sonra bundan faydalanır mı?"
@@ -31,8 +32,69 @@ ${BLOCK_END}`;
 
 export interface SyncResult {
   skillsCopied: string[];
+  skillsRemoved: string[];
+  /** Sunucuya ulaşılamadıysa (server kapalı) skill materyalizasyonu atlanır — sync'in geri kalanı devam eder. */
+  skillsSyncError?: string;
   claudeMdUpdated: string;
   mcpUpdated: string[];
+}
+
+interface RemoteSkill {
+  name: string;
+  description: string;
+  content: string;
+}
+
+const SYNCED_SKILLS_MANIFEST = path.join(os.homedir(), ".hub", "synced-skills.json");
+
+function readManifest(): string[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SYNCED_SKILLS_MANIFEST, "utf8"));
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeManifest(names: string[]): void {
+  fs.mkdirSync(path.dirname(SYNCED_SKILLS_MANIFEST), { recursive: true });
+  fs.writeFileSync(SYNCED_SKILLS_MANIFEST, JSON.stringify(names, null, 2));
+}
+
+/**
+ * Skiller artık DB authority (bkz. src/core/assets.ts) — repo'daki skills/ dosyaları
+ * yalnızca ilk seed. Materyalizasyon REST üzerinden (/api/skills), dosya okuma DEĞİL.
+ * Silinen skillerin yerel kopyası da temizlenir; sadece bu fonksiyonun DAHA ÖNCE
+ * yazdığı klasörler silinir (manifest ile takip edilir) — kullanıcının elle
+ * ~/.claude/skills'e koyduğu ilgisiz klasörlere asla dokunulmaz.
+ */
+async function syncSkills(): Promise<{ copied: string[]; removed: string[]; error?: string }> {
+  const skillsDest = path.join(os.homedir(), ".claude", "skills");
+  try {
+    const skills = await api<RemoteSkill[]>("GET", "/api/skills", undefined, { timeoutMs: 10000 });
+    const copied: string[] = [];
+    for (const skill of skills) {
+      const dir = path.join(skillsDest, skill.name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), skill.content);
+      copied.push(skill.name);
+    }
+    const removed: string[] = [];
+    for (const name of readManifest()) {
+      if (copied.includes(name)) continue;
+      const dir = path.join(skillsDest, name);
+      if (fs.existsSync(dir)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+        removed.push(name);
+      }
+    }
+    writeManifest(copied);
+    return { copied, removed };
+  } catch (err) {
+    // Sunucu kapalıysa/erişilemezse skill materyalizasyonunu atla — sync'in geri
+    // kalanı (CLAUDE.md, MCP konfigleri) yerel dosyalarla çalışmaya devam etsin.
+    return { copied: [], removed: [], error: (err as Error).message };
+  }
 }
 
 function upsertManagedBlock(filePath: string, block: string): void {
@@ -51,16 +113,6 @@ function upsertManagedBlock(filePath: string, block: string): void {
   }
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content);
-}
-
-function copyDir(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else fs.copyFileSync(s, d);
-  }
 }
 
 interface McpEntry {
@@ -219,24 +271,15 @@ function syncMcpServers(repoPath: string): string[] {
   return updated;
 }
 
-/** skills/ → ~/.claude/skills/ kopyalar, CLAUDE.md yönetilen bloğu ve MCP konfiglerini günceller. */
-export function sync(): SyncResult {
+/** ~/.claude/skills/ materyalizasyonu (REST'ten), CLAUDE.md yönetilen bloğu ve MCP konfiglerini günceller. */
+export async function sync(): Promise<SyncResult> {
   const cfg = loadCliConfig();
   if (!cfg.repoPath) {
     throw new Error(
       "repoPath ayarlı değil. Önce: hub config set repoPath <ai-hub repo klasörü>"
     );
   }
-  const skillsSrc = path.join(cfg.repoPath, "skills");
-  const skillsDest = path.join(os.homedir(), ".claude", "skills");
-  const copied: string[] = [];
-  if (fs.existsSync(skillsSrc)) {
-    for (const entry of fs.readdirSync(skillsSrc, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      copyDir(path.join(skillsSrc, entry.name), path.join(skillsDest, entry.name));
-      copied.push(entry.name);
-    }
-  }
+  const skillsResult = await syncSkills();
 
   const claudeMd = path.join(os.homedir(), ".claude", "CLAUDE.md");
   upsertManagedBlock(claudeMd, CLAUDE_MD_BLOCK);
@@ -253,5 +296,11 @@ export function sync(): SyncResult {
 
   const mcpUpdated = syncMcpServers(cfg.repoPath);
 
-  return { skillsCopied: copied, claudeMdUpdated: claudeMd, mcpUpdated };
+  return {
+    skillsCopied: skillsResult.copied,
+    skillsRemoved: skillsResult.removed,
+    skillsSyncError: skillsResult.error,
+    claudeMdUpdated: claudeMd,
+    mcpUpdated,
+  };
 }
