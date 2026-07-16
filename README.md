@@ -119,6 +119,10 @@ See [ADR-004](docs/adr/004-cloud-multitenancy-and-billing.md), the
 [cloud threat model](docs/security/cloud-threat-model.md), and the
 [pricing hypothesis](docs/product/cloud-pricing.md). Run `npm run smoke:cloud`
 to execute authorization, webhook, and Postgres tenant-isolation checks.
+The [cloud deployment runbook](docs/operations/cloud-deployment.md) covers
+Supabase, Paddle, secret boundaries, and launch verification. Repository and
+runtime-data ownership are defined in
+[Repository and data boundaries](docs/architecture/repository-boundaries.md).
 
 For the full data model and phased build plan, see [`PLAN.md`](PLAN.md).
 

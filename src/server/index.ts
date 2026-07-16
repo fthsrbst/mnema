@@ -20,6 +20,7 @@ import {
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
+import { buildCloudAccountRouter, buildCloudWebhookRouter, loadCloudRuntimeConfig } from "../saas/index.js";
 import {
   authenticate,
   authenticationEnabled,
@@ -34,7 +35,19 @@ import {
 
 const app = express();
 assertDeploymentSafety();
+const cloudConfig = loadCloudRuntimeConfig();
+if (cloudConfig) {
+  // Paddle signature verification requires the exact raw bytes. This route is
+  // intentionally mounted before the global JSON parser and self-host auth.
+  app.use(
+    "/cloud/api/billing/webhook",
+    express.raw({ type: "application/json", limit: "1mb" }),
+    buildCloudWebhookRouter(cloudConfig)
+  );
+}
 app.use(express.json({ limit: "10mb" }));
+
+if (cloudConfig) app.use("/cloud/api", buildCloudAccountRouter(cloudConfig));
 
 app.get("/health", (_req, res) => {
   // Auth'suz uç: ham hata mesajları (dosya yolu içerebilir) sızdırılmaz — sadece sabit kodlar.
@@ -50,6 +63,7 @@ app.get("/health", (_req, res) => {
     deployment_profile: config.deploymentProfile,
     vector_backend: config.vectorBackend,
     vector_projection: vectorStore.status(),
+    cloud: cloudConfig ? "configured" : "disabled",
     degraded,
   });
 });

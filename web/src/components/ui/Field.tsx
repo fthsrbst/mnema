@@ -31,7 +31,7 @@ interface TextFieldProps {
   required?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  type?: "text" | "password";
+  type?: "text" | "password" | "email";
   hasClear?: boolean;
   className?: string;
 }

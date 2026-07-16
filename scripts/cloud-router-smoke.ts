@@ -1,0 +1,159 @@
+import { createHmac } from "node:crypto";
+import express from "express";
+import {
+  buildCloudAccountRouter,
+  buildCloudWebhookRouter,
+  type CloudRuntimeConfig,
+} from "../src/saas/index.js";
+
+let failed = 0;
+function check(name: string, condition: boolean): void {
+  console.log(`${condition ? "OK  " : "FAIL"} ${name}`);
+  if (!condition) failed++;
+}
+
+const userId = "10000000-0000-4000-8000-000000000001";
+const organizationId = "20000000-0000-4000-8000-000000000001";
+const createdOrganizationId = "20000000-0000-4000-8000-000000000002";
+const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const token = `${encode({ alg: "none" })}.${encode({ sub: userId, aal: "aal2" })}.test`;
+const aal1Token = `${encode({ alg: "none" })}.${encode({ sub: userId, aal: "aal1" })}.test`;
+
+const config: CloudRuntimeConfig = {
+  supabaseUrl: "https://supabase.test",
+  supabaseAnonKey: "anon-key",
+  supabaseServiceRoleKey: "service-role-key",
+  paddle: {
+    apiKey: "paddle-api-key",
+    webhookSecret: "paddle-webhook-secret",
+    environment: "sandbox",
+    approvedCheckoutUrl: "https://app.mnema.test/billing/complete",
+    prices: {
+      starter: { monthly: "pri_starter_month", annual: "pri_starter_year" },
+      pro: { monthly: "pri_pro_month", annual: "pri_pro_year" },
+      team: { monthly: "pri_team_month", annual: "pri_team_year" },
+    },
+  },
+};
+
+let paddleCheckoutBody: Record<string, unknown> | null = null;
+let subscriptionSaved = false;
+const claimed = new Set<string>();
+const fakeFetch: typeof globalThis.fetch = async (input, init) => {
+  const url = String(input);
+  if (url === `${config.supabaseUrl}/auth/v1/user`) {
+    const auth = new Headers(init?.headers).get("authorization");
+    if (!auth?.startsWith("Bearer ")) return new Response("", { status: 401 });
+    return Response.json({ id: userId, email: "owner@example.com" });
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/organization_members?`)) {
+    return Response.json([
+      {
+        organization_id: organizationId,
+        role: "owner",
+        organizations: { id: organizationId, name: "Org A", slug: "org-a" },
+      },
+    ]);
+  }
+  if (url === `${config.supabaseUrl}/rest/v1/rpc/create_organization`) {
+    return Response.json(createdOrganizationId, { status: 200 });
+  }
+  if (url === "https://sandbox-api.paddle.com/transactions") {
+    paddleCheckoutBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json({ data: { id: "txn_1", checkout: { url: "https://checkout.paddle.test/txn_1" } } });
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/billing_webhook_events?on_conflict=`)) {
+    const eventId = (JSON.parse(String(init?.body)) as { event_id: string }).event_id;
+    if (claimed.has(eventId)) return Response.json([]);
+    claimed.add(eventId);
+    return Response.json([{ event_id: eventId }], { status: 201 });
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/subscriptions?organization_id=`)) return Response.json([]);
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/subscriptions?on_conflict=`)) {
+    subscriptionSaved = true;
+    return new Response(null, { status: 201 });
+  }
+  if (url.startsWith(`${config.supabaseUrl}/rest/v1/billing_webhook_events?provider=`)) {
+    return new Response(null, { status: 204 });
+  }
+  throw new Error(`Unexpected fake fetch: ${url}`);
+};
+
+const app = express();
+app.use("/webhook", express.raw({ type: "application/json" }), buildCloudWebhookRouter(config, fakeFetch));
+app.use(express.json());
+app.use("/api", buildCloudAccountRouter(config, fakeFetch));
+const server = app.listen(0, "127.0.0.1");
+await new Promise<void>((resolve) => server.once("listening", resolve));
+const address = server.address();
+if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port");
+const base = `http://127.0.0.1:${address.port}`;
+
+const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+const session = await fetch(`${base}/api/session`, { headers: authHeaders });
+const sessionJson = (await session.json()) as { organizations?: unknown[] };
+check("verified Supabase account returns organizations", session.status === 200 && sessionJson.organizations?.length === 1);
+
+const created = await fetch(`${base}/api/organizations`, {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ slug: "new-org", name: "New Org" }),
+});
+check("authenticated account creates an organization through RPC", created.status === 201);
+
+const checkout = await fetch(`${base}/api/billing/checkout`, {
+  method: "POST",
+  headers: { ...authHeaders, "x-mnema-organization-id": organizationId },
+  body: JSON.stringify({ plan: "pro", interval: "annual" }),
+});
+const checkoutCustom = paddleCheckoutBody?.custom_data as Record<string, unknown> | undefined;
+check(
+  "owner with MFA can create tenant-bound checkout",
+  checkout.status === 201 && checkoutCustom?.organization_id === organizationId
+);
+
+const noMfa = await fetch(`${base}/api/billing/checkout`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${aal1Token}`,
+    "Content-Type": "application/json",
+    "x-mnema-organization-id": organizationId,
+  },
+  body: JSON.stringify({ plan: "starter", interval: "monthly" }),
+});
+check("billing checkout requires MFA", noMfa.status === 403);
+
+const webhookTimestamp = Math.floor(Date.now() / 1_000);
+const webhookBody = JSON.stringify({
+  event_id: "evt_cloud_1",
+  event_type: "subscription.created",
+  occurred_at: new Date().toISOString(),
+  data: {
+    id: "sub_cloud_1",
+    status: "active",
+    current_billing_period: { ends_at: new Date(Date.now() + 86_400_000).toISOString() },
+    scheduled_change: null,
+    custom_data: { organization_id: organizationId },
+    items: [{ price: { id: "pri_pro_month" } }],
+  },
+});
+const webhookSignature = createHmac("sha256", config.paddle.webhookSecret)
+  .update(`${webhookTimestamp}:${webhookBody}`)
+  .digest("hex");
+const webhook = await fetch(`${base}/webhook`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "Paddle-Signature": `ts=${webhookTimestamp};h1=${webhookSignature}` },
+  body: webhookBody,
+});
+check("raw signed webhook persists subscription state", webhook.status === 200 && subscriptionSaved);
+
+const forged = await fetch(`${base}/webhook`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "Paddle-Signature": `ts=${webhookTimestamp};h1=00` },
+  body: webhookBody,
+});
+check("forged webhook is rejected", forged.status === 401);
+
+await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+console.log(failed === 0 ? "\nCloud account and billing router smoke passed." : `\n${failed} cloud router checks failed.`);
+process.exitCode = failed === 0 ? 0 : 1;

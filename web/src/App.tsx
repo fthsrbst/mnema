@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { IconRail, type RailItem } from "./components/ui/IconRail";
 import { Icon } from "./components/icons/Icons";
 import { Tabs } from "./components/ui/Tabs";
@@ -27,6 +27,10 @@ import { I18nContext, useI18n, useProvideI18n, type Lang, type TKey } from "./i1
 
 type SectionId = "overview" | "memory" | "projects" | "system";
 type ThemePreference = "system" | "dark" | "light";
+
+const CloudAccount = lazy(() =>
+  import("./views/CloudAccount").then((module) => ({ default: module.CloudAccount }))
+);
 
 const THEME_STORAGE_KEY = "mnema_theme";
 
@@ -91,6 +95,7 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
       { id: "machines", labelKey: "nav.machines" },
       { id: "media", labelKey: "nav.media" },
       { id: "skills", labelKey: "nav.skills" },
+      { id: "cloud", labelKey: "nav.cloud" },
       { id: "settings", labelKey: "nav.settings" },
     ],
   },
@@ -286,6 +291,8 @@ function AppInner() {
         return <Media />;
       case "skills":
         return <Skills />;
+      case "cloud":
+        return <Suspense fallback={<Text type="supporting" color="secondary">{t("common.loading")}</Text>}><CloudAccount /></Suspense>;
       case "settings":
         return <Settings />;
       default:

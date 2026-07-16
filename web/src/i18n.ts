@@ -36,6 +36,7 @@ const dict = {
   "nav.machines": { tr: "Makineler", en: "Machines" },
   "nav.media": { tr: "Medya", en: "Media" },
   "nav.skills": { tr: "Skiller", en: "Skills" },
+  "nav.cloud": { tr: "Cloud", en: "Cloud" },
   "nav.settings": { tr: "Ayarlar", en: "Settings" },
   "nav.graph": { tr: "Graf", en: "Graph" },
   "nav.expandSidebar": { tr: "Kenar çubuğunu genişlet", en: "Expand sidebar" },
