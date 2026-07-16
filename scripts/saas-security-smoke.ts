@@ -54,6 +54,30 @@ try {
 }
 check("a partial secret-key Cloud configuration fails closed", partialCloudConfigRejected);
 
+const freePreviewConfig = loadCloudRuntimeConfig({
+  CLOUD_APP_URL: "http://127.0.0.1:8044",
+  CLOUD_BILLING_ENABLED: "false",
+  SUPABASE_URL: "https://project.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_public",
+  SUPABASE_SECRET_KEY: "sb_secret_private",
+});
+check("Cloud Free can run without Paddle while billing stays disabled", freePreviewConfig?.paddle === null);
+
+let disabledBillingWithPaddleRejected = false;
+try {
+  loadCloudRuntimeConfig({
+    CLOUD_APP_URL: "http://127.0.0.1:8044",
+    CLOUD_BILLING_ENABLED: "false",
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_public",
+    SUPABASE_SECRET_KEY: "sb_secret_private",
+    PADDLE_API_KEY: "pdl_partial",
+  });
+} catch {
+  disabledBillingWithPaddleRejected = true;
+}
+check("disabled billing rejects stray Paddle values", disabledBillingWithPaddleRejected);
+
 const productionCloudEnv: NodeJS.ProcessEnv = {
   CLOUD_APP_URL: "https://app.mnema.example",
   CLOUD_HTTPS_ONLY: "true",

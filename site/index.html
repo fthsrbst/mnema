@@ -245,35 +245,35 @@ section{position:relative}
 /* ---------- tracklist ---------- */
 .tracks{border-bottom:1px solid var(--paper);background:var(--ink)}
 .tracks__note{color:var(--grey);font-size:13px;max-width:64ch;margin-bottom:26px}
-.tlist{list-style:none;margin-bottom:18px}
-.track{
-  display:grid;
-  grid-template-columns:auto 1fr auto;
-  align-items:center;gap:0 16px;
-  background:var(--paper);color:var(--ink);
-  border:1px solid var(--ink);
-  outline:1px solid var(--paper);
-  margin-bottom:6px;
-  padding:7px 12px;
-  font-size:13px;
-}
-.track__no{
-  font-family:var(--pix);font-size:11px;min-width:3.2em;
-}
-.track__no::after{content:"▸";color:var(--phos-dim);margin-left:6px}
-.track__body{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;min-width:0}
-.track__name{font-weight:700;letter-spacing:.02em;white-space:nowrap}
-.track__desc{color:#444;font-size:12px}
-.track .wave{
-  display:flex;align-items:flex-end;gap:1px;height:14px;width:64px;
-  overflow:hidden;
-}
-.track .wave i{display:block;width:2px;background:var(--ink);min-height:2px}
-@media(max-width:640px){
-  .track{grid-template-columns:auto 1fr}
-  .track .wave{display:none}
-  .track__desc{flex-basis:100%}
-}
+.trackdeck{border:1px solid var(--paper);background:#020402;margin-bottom:18px}
+.trackdeck__head{display:grid;grid-template-columns:1.25fr 1fr;border-bottom:1px solid var(--paper)}
+.trackdeck__readout{padding:18px;border-right:1px solid var(--paper)}
+.trackdeck__readout strong{display:block;font-family:var(--crt);font-size:34px;line-height:1;color:var(--phos)}
+.trackdeck__readout span{display:block;color:var(--grey);font-size:11px;margin-top:7px}
+.trackmetrics{display:grid;grid-template-columns:repeat(3,1fr)}
+.trackmetric{display:grid;place-content:center;text-align:center;border-right:1px dashed var(--phos-dim);padding:12px 8px}
+.trackmetric:last-child{border-right:0}
+.trackmetric b{font-family:var(--crt);font-size:30px;line-height:1;color:var(--paper)}
+.trackmetric span{font-family:var(--pix);font-size:8px;letter-spacing:.1em;color:var(--grey);text-transform:uppercase}
+.trackfilters{display:flex;gap:8px;flex-wrap:wrap;padding:12px;border-bottom:1px solid var(--paper)}
+.trackfilter{font:9px var(--pix);letter-spacing:.08em;text-transform:uppercase;color:var(--paper);background:var(--ink);border:1px solid var(--grey);padding:8px 10px;cursor:pointer}
+.trackfilter[aria-pressed="true"]{background:var(--phos);border-color:var(--phos);color:var(--ink)}
+.toolgrid{display:grid;grid-template-columns:repeat(3,1fr)}
+.toolgroup{min-height:210px;padding:18px;border-right:1px solid var(--paper);border-bottom:1px solid var(--paper);position:relative}
+.toolgroup:nth-child(3n){border-right:0}
+.toolgroup:nth-last-child(-n+3){border-bottom:0}
+.toolgroup.is-hidden{display:none}
+.toolgroup__meta{display:flex;justify-content:space-between;gap:10px;color:var(--phos-dim);font:9px var(--pix);letter-spacing:.12em;text-transform:uppercase}
+.toolgroup h3{font-family:var(--crt);font-size:28px;line-height:1;margin:18px 0 8px;color:var(--phos)}
+.toolgroup p{color:var(--grey);font-size:11px;min-height:52px}
+.toolgroup__tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.toolgroup__tools code{border:1px solid #333;background:#080b07;color:var(--paper);padding:4px 6px;font-size:10px}
+.toolgroup__signal{position:absolute;top:48px;right:18px;width:28px;height:28px;border:1px solid var(--phos-dim)}
+.toolgroup__signal::before,.toolgroup__signal::after{content:"";position:absolute;background:var(--phos)}
+.toolgroup__signal::before{width:14px;height:2px;left:6px;top:12px}
+.toolgroup__signal::after{width:2px;height:14px;left:12px;top:6px}
+@media(max-width:900px){.toolgrid{grid-template-columns:repeat(2,1fr)}.toolgroup:nth-child(3n){border-right:1px solid var(--paper)}.toolgroup:nth-child(2n){border-right:0}.toolgroup:nth-last-child(-n+3){border-bottom:1px solid var(--paper)}.toolgroup:nth-last-child(-n+2){border-bottom:0}}
+@media(max-width:640px){.trackdeck__head{grid-template-columns:1fr}.trackdeck__readout{border-right:0;border-bottom:1px solid var(--paper)}.toolgrid{grid-template-columns:1fr}.toolgroup,.toolgroup:nth-child(2n),.toolgroup:nth-child(3n),.toolgroup:nth-last-child(-n+2){border-right:0;border-bottom:1px solid var(--paper)}.toolgroup:last-child{border-bottom:0}}
 .tracks__total{
   font-family:var(--pix);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
   color:var(--grey);text-align:right;margin-bottom:clamp(44px,7vh,80px);
@@ -289,15 +289,25 @@ section{position:relative}
 }
 @media(max-width:960px){.pricegrid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.pricegrid{grid-template-columns:1fr}}
-.pricecard{border-right:1px solid var(--paper);border-bottom:1px solid var(--paper);padding:24px;position:relative}
+.pricecard{border-right:1px solid var(--paper);border-bottom:1px solid var(--paper);padding:24px;position:relative;display:flex;flex-direction:column}
 .pricecard--focus{background:#071006;box-shadow:inset 0 0 0 2px var(--phos)}
+.pricecard__badge{position:absolute;top:8px;right:8px;font:8px var(--pix);letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
 .pricecard__name{font-family:var(--pix);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--phos)}
 .pricecard__price{font-family:var(--crt);font-size:42px;line-height:1;margin:14px 0 5px}
 .pricecard__price small{font-family:var(--mono);font-size:11px;color:var(--grey)}
 .pricecard__for{color:var(--grey);font-size:12px;min-height:38px;margin-bottom:15px}
-.pricecard ul{list-style:none;font-size:12px}
+.pricecard ul{list-style:none;font-size:12px;flex:1}
 .pricecard li{padding:7px 0;border-top:1px dashed var(--phos-dim)}
 .pricecard li::before{content:"■";color:var(--phos);margin-right:8px;font-size:8px}
+.pricecard__cta{display:block;text-align:center;margin-top:20px;padding:11px 8px;font-size:9px}
+.cloudgate{display:grid;grid-template-columns:1.4fr 1fr;gap:0;border:1px solid var(--phos-dim);background:#030703;margin-bottom:24px;scroll-margin-top:20px}
+.cloudgate__copy{padding:20px;border-right:1px solid var(--phos-dim)}
+.cloudgate__eyebrow{font:9px var(--pix);letter-spacing:.14em;text-transform:uppercase;color:var(--phos)}
+.cloudgate h3{font-family:var(--crt);font-size:30px;line-height:1;margin:9px 0}
+.cloudgate p{font-size:12px;color:var(--grey)}
+.cloudgate__actions{padding:20px;display:flex;flex-direction:column;justify-content:center;gap:10px}
+.cloudgate__actions code{font-size:11px;color:var(--paper);overflow-wrap:anywhere}
+@media(max-width:720px){.cloudgate{grid-template-columns:1fr}.cloudgate__copy{border-right:0;border-bottom:1px solid var(--phos-dim)}}
 .pricing__note{color:var(--grey);font-size:12px;max-width:78ch;margin-bottom:clamp(44px,7vh,80px)}
 .pricing__note b{color:var(--paper);font-weight:500}
 
@@ -313,6 +323,7 @@ section{position:relative}
 }
 .term__bar b{color:var(--phos);font-weight:400}
 .term__bar .dots{color:var(--grey);letter-spacing:.3em}
+.copybtn{font:9px var(--pix);letter-spacing:.08em;text-transform:uppercase;color:var(--ink);background:var(--phos);border:0;padding:6px 9px;cursor:pointer}
 .term pre{
   padding:16px 14px 18px;overflow-x:auto;font-size:12.5px;line-height:1.7;
 }
@@ -320,6 +331,12 @@ section{position:relative}
 .term .p{color:var(--phos);user-select:none}
 .term .o{color:var(--grey)}
 .qs__wide{margin-bottom:22px}
+.hoststrip{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--paper);margin-bottom:22px}
+.hoststrip div{padding:14px;border-right:1px solid var(--paper);font:9px var(--pix);letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
+.hoststrip div:last-child{border-right:0}.hoststrip b{display:block;color:var(--phos);font-size:11px;margin-bottom:4px}
+.hoststrip__pi{background:#071006;box-shadow:inset 0 0 0 2px var(--phos)}
+.promptbox pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:520px}
+@media(max-width:720px){.hoststrip{grid-template-columns:1fr 1fr}.hoststrip div:nth-child(2){border-right:0}.hoststrip div:nth-child(-n+2){border-bottom:1px solid var(--paper)}}
 .qs__note{
   color:var(--grey);font-size:13px;max-width:70ch;margin-bottom:clamp(44px,7vh,80px);
 }
@@ -346,7 +363,7 @@ footer{padding:clamp(40px,7vh,72px) 0 90px;position:relative}
 .foot__ascii{font-family:var(--ascii);color:var(--phos-dim);font-size:10px;line-height:1.25;margin-bottom:26px;overflow-x:auto;white-space:pre}
 
 /* focus */
-a:focus-visible,.btn:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
+a:focus-visible,.btn:focus-visible,button:focus-visible{outline:2px solid var(--phos);outline-offset:2px}
 </style>
 </head>
 <body>
@@ -643,44 +660,33 @@ AUDIT ◀───┘</pre>
     </div>
     <p class="tracks__note">Every capability is an MCP tool. Point any MCP client at
     <code>/mcp</code> and the full set is callable — same tools, every agent, every device.</p>
-    <ol class="tlist">
-      <li class="track reveal"><span class="track__no">01.</span><span class="track__body"><span class="track__name">memory_search</span><span class="track__desc">hybrid recall — BM25 + vector KNN, fused with RRF</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">02.</span><span class="track__body"><span class="track__name">memory_save</span><span class="track__desc">store decisions, preferences &amp; how-tos with rationale</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">03.</span><span class="track__body"><span class="track__name">memory_update</span><span class="track__desc">amend a memory the moment it's falsified</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">04.</span><span class="track__body"><span class="track__name">memory_delete</span><span class="track__desc">contradictory memory is worse than none</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">05.</span><span class="track__body"><span class="track__name">recall</span><span class="track__desc">precision-gated context injection, per message</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">06.</span><span class="track__body"><span class="track__name">recall_feedback</span><span class="track__desc">grade what surfaced — the filter learns</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">07.</span><span class="track__body"><span class="track__name">rag_add</span><span class="track__desc">markdown-aware chunking + embeddings</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">08.</span><span class="track__body"><span class="track__name">rag_search</span><span class="track__desc">hybrid document retrieval with source refs</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">09.</span><span class="track__body"><span class="track__name">project_list</span><span class="track__desc">every project map on the hub</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">10.</span><span class="track__body"><span class="track__name">project_get</span><span class="track__desc">summary, stack, decisions, focus — instantly</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">11.</span><span class="track__body"><span class="track__name">project_update</span><span class="track__desc">keep the map current; stale maps mislead agents</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">12.</span><span class="track__body"><span class="track__name">project_add_decision</span><span class="track__desc">record the choice — and the why</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">13.</span><span class="track__body"><span class="track__name">project_delete</span><span class="track__desc">retire a map cleanly</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">14.</span><span class="track__body"><span class="track__name">prompt_list</span><span class="track__desc">role prompt library index</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">15.</span><span class="track__body"><span class="track__name">prompt_get</span><span class="track__desc">architect · reviewer · debugger · security · devops · ml</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">16.</span><span class="track__body"><span class="track__name">session_log</span><span class="track__desc">what was done, what's half-finished, what's next</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">17.</span><span class="track__body"><span class="track__name">session_recent</span><span class="track__desc">"where was I?" — across devices</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">18.</span><span class="track__body"><span class="track__name">skill_list</span><span class="track__desc">shared skill set index</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">19.</span><span class="track__body"><span class="track__name">skill_save</span><span class="track__desc">publish a skill to every device at once</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">20.</span><span class="track__body"><span class="track__name">machine_status</span><span class="track__desc">who's online on the mesh</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">21.</span><span class="track__body"><span class="track__name">machine_register</span><span class="track__desc">enroll a new device</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">22.</span><span class="track__body"><span class="track__name">local_llm</span><span class="track__desc">route bulk work to LM Studio / Ollama — zero API cost</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">23.</span><span class="track__body"><span class="track__name">workflow_list</span><span class="track__desc">ComfyUI workflow registry</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">24.</span><span class="track__body"><span class="track__name">media_generate</span><span class="track__desc">image &amp; video via ComfyUI, one API</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">25.</span><span class="track__body"><span class="track__name">context_get</span><span class="track__desc">authority-first context with provenance, trust and budgets</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">26.</span><span class="track__body"><span class="track__name">profile_get</span><span class="track__desc">canonical professional identity, separate from projects</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">27.</span><span class="track__body"><span class="track__name">profile_update</span><span class="track__desc">update the evidence-backed global profile</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">28.</span><span class="track__body"><span class="track__name">memory_relation_add</span><span class="track__desc">connect facts with typed, directional, temporal edges</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">29.</span><span class="track__body"><span class="track__name">memory_consolidate</span><span class="track__desc">merge reviewed duplicates without losing graph history</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">30.</span><span class="track__body"><span class="track__name">memory_relation_list</span><span class="track__desc">inspect active or historical knowledge edges</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">31.</span><span class="track__body"><span class="track__name">graph_node</span><span class="track__desc">resolve one project, memory, document, session or tag</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">32.</span><span class="track__body"><span class="track__name">graph_neighbors</span><span class="track__desc">page outward through the knowledge graph</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">33.</span><span class="track__body"><span class="track__name">integrity_check</span><span class="track__desc">find lifecycle conflicts, orphan vectors and broken references</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">34.</span><span class="track__body"><span class="track__name">audit_verify</span><span class="track__desc">verify the tamper-evident audit chain</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">35.</span><span class="track__body"><span class="track__name">vector_projection_status</span><span class="track__desc">check backend generation, readiness and durable outbox</span></span><span class="wave" aria-hidden="true"></span></li>
-      <li class="track reveal"><span class="track__no">36.</span><span class="track__body"><span class="track__name">vector_projection_verify</span><span class="track__desc">prove external vectors match SQLite authority</span></span><span class="wave" aria-hidden="true"></span></li>
-    </ol>
+    <div class="trackdeck reveal">
+      <div class="trackdeck__head">
+        <div class="trackdeck__readout"><strong>TOOL BUS / ONLINE</strong><span>One endpoint. Typed inputs. Same contract on every connected agent.</span></div>
+        <div class="trackmetrics" aria-label="Tool system summary">
+          <div class="trackmetric"><b>43</b><span>server tools</span></div>
+          <div class="trackmetric"><b>07</b><span>workflows</span></div>
+          <div class="trackmetric"><b>02</b><span>interfaces</span></div>
+        </div>
+      </div>
+      <div class="trackfilters" role="group" aria-label="Filter tool families">
+        <button class="trackfilter" type="button" data-tool-filter="all" aria-pressed="true">All systems</button>
+        <button class="trackfilter" type="button" data-tool-filter="context" aria-pressed="false">Context</button>
+        <button class="trackfilter" type="button" data-tool-filter="knowledge" aria-pressed="false">Knowledge</button>
+        <button class="trackfilter" type="button" data-tool-filter="maps" aria-pressed="false">Maps</button>
+        <button class="trackfilter" type="button" data-tool-filter="trust" aria-pressed="false">Trust</button>
+        <button class="trackfilter" type="button" data-tool-filter="runtime" aria-pressed="false">Runtime</button>
+        <button class="trackfilter" type="button" data-tool-filter="mesh" aria-pressed="false">Mesh + media</button>
+      </div>
+      <div class="toolgrid" aria-live="polite">
+        <article class="toolgroup" data-tool-group="context"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 01</span><span>06 tools</span></div><h3>Live context</h3><p>Authority-first context, narrow recall and fast session recovery before an agent touches code.</p><div class="toolgroup__tools"><code>context_get</code><code>recall</code><code>recall_feedback</code><code>memory_search</code><code>project_get</code><code>session_recent</code></div></article>
+        <article class="toolgroup" data-tool-group="knowledge"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 02</span><span>07 tools</span></div><h3>Knowledge core</h3><p>Write, correct, consolidate and retrieve durable memory plus source-backed documents.</p><div class="toolgroup__tools"><code>memory_save</code><code>memory_update</code><code>memory_delete</code><code>memory_consolidate</code><code>rag_add</code><code>rag_search</code><code>profile_get</code></div></article>
+        <article class="toolgroup" data-tool-group="maps"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 03</span><span>06 tools</span></div><h3>Maps + identity</h3><p>Maintain grounded project maps, decisions, global professional identity and handoff state.</p><div class="toolgroup__tools"><code>project_list</code><code>project_update</code><code>project_add_decision</code><code>project_delete</code><code>profile_update</code><code>session_log</code></div></article>
+        <article class="toolgroup" data-tool-group="trust"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 04</span><span>07 tools</span></div><h3>Graph + trust</h3><p>Trace typed relations, inspect provenance and prove lifecycle and vector integrity.</p><div class="toolgroup__tools"><code>memory_relation_add</code><code>memory_relation_list</code><code>graph_node</code><code>graph_neighbors</code><code>integrity_check</code><code>audit_verify</code><code>vector_projection_verify</code></div></article>
+        <article class="toolgroup" data-tool-group="runtime"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 05</span><span>06 tools</span></div><h3>Agent runtime</h3><p>Share role prompts and skills, route local model work, and see which compute is available.</p><div class="toolgroup__tools"><code>prompt_list</code><code>prompt_get</code><code>skill_list</code><code>skill_save</code><code>local_llm</code><code>machine_status</code></div></article>
+        <article class="toolgroup" data-tool-group="mesh"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 06</span><span>04 tools</span></div><h3>Mesh + media</h3><p>Enroll another node, inspect projections and send image or video workflows to your GPU box.</p><div class="toolgroup__tools"><code>machine_register</code><code>workflow_list</code><code>media_generate</code><code>vector_projection_status</code></div></article>
+      </div>
+    </div>
     <p class="tracks__total"><b>36 tools shown · 43 in the current server</b> · REST mirrors the Community core</p>
   </div>
 </section>
@@ -695,35 +701,57 @@ AUDIT ◀───┘</pre>
     </div>
     <div class="pricegrid">
       <article class="pricecard reveal">
+        <span class="pricecard__badge">available now</span>
         <div class="pricecard__name">Community</div>
         <div class="pricecard__price">$0</div>
         <p class="pricecard__for">Self-host on hardware you control.</p>
-        <ul><li>Full open-source server</li><li>SQLite authority + own sync</li><li>No account or lock-in</li></ul>
+        <ul><li>Full open-source server</li><li>SQLite authority + own sync</li><li>Raspberry Pi / workstation / VM</li></ul>
+        <a class="btn pricecard__cta" href="#quickstart">Install Community</a>
       </article>
       <article class="pricecard reveal">
+        <span class="pricecard__badge">local preview</span>
         <div class="pricecard__name">Cloud Free</div>
         <div class="pricecard__price">$0</div>
         <p class="pricecard__for">Evaluate managed Mnema.</p>
-        <ul><li>2 projects</li><li>1 member · 100 MB</li><li>100k embedding tokens</li></ul>
+        <ul><li>2 projects</li><li>1 member · 100 MB</li><li>No payment method</li></ul>
+        <a class="btn pricecard__cta" href="http://127.0.0.1:8044/?plan=free">Create test account</a>
       </article>
       <article class="pricecard pricecard--focus reveal">
+        <span class="pricecard__badge">sandbox gate</span>
         <div class="pricecard__name">Starter</div>
         <div class="pricecard__price">$9 <small>/ month</small></div>
         <p class="pricecard__for">An individual developer's durable workspace.</p>
         <ul><li>10 projects</li><li>1 member · 1 GB</li><li>1M embedding tokens</li></ul>
+        <a class="btn btn--solid pricecard__cta" href="http://127.0.0.1:8044/?plan=starter&amp;interval=annual">Subscribe to Starter</a>
       </article>
       <article class="pricecard reveal">
+        <span class="pricecard__badge">sandbox gate</span>
         <div class="pricecard__name">Pro</div>
         <div class="pricecard__price">$19 <small>/ month</small></div>
         <p class="pricecard__for">Power users with larger context.</p>
-        <ul><li>More projects and storage</li><li>Priority retrieval capacity</li><li>Longer audit retention</li></ul>
+        <ul><li>50 projects · 5 GB</li><li>Priority retrieval capacity</li><li>Longer audit retention</li></ul>
+        <a class="btn pricecard__cta" href="http://127.0.0.1:8044/?plan=pro&amp;interval=annual">Subscribe to Pro</a>
       </article>
       <article class="pricecard reveal">
+        <span class="pricecard__badge">sandbox gate</span>
         <div class="pricecard__name">Team</div>
         <div class="pricecard__price">$49 <small>/ month</small></div>
         <p class="pricecard__for">One governed workspace for a small team.</p>
-        <ul><li>Up to 10 members</li><li>Shared organization context</li><li>Admin and billing controls</li></ul>
+        <ul><li>Up to 10 members</li><li>250 projects · 20 GB</li><li>Admin and billing controls</li></ul>
+        <a class="btn pricecard__cta" href="http://127.0.0.1:8044/?plan=team&amp;interval=annual">Subscribe to Team</a>
       </article>
+    </div>
+    <div class="cloudgate reveal" id="cloud-preview">
+      <div class="cloudgate__copy">
+        <span class="cloudgate__eyebrow">Cloud access / honest status</span>
+        <h3>Free account testing is open locally.</h3>
+        <p>The account, tenant-RLS and Free workspace flow can be tested now on this computer. A selected paid plan carries into the app, but checkout remains blocked until real Paddle sandbox products and webhook credentials are provisioned. The public hosted Cloud URL has not launched yet.</p>
+      </div>
+      <div class="cloudgate__actions">
+        <code>http://127.0.0.1:8044/</code>
+        <a class="btn btn--solid" href="http://127.0.0.1:8044/?plan=free">Open local test app</a>
+        <a class="btn" href="https://github.com/fthsrbst/mnema">Track hosted release</a>
+      </div>
     </div>
     <p class="pricing__note"><b>Security model:</b> Supabase Auth, one organization per active tenant context,
       forced Postgres row-level security, composite tenant foreign keys, guarded Postgres RPCs,
@@ -742,6 +770,13 @@ AUDIT ◀───┘</pre>
       <span class="shead__d">node 22+ · any OS</span>
     </div>
 
+    <div class="hoststrip reveal" aria-label="Supported Community hosts">
+      <div class="hoststrip__pi"><b>Raspberry Pi</b>quiet, always-on home context hub</div>
+      <div><b>Workstation</b>local GPU and full desktop workflow</div>
+      <div><b>Home server</b>shared access across your private network</div>
+      <div><b>VM / container</b>repeatable remote deployment</div>
+    </div>
+
     <div class="term qs__wide reveal">
       <div class="term__bar"><b>OPTION A ·· one-click installer</b><span class="dots">·····</span></div>
       <pre><span class="c"># macOS / Linux</span>
@@ -749,6 +784,27 @@ AUDIT ◀───┘</pre>
 
 <span class="c"># Windows (PowerShell)</span>
 <span class="p">&gt;</span> irm https://raw.githubusercontent.com/fthsrbst/mnema/master/scripts/install.ps1 | iex</pre>
+    </div>
+
+    <div class="term qs__wide promptbox reveal">
+      <div class="term__bar"><b>FULL INSTALL ·· paste this into your coding agent</b><button class="copybtn" type="button" data-copy-target="install-prompt">Copy prompt</button></div>
+      <pre id="install-prompt">Install and fully configure Mnema Community on this machine.
+
+Repository: https://github.com/fthsrbst/mnema
+Goal: a working local-first server, web UI, authenticated MCP endpoint, and a verified first project map.
+
+1. Detect the OS, CPU architecture, shell, existing Node.js/Git versions, and whether port 8033 is already in use. On Raspberry Pi, explicitly detect ARM64 vs ARMv7 and treat the Pi as an always-on service host.
+2. Require Node.js 22 or newer and Git. Install only missing prerequisites using the platform's standard package manager; do not replace working system packages unnecessarily.
+3. If Mnema already exists, inspect its Git status and preserve user changes. Otherwise clone the repository. Prefer the official one-click installer for this OS; fall back to the documented manual install only if needed.
+4. Create .env from .env.example if absent. Generate a unique HUB_TOKEN with at least 32 random bytes. Never print, log, commit, or send the token anywhere except the local service and the requested MCP client configuration.
+5. Install locked dependencies, build the TypeScript server and web UI, then start Mnema. For Raspberry Pi/Linux, configure a non-root systemd service with restart-on-failure and start-on-boot. For Windows, use the documented local service path without opening a visible terminal window.
+6. Verify with real requests: /health must return HTTP 200 JSON; authenticated /api/profile must return JSON rather than HTML or 404; /mcp must answer an authenticated tools/list request. Report the exact status of vector search and the FTS-only fallback if no embedding key is configured.
+7. Connect the current coding agent to [HUB-URL]/mcp using the generated bearer token and the agent's supported user-level MCP configuration. Do not weaken authentication to make the connection pass.
+8. Ask for the first repository path if it is not obvious. Read skills/map-project/SKILL.md, inspect that repository, create or update its grounded Mnema project map, and verify project_get returns architecture, modules, entry points, commands, data model, decisions, current focus, and next steps.
+9. If another Mnema node exists, configure least-privilege sync credentials and prove both replicas converge by comparing authoritative record counts. Never copy SQLite databases through Git.
+10. Finish with evidence: service state, local UI URL, MCP URL, health JSON summary, authenticated profile result, tool count, mapped project name, startup behavior after reboot, and anything still unproven.
+
+Stop and explain the blocker instead of claiming success if any live verification fails.</pre>
     </div>
 
     <div class="qs__grid">
@@ -781,7 +837,7 @@ AUDIT ◀───┘</pre>
 <span class="c"># Cursor / Windsurf / opencode / Codex CLI: same endpoint, see README</span></pre>
     </div>
 
-    <p class="qs__note">Run Community on a workstation, home server, VM or container — the host is your choice.
+    <p class="qs__note"><b>Raspberry Pi is a first-class host:</b> use it as a quiet, always-on context appliance while your workstation handles local models and media generation. Community also runs on a workstation, home server, VM or container — the host is your choice.
     No <code>GEMINI_API_KEY</code>? The server still runs and falls back to
     keyword-only (FTS) search instead of hybrid. Nothing crashes; you lose semantic recall until
     you add a key. Embeddings are only ever computed server-side.</p>
@@ -922,16 +978,38 @@ AUDIT ◀───┘</pre>
     }
   }
 
-  /* ---------- waveforms on tracklist (decorative) ---------- */
-  document.querySelectorAll(".track .wave").forEach(function(w, idx){
-    var seed = idx * 7 + 3;
-    for (var k=0; k<21; k++){
-      var bar = document.createElement("i");
-      seed = (seed * 16807) % 2147483647;
-      var h = 2 + (seed % 13);
-      bar.style.height = h + "px";
-      w.appendChild(bar);
-    }
+  /* ---------- tool-family filter ---------- */
+  var toolFilters = document.querySelectorAll("[data-tool-filter]");
+  var toolGroups = document.querySelectorAll("[data-tool-group]");
+  toolFilters.forEach(function(button){
+    button.addEventListener("click", function(){
+      var selected = button.getAttribute("data-tool-filter");
+      toolFilters.forEach(function(item){ item.setAttribute("aria-pressed", String(item === button)); });
+      toolGroups.forEach(function(group){
+        group.classList.toggle("is-hidden", selected !== "all" && group.getAttribute("data-tool-group") !== selected);
+      });
+    });
+  });
+
+  /* ---------- full-install prompt copy ---------- */
+  document.querySelectorAll("[data-copy-target]").forEach(function(button){
+    button.addEventListener("click", async function(){
+      var target = document.getElementById(button.getAttribute("data-copy-target"));
+      if (!target) return;
+      var original = button.textContent;
+      try {
+        await navigator.clipboard.writeText(target.textContent.trim());
+        button.textContent = "Copied";
+      } catch (_error) {
+        var range = document.createRange();
+        range.selectNodeContents(target);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = "Selected — copy";
+      }
+      window.setTimeout(function(){ button.textContent = original; }, 1800);
+    });
   });
 
   /* ---------- GSAP scroll reveals (progressive enhancement) ---------- */
@@ -957,7 +1035,7 @@ AUDIT ◀───┘</pre>
       },
       once:true
     });
-    ScrollTrigger.batch(".track", {
+    ScrollTrigger.batch(".toolgroup", {
       start:"top 95%",
       onEnter: function(batch){
         gsap.from(batch, {opacity:0, x:-16, duration:.3, stagger:.04, ease:"steps(3)"});

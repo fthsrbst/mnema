@@ -18,7 +18,7 @@ export interface CloudRuntimeConfig {
     environment: "sandbox" | "production";
     approvedCheckoutUrl: string;
     prices: PaddlePriceCatalog;
-  };
+  } | null;
 }
 
 const urlSchema = z.string().url().transform((value) => value.replace(/\/$/, ""));
@@ -55,6 +55,7 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
     "CLOUD_WEBHOOK_RATE_LIMIT_PER_MINUTE",
     "CLOUD_RATE_LIMIT_REDIS_URL",
     "CLOUD_ENABLE_COMMUNITY_API",
+    "CLOUD_BILLING_ENABLED",
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
     "SUPABASE_ANON_KEY",
@@ -80,14 +81,44 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
   const environment = z.enum(["sandbox", "production"]).parse(env.PADDLE_ENVIRONMENT?.trim() || "sandbox");
   const httpsOnly = boolean(env, "CLOUD_HTTPS_ONLY", false);
   const appUrl = urlSchema.parse(required("CLOUD_APP_URL"));
-  const approvedCheckoutUrl = urlSchema.parse(required("PADDLE_APPROVED_CHECKOUT_URL"));
   const rateLimitRedisUrl = env.CLOUD_RATE_LIMIT_REDIS_URL?.trim();
-  if (environment === "production" && (!httpsOnly || !appUrl.startsWith("https://") || !approvedCheckoutUrl.startsWith("https://"))) {
-    throw new Error("Paddle production requires CLOUD_HTTPS_ONLY=true and HTTPS app/checkout URLs");
+  const paddleKeys = cloudKeys.filter((key) => key.startsWith("PADDLE_"));
+  const hasPaddleConfiguration = paddleKeys.some((key) => env[key]?.trim());
+  const billingEnabled = boolean(env, "CLOUD_BILLING_ENABLED", hasPaddleConfiguration);
+  if (!billingEnabled && hasPaddleConfiguration) {
+    throw new Error("Paddle values require CLOUD_BILLING_ENABLED=true (or the flag to be omitted)");
   }
-  if (environment === "production" && !rateLimitRedisUrl) {
-    throw new Error("Paddle production requires CLOUD_RATE_LIMIT_REDIS_URL for shared abuse control");
-  }
+  const paddle = billingEnabled
+    ? (() => {
+        const approvedCheckoutUrl = urlSchema.parse(required("PADDLE_APPROVED_CHECKOUT_URL"));
+        if (environment === "production" && (!httpsOnly || !appUrl.startsWith("https://") || !approvedCheckoutUrl.startsWith("https://"))) {
+          throw new Error("Paddle production requires CLOUD_HTTPS_ONLY=true and HTTPS app/checkout URLs");
+        }
+        if (environment === "production" && !rateLimitRedisUrl) {
+          throw new Error("Paddle production requires CLOUD_RATE_LIMIT_REDIS_URL for shared abuse control");
+        }
+        return {
+          apiKey: required("PADDLE_API_KEY"),
+          webhookSecret: required("PADDLE_WEBHOOK_SECRET"),
+          environment,
+          approvedCheckoutUrl,
+          prices: {
+            starter: {
+              monthly: required("PADDLE_PRICE_STARTER_MONTHLY"),
+              annual: required("PADDLE_PRICE_STARTER_ANNUAL"),
+            },
+            pro: {
+              monthly: required("PADDLE_PRICE_PRO_MONTHLY"),
+              annual: required("PADDLE_PRICE_PRO_ANNUAL"),
+            },
+            team: {
+              monthly: required("PADDLE_PRICE_TEAM_MONTHLY"),
+              annual: required("PADDLE_PRICE_TEAM_ANNUAL"),
+            },
+          },
+        } satisfies NonNullable<CloudRuntimeConfig["paddle"]>;
+      })()
+    : null;
   return {
     appUrl,
     supabaseUrl: urlSchema.parse(required("SUPABASE_URL")),
@@ -99,25 +130,6 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
     webhookRateLimitPerMinute: integer(env, "CLOUD_WEBHOOK_RATE_LIMIT_PER_MINUTE", 120, 10, 100_000),
     rateLimitRedisUrl: rateLimitRedisUrl ? redisUrlSchema.parse(rateLimitRedisUrl) : undefined,
     communityApiEnabled: boolean(env, "CLOUD_ENABLE_COMMUNITY_API", false),
-    paddle: {
-      apiKey: required("PADDLE_API_KEY"),
-      webhookSecret: required("PADDLE_WEBHOOK_SECRET"),
-      environment,
-      approvedCheckoutUrl,
-      prices: {
-        starter: {
-          monthly: required("PADDLE_PRICE_STARTER_MONTHLY"),
-          annual: required("PADDLE_PRICE_STARTER_ANNUAL"),
-        },
-        pro: {
-          monthly: required("PADDLE_PRICE_PRO_MONTHLY"),
-          annual: required("PADDLE_PRICE_PRO_ANNUAL"),
-        },
-        team: {
-          monthly: required("PADDLE_PRICE_TEAM_MONTHLY"),
-          annual: required("PADDLE_PRICE_TEAM_ANNUAL"),
-        },
-      },
-    },
+    paddle,
   };
 }

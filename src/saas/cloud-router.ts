@@ -458,6 +458,8 @@ export function buildCloudAccountRouter(
       const { organizationId, membership } = await requireMembership(req, config, user, request);
       if (!["owner", "admin"].includes(membership.role)) throw new CloudHttpError(403, "forbidden");
       if (user.aal !== "aal2") throw new CloudHttpError(403, "mfa_required");
+      const paddle = config.paddle;
+      if (!paddle) throw new CloudHttpError(503, "billing_not_configured");
       const input = z.object({ plan: z.enum(["starter", "pro", "team"]), interval: z.enum(["monthly", "annual"]) }).parse(req.body);
       const existingSubscription = await billingStore.getSubscription(organizationId);
       if (existingSubscription && existingSubscription.status !== "canceled") {
@@ -465,10 +467,10 @@ export function buildCloudAccountRouter(
       }
       const checkout = await createPaddleCheckout(
         {
-          apiKey: config.paddle.apiKey,
-          environment: config.paddle.environment,
-          approvedCheckoutUrl: config.paddle.approvedCheckoutUrl,
-          prices: config.paddle.prices,
+          apiKey: paddle.apiKey,
+          environment: paddle.environment,
+          approvedCheckoutUrl: paddle.approvedCheckoutUrl,
+          prices: paddle.prices,
           fetch: request,
         },
         { organizationId, userId: user.id, ...input }
@@ -489,6 +491,7 @@ export function buildCloudAccountRouter(
         status: subscription?.status ?? "none",
         currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
         cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
+        billingEnabled: Boolean(config.paddle),
         entitlements: PLAN_ENTITLEMENTS[plan],
       });
     } catch (error) {
@@ -501,13 +504,15 @@ export function buildCloudAccountRouter(
       const { organizationId, membership } = await requireMembership(req, config, user, request);
       if (!["owner", "admin"].includes(membership.role)) throw new CloudHttpError(403, "forbidden");
       if (user.aal !== "aal2") throw new CloudHttpError(403, "mfa_required");
+      const paddle = config.paddle;
+      if (!paddle) throw new CloudHttpError(503, "billing_not_configured");
       const [customerId, subscription] = await Promise.all([
         billingStore.getCustomer(organizationId),
         billingStore.getSubscription(organizationId),
       ]);
       if (!customerId || !subscription) throw new CloudHttpError(404, "subscription_not_found");
       const portal = await createPaddlePortalSession(
-        { apiKey: config.paddle.apiKey, environment: config.paddle.environment, fetch: request },
+        { apiKey: paddle.apiKey, environment: paddle.environment, fetch: request },
         { customerId, subscriptionId: subscription.providerSubscriptionId }
       );
       res.status(201).json(portal);
@@ -672,14 +677,16 @@ export function buildCloudWebhookRouter(
   config: CloudRuntimeConfig,
   request: typeof globalThis.fetch = globalThis.fetch
 ) {
+  const paddle = config.paddle;
+  if (!paddle) throw new Error("Paddle webhook router requires billing configuration");
   const router = Router();
   const store = createSupabasePaddleStore(config, request);
   router.post("/", async (req, res) => {
     try {
       if (!Buffer.isBuffer(req.body)) throw new CloudHttpError(400, "raw_body_required");
       const result = await processPaddleWebhook(req.body, req.header("paddle-signature"), {
-        secret: config.paddle.webhookSecret,
-        prices: config.paddle.prices,
+        secret: paddle.webhookSecret,
+        prices: paddle.prices,
         store,
       });
       if (!result.accepted) throw new CloudHttpError(401, "invalid_signature");

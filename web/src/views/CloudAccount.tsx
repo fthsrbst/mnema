@@ -50,6 +50,7 @@ interface CloudEntitlement {
   status: string;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  billingEnabled: boolean;
   entitlements: { projects: number; members: number; storageMb: number };
 }
 
@@ -83,6 +84,39 @@ const plans = [
   { id: "team", price: "$49", projects: "250", storage: "20 GB" },
 ] as const;
 
+type PaidPlan = (typeof plans)[number]["id"];
+type BillingInterval = "monthly" | "annual";
+
+function queryPlan(): PaidPlan | null {
+  const value = new URLSearchParams(window.location.search).get("plan");
+  return plans.some((plan) => plan.id === value) ? value as PaidPlan : null;
+}
+
+function queryInterval(): BillingInterval {
+  return new URLSearchParams(window.location.search).get("interval") === "monthly" ? "monthly" : "annual";
+}
+
+function friendlyCloudError(error: unknown, tr: boolean): string {
+  const code = error instanceof Error ? error.message : "cloud_operation_failed";
+  if (code.toLowerCase().includes("email rate limit")) {
+    return tr
+      ? "Doğrulama e-postası kotası şu anda dolu. Hazır staging test hesabıyla giriş yap veya SMTP kotası yenilendikten sonra tekrar dene."
+      : "The verification-email quota is currently exhausted. Use the prepared staging test account or retry after the SMTP quota resets.";
+  }
+  if (/^email address .* is invalid$/i.test(code)) {
+    return tr ? "Geçerli, teslim edilebilir bir e-posta adresi kullan." : "Use a valid, deliverable email address.";
+  }
+  const messages: Record<string, [string, string]> = {
+    billing_not_configured: ["Paddle sandbox henüz açık değil. Ücretsiz Cloud önizlemesini kullanabilirsin; ücretli ödeme testi açıldığında bu buton doğrudan checkout'a gidecek.", "Paddle sandbox is not open yet. You can use the free Cloud preview; this button will open checkout when paid testing is enabled."],
+    mfa_required: ["Abonelik ve hassas işlemler için önce TOTP ile iki aşamalı doğrulamayı tamamla.", "Complete TOTP two-factor authentication before billing or sensitive actions."],
+    email_not_verified: ["Devam etmek için e-posta adresini doğrula.", "Verify your email address to continue."],
+    organization_create_failed: ["Çalışma alanı oluşturulamadı. Slug başka bir hesapta kullanılıyor olabilir.", "The workspace could not be created. Its slug may already be in use."],
+    subscription_already_exists: ["Bu çalışma alanının zaten etkin bir aboneliği var; abonelik portalını kullan.", "This workspace already has an active subscription; use the subscription portal."],
+    cloud_operation_failed: ["Cloud staging isteği tamamlanamadı. Yerel önizleme sunucusunun ve Supabase bağlantısının açık olduğunu kontrol et.", "The Cloud staging request could not complete. Check that the local preview server and its Supabase connection are available."],
+  };
+  return messages[code]?.[tr ? 0 : 1] ?? code;
+}
+
 export function CloudAccount() {
   const { lang } = useI18n();
   const tr = lang === "tr";
@@ -101,6 +135,8 @@ export function CloudAccount() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CloudSearchResult[]>([]);
   const [entitlement, setEntitlement] = useState<CloudEntitlement | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<PaidPlan | null>(queryPlan);
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>(queryInterval);
   const [personalInvitations, setPersonalInvitations] = useState<PersonalInvitation[]>([]);
   const [organizationInvitations, setOrganizationInvitations] = useState<OrganizationInvitation[]>([]);
   const [organizationMembers, setOrganizationMembers] = useState<OrganizationMember[]>([]);
@@ -200,7 +236,7 @@ export function CloudAccount() {
     try {
       await operation();
     } catch (error) {
-      setMessage((error as Error).message);
+      setMessage(friendlyCloudError(error, tr));
     } finally {
       setBusy(false);
     }
@@ -230,6 +266,15 @@ export function CloudAccount() {
             {tr ? "Hesabına gir veya e-posta doğrulamalı yeni bir hesap aç." : "Sign in or create an email-verified account."}
           </Text>
         </VStack>
+        {selectedPlan && (
+          <Panel raised>
+            <Text type="supporting" color="secondary">
+              {tr
+                ? `${selectedPlan.toUpperCase()} planını seçtin. Hesabını doğrulayıp bir çalışma alanı oluşturduktan sonra aynı seçimle devam edeceksin.`
+                : `${selectedPlan.toUpperCase()} is selected. After verifying your account and creating a workspace, you will continue with the same choice.`}
+            </Text>
+          </Panel>
+        )}
         <Panel raised>
           <VStack gap={3}>
             <TextField label="E-mail" type="email" value={email} onChange={setEmail} />
@@ -271,7 +316,13 @@ export function CloudAccount() {
         </VStack>
         <HStack gap={2}>
           <Tag>{account?.user.aal?.toUpperCase() ?? "AAL1"}</Tag>
-          <Button label={tr ? "Çıkış" : "Sign out"} onClick={() => run(async () => { await cloudClient.auth.signOut(); })} />
+          <Button label={tr ? "Çıkış" : "Sign out"} onClick={() => run(async () => {
+            const { error } = await cloudClient.auth.signOut();
+            if (error) {
+              const localResult = await cloudClient.auth.signOut({ scope: "local" });
+              if (localResult.error) throw localResult.error;
+            }
+          })} />
         </HStack>
       </HStack>
 
@@ -595,21 +646,52 @@ export function CloudAccount() {
               {active && <Tag>{active.organizations?.name ?? active.organization_id}</Tag>}
             </HStack>
           </HStack>
+          <Grid minWidth={220} gap={3}>
+            <Panel raised={entitlement?.plan === "free"}>
+              <VStack gap={2}>
+                <Heading level={4}>FREE</Heading>
+                <Heading level={3}>$0<span style={{ fontSize: 12 }}>/mo</span></Heading>
+                <Text type="supporting" color="secondary">2 projects · 100 MB</Text>
+                <Tag>{tr ? "Çalışma alanıyla otomatik aktif" : "Active automatically with a workspace"}</Tag>
+              </VStack>
+            </Panel>
+            <VStack gap={2}>
+              <Select
+                label={tr ? "Faturalama aralığı" : "Billing interval"}
+                value={billingInterval}
+                onChange={(value) => setBillingInterval(value as BillingInterval)}
+                options={[
+                  { value: "monthly", label: tr ? "Aylık" : "Monthly" },
+                  { value: "annual", label: tr ? "Yıllık" : "Annual" },
+                ]}
+              />
+              <Text type="supporting" color="secondary">
+                {entitlement?.billingEnabled
+                  ? (tr ? "Plan seçimi güvenli Paddle checkout'ını açar." : "Choosing a plan opens secure Paddle checkout.")
+                  : (tr ? "Ücretsiz önizleme açık. Ücretli checkout, Paddle sandbox anahtarları eklenene kadar kapalı." : "The free preview is open. Paid checkout stays offline until Paddle sandbox credentials are added.")}
+              </Text>
+            </VStack>
+          </Grid>
           <Grid minWidth={200} gap={3}>
             {plans.map((plan) => (
-              <Panel key={plan.id} raised={plan.id === "starter"}>
+              <Panel key={plan.id} raised={plan.id === selectedPlan || (!selectedPlan && plan.id === "starter")}>
                 <VStack gap={2}>
                   <Heading level={4}>{plan.id.toUpperCase()}</Heading>
                   <Heading level={3}>{plan.price}<span style={{ fontSize: 12 }}>/mo</span></Heading>
                   <Text type="supporting" color="secondary">{plan.projects} projects · {plan.storage}</Text>
                   <Button
-                    label={tr ? "Yıllık planı seç" : "Choose annual"}
-                    variant={plan.id === "starter" ? "primary" : "secondary"}
-                    disabled={busy || !activeOrganization || account?.user.aal !== "aal2" || !["owner", "admin"].includes(active?.role ?? "viewer")}
+                    label={tr
+                      ? `${plan.id.toUpperCase()} ${billingInterval === "annual" ? "yıllık" : "aylık"} aboneliğine geç`
+                      : `Subscribe to ${plan.id.toUpperCase()} ${billingInterval}`}
+                    variant={plan.id === selectedPlan || (!selectedPlan && plan.id === "starter") ? "primary" : "secondary"}
+                    disabled={busy || !activeOrganization || !["owner", "admin"].includes(active?.role ?? "viewer")}
                     onClick={() => run(async () => {
+                      setSelectedPlan(plan.id);
+                      if (!entitlement?.billingEnabled) throw new Error("billing_not_configured");
+                      if (account?.user.aal !== "aal2") throw new Error("mfa_required");
                       const result = await cloudApi<{ checkoutUrl: string }>(
                         "/billing/checkout",
-                        { method: "POST", body: JSON.stringify({ plan: plan.id, interval: "annual" }) },
+                        { method: "POST", body: JSON.stringify({ plan: plan.id, interval: billingInterval }) },
                         activeOrganization
                       );
                       window.location.assign(result.checkoutUrl);

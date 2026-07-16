@@ -222,6 +222,7 @@ app.get("/distributed-failure", createCloudRateLimiter({
 app.use("/webhook", express.raw({ type: "application/json" }), buildCloudWebhookRouter(config, fakeFetch));
 app.use(express.json());
 app.use("/api", buildCloudAccountRouter(config, fakeFetch));
+app.use("/free-api", buildCloudAccountRouter({ ...config, paddle: null }, fakeFetch));
 const server = app.listen(0, "127.0.0.1");
 await new Promise<void>((resolve) => server.once("listening", resolve));
 const address = server.address();
@@ -398,6 +399,23 @@ const entitlementJson = (await entitlement.json()) as { plan?: string; entitleme
 check(
   "missing subscription safely resolves to free-plan server entitlements",
   entitlement.status === 200 && entitlementJson.plan === "free" && entitlementJson.entitlements?.projects === 2
+);
+
+const freeEntitlement = await fetch(`${base}/free-api/billing/subscription`, { headers: knowledgeHeaders });
+const freeEntitlementJson = (await freeEntitlement.json()) as { plan?: string; billingEnabled?: boolean };
+check(
+  "Free preview reports usable entitlements while paid billing is disabled",
+  freeEntitlement.status === 200 && freeEntitlementJson.plan === "free" && freeEntitlementJson.billingEnabled === false
+);
+const disabledCheckout = await fetch(`${base}/free-api/billing/checkout`, {
+  method: "POST",
+  headers: { ...authHeaders, "x-mnema-organization-id": organizationId },
+  body: JSON.stringify({ plan: "starter", interval: "annual" }),
+});
+const disabledCheckoutJson = (await disabledCheckout.json()) as { error?: string };
+check(
+  "Free preview keeps paid checkout closed without Paddle",
+  disabledCheckout.status === 503 && disabledCheckoutJson.error === "billing_not_configured"
 );
 
 const checkout = await fetch(`${base}/api/billing/checkout`, {

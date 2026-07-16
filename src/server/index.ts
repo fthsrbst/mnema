@@ -47,6 +47,7 @@ app.disable("x-powered-by");
 assertDeploymentSafety();
 const cloudConfig = loadCloudRuntimeConfig();
 const communityEnabled = !cloudConfig || Boolean(cloudConfig.communityApiEnabled);
+const webDistDir = resolve(process.env.MNEMA_WEB_DIST_DIR?.trim() || "./web/dist");
 if (cloudConfig?.communityApiEnabled && !authenticationEnabled()) {
   throw new Error("CLOUD_ENABLE_COMMUNITY_API=true requires scoped Community authentication");
 }
@@ -55,7 +56,7 @@ const cloudRateLimitConnection = cloudConfig?.rateLimitRedisUrl
   : null;
 if (cloudConfig?.trustProxyHops) app.set("trust proxy", cloudConfig.trustProxyHops);
 app.use(cloudSecurityHeaders({ supabaseUrl: cloudConfig?.supabaseUrl, httpsOnly: cloudConfig?.httpsOnly }));
-if (cloudConfig) {
+if (cloudConfig?.paddle) {
   // Paddle signature verification requires the exact raw bytes. This route is
   // intentionally mounted before the global JSON parser and self-host auth.
   app.use(
@@ -99,6 +100,7 @@ app.get("/health", (_req, res) => {
     vector_backend: communityEnabled ? config.vectorBackend : null,
     vector_projection: communityEnabled ? vectorStore.status() : null,
     cloud: cloudConfig ? "configured" : "disabled",
+    cloud_billing: cloudConfig ? (cloudConfig.paddle ? "configured" : "disabled") : "disabled",
     cloud_rate_limit: cloudConfig
       ? (cloudRateLimitConnection ? "distributed" : "process")
       : "disabled",
@@ -109,7 +111,7 @@ app.get("/health", (_req, res) => {
 // UI kabuğu (web/dist) bilinçli olarak auth'suz: sadece uygulama kodu içerir, veri içermez —
 // veri her zaman /api üzerinden ve token'lıdır. /outputs ise üretilen medya (kullanıcı verisi)
 // içerdiğinden auth'un ARKASINDA servis edilir (aşağıda) — Funnel açıkken internete sızmasın.
-app.use("/", express.static("./web/dist"));
+app.use("/", express.static(webDistDir));
 
 // Hosted Cloud defaults to a Cloud-only public surface. Paddle return URLs and
 // auth redirects still receive the SPA shell, while Community REST/MCP remain
@@ -117,7 +119,7 @@ app.use("/", express.static("./web/dist"));
 app.get("*", (req, res, next) => {
   const acceptsHtml = (req.header("accept") ?? "").includes("text/html");
   if (!cloudConfig || communityEnabled || req.path.startsWith("/cloud/api") || !acceptsHtml) return next();
-  res.sendFile(resolve("./web/dist/index.html"));
+  res.sendFile(resolve(webDistDir, "index.html"));
 });
 app.use((_req, res, next) => {
   if (!communityEnabled) return void res.status(404).json({ error: "community_api_disabled" });
