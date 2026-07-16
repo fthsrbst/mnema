@@ -13,6 +13,20 @@ await db.exec(`
   create role service_role nologin;
   create schema auth;
   create table auth.users(id uuid primary key, email text);
+  create function auth.jwt()
+  returns jsonb
+  language sql
+  stable
+  as $$
+    select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb)
+  $$;
+  create function auth.uid()
+  returns uuid
+  language sql
+  stable
+  as $$
+    select nullif(auth.jwt() ->> 'sub', '')::uuid
+  $$;
 `);
 const migration = fs.readFileSync(new URL("../cloud/migrations/0001_tenancy.sql", import.meta.url), "utf8");
 await db.exec(migration);
@@ -47,10 +61,10 @@ await db.exec(`
 `);
 
 async function asUser(userId: string, aal: "aal1" | "aal2" = "aal2"): Promise<void> {
-  await db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId]);
   const email = userId === userA ? "owner@example.com" : userId === userB ? "invitee@example.com" : "admin@example.com";
-  await db.query("select set_config('request.jwt.claim.email', $1, false)", [email]);
-  await db.query("select set_config('request.jwt.claim.aal', $1, false)", [aal]);
+  await db.query("select set_config('request.jwt.claims', $1, false)", [
+    JSON.stringify({ sub: userId, email, aal, role: "authenticated" }),
+  ]);
 }
 
 await asUser(userA);

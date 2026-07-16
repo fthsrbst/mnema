@@ -8,7 +8,7 @@ returns uuid
 language sql
 stable
 as $$
-  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+  select auth.uid()
 $$;
 
 create or replace function app.current_user_email()
@@ -16,7 +16,7 @@ returns text
 language sql
 stable
 as $$
-  select lower(nullif(current_setting('request.jwt.claim.email', true), ''))
+  select lower(nullif(auth.jwt() ->> 'email', ''))
 $$;
 
 create or replace function app.current_aal()
@@ -24,7 +24,7 @@ returns text
 language sql
 stable
 as $$
-  select coalesce(nullif(current_setting('request.jwt.claim.aal', true), ''), 'aal1')
+  select coalesce(nullif(auth.jwt() ->> 'aal', ''), 'aal1')
 $$;
 
 create table if not exists public.profiles (
