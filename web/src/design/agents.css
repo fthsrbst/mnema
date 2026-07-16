@@ -1,0 +1,60 @@
+/* Agents ofis sahnesi — katı 1-bit pixel-art canvas + destekleyici tablo/rozet stilleri. */
+
+.office-scene-panel {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel);
+}
+
+.office-scene-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-4);
+  min-height: 220px;
+  overflow-x: auto;
+}
+
+.office-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  cursor: default;
+}
+
+.office-scene-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel);
+}
+
+/* --- tıklanabilir tablo satırları (Agents: canlı/son bitenler) --- */
+.data-table-row--clickable {
+  cursor: pointer;
+}
+
+.data-table-row--clickable[data-active="true"] {
+  background: var(--accent-dim);
+}
+
+/* --- Dashboard "Aktif Agent'lar" kartı --- */
+.active-agents-card {
+  cursor: pointer;
+}
+
+.active-agents-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- Projects: küçük "N agent çalışıyor" rozeti --- */
+.project-agents-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}

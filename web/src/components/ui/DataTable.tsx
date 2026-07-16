@@ -8,7 +8,19 @@ export interface Column<T> {
 }
 
 /** Basit, bağımlılıksız veri tablosu — Astryx Table'ın yerine geçer. */
-export function DataTable<T>({ data, columns, rowKey }: { data: T[]; columns: Column<T>[]; rowKey: (row: T) => string }) {
+export function DataTable<T>({
+  data,
+  columns,
+  rowKey,
+  onRowClick,
+  isRowActive,
+}: {
+  data: T[];
+  columns: Column<T>[];
+  rowKey: (row: T) => string;
+  onRowClick?: (row: T) => void;
+  isRowActive?: (row: T) => boolean;
+}) {
   return (
     <div className="data-table-wrap">
       <table className="data-table">
@@ -23,7 +35,12 @@ export function DataTable<T>({ data, columns, rowKey }: { data: T[]; columns: Co
         </thead>
         <tbody>
           {data.map((row) => (
-            <tr key={rowKey(row)}>
+            <tr
+              key={rowKey(row)}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              className={onRowClick ? "data-table-row--clickable" : undefined}
+              data-active={isRowActive ? isRowActive(row) : undefined}
+            >
               {columns.map((c) => (
                 <td key={c.key}>{c.render(row)}</td>
               ))}

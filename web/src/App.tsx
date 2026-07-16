@@ -19,6 +19,7 @@ import { Timeline } from "./views/Timeline";
 import { Graph } from "./views/Graph";
 import { Learning } from "./views/Learning";
 import { Machines } from "./views/Machines";
+import { Agents } from "./views/Agents";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
 import { ProfessionalProfile } from "./views/ProfessionalProfile";
@@ -93,6 +94,7 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
     labelKey: "nav.sectionSystem",
     icon: "system",
     tabs: [
+      { id: "agents", labelKey: "nav.agents" },
       { id: "machines", labelKey: "nav.machines" },
       { id: "media", labelKey: "nav.media" },
       { id: "skills", labelKey: "nav.skills" },
@@ -279,7 +281,7 @@ function AppInner() {
   const renderTab = () => {
     switch (activeTab) {
       case "dashboard":
-        return <Dashboard />;
+        return <Dashboard onOpenAgents={() => goTo("system", "agents")} />;
       case "timeline":
         return <Timeline onNavigate={(target) => { const dest = TIMELINE_TARGETS[target]; goTo(dest.section, dest.tab); }} />;
       case "profile":
@@ -298,6 +300,8 @@ function AppInner() {
         return <Projects />;
       case "sessions":
         return <Sessions />;
+      case "agents":
+        return <Agents />;
       case "machines":
         return <Machines />;
       case "media":

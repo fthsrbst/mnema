@@ -8,10 +8,11 @@ interface PanelProps {
   padded?: boolean;
   className?: string;
   style?: CSSProperties;
+  onClick?: () => void;
 }
 
 /** Card yerine geçen temel yüzey — köşesiz, ince kenarlıklı panel. */
-export function Panel({ children, variant = "default", raised = false, ticked = false, padded = true, className, style }: PanelProps) {
+export function Panel({ children, variant = "default", raised = false, ticked = false, padded = true, className, style, onClick }: PanelProps) {
   const cls = [
     "panel",
     variant === "danger" && "panel--danger",
@@ -24,7 +25,7 @@ export function Panel({ children, variant = "default", raised = false, ticked = 
     .filter(Boolean)
     .join(" ");
   return (
-    <div className={cls} style={style}>
+    <div className={cls} style={style} onClick={onClick}>
       {children}
     </div>
   );

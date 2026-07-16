@@ -140,6 +140,36 @@ export interface Skill {
   content: string;
 }
 
+// --- agent presence ("Agents" ofis görünümü) ---
+
+export type AgentPresenceStatus = "active" | "done" | "abandoned";
+
+export interface AgentPresence {
+  id: number;
+  uid: string;
+  machine: string;
+  agent: string;
+  project: string;
+  branch: string | null;
+  task: string;
+  status: AgentPresenceStatus;
+  started_at: string;
+  heartbeat_at: string;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** heartbeat_at, HUB_PRESENCE_TTL_MIN'den eski ise true — koordinasyon kilidi değil, sadece uyarı. */
+  stale: boolean;
+}
+
+export function fetchActiveAgents(project?: string): Promise<AgentPresence[]> {
+  return api("GET", `/api/agents/active${project ? `?project=${encodeURIComponent(project)}` : ""}`);
+}
+
+export function fetchRecentAgents(hours = 24): Promise<AgentPresence[]> {
+  return api("GET", `/api/agents/recent?hours=${hours}`);
+}
+
 export interface OutputFile {
   name: string;
   url: string;
