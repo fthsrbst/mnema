@@ -55,6 +55,10 @@ Bind Mnema to loopback behind a TLS reverse proxy or a private service mesh. Do 
 
 Never deploy a new embedding model to only one sync peer. Upgrade every peer, complete reindex, and then disable `HUB_ACCEPT_LEGACY_VECTORS`.
 
+## Intentional knowledge reset
+
+Use a reset only when the owner explicitly chooses to discard the current corpus. Stop writers, create and verify an online SQLite backup, then run `npm run reset:knowledge -- --backup=<verified.db> --canonical-map=<project.json> --confirm=RESET_KNOWLEDGE`. The command preserves machines, prompts, skills, and audit history. It deletes memories, documents, sessions, feedback, relations, and project maps through domain deletion paths so sync tombstones prevent an offline peer from resurrecting stale knowledge. Start the server with the canonical project map, reconnect peers one at a time, and verify the tombstones are applied before accepting new writes.
+
 ## SLO baseline
 
 Measure with representative project filters and concurrent agents:

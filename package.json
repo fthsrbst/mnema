@@ -20,6 +20,7 @@
     "eval:context": "tsx scripts/context-eval.ts",
     "eval:context:release": "tsx scripts/context-eval.ts --release",
     "migration:audit": "tsx scripts/migration-audit.ts",
+    "reset:knowledge": "tsx scripts/reset-knowledge.ts",
     "smoke:security": "tsx scripts/security-smoke.ts",
     "smoke:generation": "tsx scripts/generation-smoke.ts",
     "smoke:qdrant": "tsx scripts/qdrant-smoke.ts",

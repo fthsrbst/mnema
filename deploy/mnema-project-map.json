@@ -1,0 +1,32 @@
+{
+  "name": "mnema",
+  "status": "active",
+  "summary": "Mnema is the shared, self-hosted context and memory platform used by AI agents across the private hub, plugin kit, and public distribution repositories.",
+  "stack": ["typescript", "sqlite", "sqlite-vec", "qdrant", "express", "mcp", "gemini-embedding"],
+  "repo": "https://github.com/fthsrbst/Mnema-hub.git",
+  "paths": {
+    "windows-hub": "C:\\Users\\fatih\\Desktop\\dev\\ai-hub",
+    "windows-kit": "C:\\Users\\fatih\\Desktop\\dev\\mnema-kit",
+    "windows-public": "C:\\Users\\fatih\\Desktop\\dev\\ai-hub-public",
+    "pi-hub": "/home/fatih/ai-hub",
+    "mac-hub": "/Users/fatih/ai-hub"
+  },
+  "current_focus": "Knowledge corpus intentionally reset on 2026-07-16. Agents must rebuild durable decisions, how-to records, documents, relations, and session continuity from current evidence only.",
+  "decisions": [
+    "2026-07: ai-hub, mnema-kit, and ai-hub-public share one canonical Mnema project context; repository paths are aliases, not separate knowledge projects.",
+    "2026-07: SQLite remains the knowledge authority; external vector databases are rebuildable search projections."
+  ],
+  "next_steps": [
+    "Let agents repopulate only durable, evidence-backed decisions, how-to records, preferences, project documents, and typed relations.",
+    "Keep transient task details out of memory and close every material session with session_log plus project_update when focus changes.",
+    "Build at least 50 human-reviewed held-out context cases before declaring the company retrieval release gate passed."
+  ],
+  "architecture": "SQLite is the knowledge source of truth. Server-owned context_get combines project/session authority with lifecycle-filtered FTS5 and VectorStore evidence under provenance, trust, freshness, and token policies. sqlite-vec is the embedded default and fallback; Qdrant is an optional revision-guarded projection. Typed temporal relations and generation-aware sync preserve cross-device identity.",
+  "conventions": [
+    "Use canonical project name mnema for ai-hub, mnema-kit, and ai-hub-public.",
+    "Preserve original-language memory; English canonical summaries are additive and provenance-labelled.",
+    "Semantic similarity never decides what is current; context_get owns authority and freshness.",
+    "Only durable cross-session knowledge belongs in memory; longer material belongs in RAG.",
+    "Relations must use stable UIDs, explicit types, confidence, validity, and provenance."
+  ]
+}
