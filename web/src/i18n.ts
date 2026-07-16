@@ -37,6 +37,8 @@ const dict = {
   "nav.skills": { tr: "Skiller", en: "Skills" },
   "nav.settings": { tr: "Ayarlar", en: "Settings" },
   "nav.graph": { tr: "Graf", en: "Graph" },
+  "nav.expandSidebar": { tr: "Kenar çubuğunu genişlet", en: "Expand sidebar" },
+  "nav.collapseSidebar": { tr: "Kenar çubuğunu daralt", en: "Collapse sidebar" },
 
   // --- common ---
   "common.save": { tr: "Kaydet", en: "Save" },

@@ -172,6 +172,7 @@ function TokenGate({ onSubmit }: { onSubmit: (token: string) => void }) {
 
 function AppInner() {
   const { t } = useI18n();
+  const [railExpanded, setRailExpanded] = useState(false);
   const [section, setSection] = useState<SectionId>("overview");
   const [tabBySection, setTabBySection] = useState<Record<SectionId, string>>({
     overview: "dashboard",
@@ -242,13 +243,29 @@ function AppInner() {
 
   return (
     <div className="app-shell">
-      <div className="app-rail-col">
+      <div className="app-rail-col" data-expanded={railExpanded}>
         <div className="app-rail-logo" title="AI Hub">
           <Icon name="hub" size={18} />
+          <span className="app-rail-logo-label">Mnema</span>
         </div>
-        <IconRail items={railItems} active={section} onSelect={(id) => setSection(id as SectionId)} />
+        <IconRail
+          items={railItems}
+          active={section}
+          expanded={railExpanded}
+          onSelect={(id) => setSection(id as SectionId)}
+        />
         <div className="app-rail-foot">
-          <Icon name="chevronRight" size={10} className="u-mono-dim" />
+          <button
+            type="button"
+            className="app-rail-toggle"
+            aria-expanded={railExpanded}
+            aria-label={railExpanded ? t("nav.collapseSidebar") : t("nav.expandSidebar")}
+            title={railExpanded ? t("nav.collapseSidebar") : t("nav.expandSidebar")}
+            onClick={() => setRailExpanded((value) => !value)}
+          >
+            <Icon name="chevronRight" size={10} className="app-rail-toggle-icon" />
+            <span className="app-rail-toggle-label">{t("nav.collapseSidebar")}</span>
+          </button>
         </div>
       </div>
       <div className="app-main">
