@@ -3,7 +3,7 @@
 #   curl -fsSL <repo-raw>/deploy/setup-pi.sh | bash   # veya repo klonladıktan sonra ./deploy/setup-pi.sh
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/fthsrbst/mnema.git}"
+REPO_URL="${REPO_URL:-git@github.com:fthsrbst/mnema.git}"
 APP_DIR="$HOME/ai-hub"
 
 echo "== Node 22 kontrol =="

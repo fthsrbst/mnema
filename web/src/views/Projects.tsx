@@ -4,13 +4,22 @@ import { Panel } from "../components/ui/Panel";
 import { Button } from "../components/ui/Button";
 import { TextField, TextArea, Select } from "../components/ui/Field";
 import { Heading, Text } from "../components/ui/Typography";
-import { StatusDot } from "../components/ui/Tag";
+import { StatusDot, Tag } from "../components/ui/Tag";
 import { EmptyState } from "../components/ui/EmptyState";
 import { AlertDialog, Dialog } from "../components/ui/Dialog";
 import { SectionRule } from "../components/ui/Divider";
 import { DataTable, type Column } from "../components/ui/DataTable";
 import { useToast } from "../components/ui/useToast";
-import { api, type ProjectMap, type ProjectModule } from "../api";
+import {
+  api,
+  fetchGraphNeighbors,
+  type GraphPayload,
+  type Memory,
+  type ProjectMap,
+  type ProjectModule,
+  type RagDocument,
+  type SessionLog,
+} from "../api";
 import { useI18n } from "../i18n";
 import { Markdown } from "../components/Markdown";
 
@@ -108,6 +117,71 @@ function CodeMapSection({ project }: { project: ProjectMap }) {
   );
 }
 
+interface ProjectWorkspaceData {
+  memories: Memory[];
+  documents: RagDocument[];
+  sessions: SessionLog[];
+  graph: GraphPayload;
+}
+
+function ProjectKnowledgeSection({ data, loading }: { data: ProjectWorkspaceData | null; loading: boolean }) {
+  const { t } = useI18n();
+  if (loading) return <Text type="supporting" color="secondary">{t("common.loading")}</Text>;
+  if (!data) return null;
+  const solutions = data.memories.filter((memory) => memory.type === "howto");
+  const neighbors = data.graph.nodes.filter((node) => node.kind !== "project");
+  return (
+    <Panel>
+      <VStack gap={4}>
+        <SectionRule label={t("projects.knowledgeWorkspace")} />
+        <Grid minWidth={150} gap={3}>
+          <VStack gap={1}><Heading level={4}>{data.documents.length}</Heading><Text type="supporting" color="secondary">{t("projects.linkedDocuments")}</Text></VStack>
+          <VStack gap={1}><Heading level={4}>{data.memories.length}</Heading><Text type="supporting" color="secondary">{t("projects.linkedMemories")}</Text></VStack>
+          <VStack gap={1}><Heading level={4}>{solutions.length}</Heading><Text type="supporting" color="secondary">{t("projects.solutions")}</Text></VStack>
+          <VStack gap={1}><Heading level={4}>{data.sessions.length}</Heading><Text type="supporting" color="secondary">{t("projects.sessions")}</Text></VStack>
+          <VStack gap={1}><Heading level={4}>{neighbors.length + data.graph.more}</Heading><Text type="supporting" color="secondary">{t("projects.graphNeighbors")}</Text></VStack>
+        </Grid>
+
+        {data.documents.length > 0 && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.recentDocuments")}</span>
+            {data.documents.slice(0, 6).map((document) => (
+              <HStack key={document.id} hAlign="between" vAlign="center">
+                <Text>{document.title}</Text>
+                <Tag>{document.kind ?? "reference"}</Tag>
+              </HStack>
+            ))}
+          </VStack>
+        )}
+
+        {solutions.length > 0 && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.solutions")}</span>
+            {solutions.slice(0, 6).map((solution) => (
+              <VStack key={solution.id} gap={1}>
+                <Text>{solution.title}</Text>
+                <Text type="supporting" color="secondary">{solution.body.slice(0, 220)}</Text>
+              </VStack>
+            ))}
+          </VStack>
+        )}
+
+        {neighbors.length > 0 && (
+          <VStack gap={2}>
+            <span className="u-label">{t("projects.projectGraph")}</span>
+            <HStack gap={2} style={{ flexWrap: "wrap" }}>
+              {neighbors.slice(0, 20).map((node) => (
+                <Tag key={node.id} variant={node.kind === "memory" ? "accent" : "default"}>{node.kind}: {node.label}</Tag>
+              ))}
+              {data.graph.more > 0 && <Tag>+{data.graph.more}</Tag>}
+            </HStack>
+          </VStack>
+        )}
+      </VStack>
+    </Panel>
+  );
+}
+
 export function Projects() {
   const { t } = useI18n();
   const toast = useToast();
@@ -125,6 +199,8 @@ export function Projects() {
   const [deleting, setDeleting] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
+  const [workspace, setWorkspace] = useState<ProjectWorkspaceData | null>(null);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
 
   const load = async () => {
     try {
@@ -137,6 +213,25 @@ export function Projects() {
     load();
   }, []);
 
+  const loadWorkspace = async (name: string) => {
+    setWorkspaceLoading(true);
+    try {
+      const encoded = encodeURIComponent(name);
+      const [memories, documents, sessions, graph] = await Promise.all([
+        api<Memory[]>("GET", `/api/memory?project=${encoded}&limit=100`),
+        api<RagDocument[]>("GET", `/api/rag/documents?project=${encoded}`),
+        api<SessionLog[]>("GET", `/api/sessions?project=${encoded}&limit=50`),
+        fetchGraphNeighbors("project", name, 0, 50),
+      ]);
+      setWorkspace({ memories, documents, sessions, graph });
+    } catch (err) {
+      setError((err as Error).message);
+      setWorkspace(null);
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  };
+
   const open = (p: ProjectMap) => {
     setSelected(p);
     setSummary(p.summary ?? "");
@@ -145,6 +240,8 @@ export function Projects() {
     setFocus(p.current_focus ?? "");
     setNextSteps((p.next_steps ?? []).join("\n"));
     setNotes(p.notes ?? "");
+    setWorkspace(null);
+    void loadWorkspace(p.name);
   };
 
   const save = async () => {
@@ -241,6 +338,7 @@ export function Projects() {
         </Panel>
 
         <CodeMapSection project={selected} />
+        <ProjectKnowledgeSection data={workspace} loading={workspaceLoading} />
 
         {(selected.decisions?.length ?? 0) > 0 && (
           <Panel>

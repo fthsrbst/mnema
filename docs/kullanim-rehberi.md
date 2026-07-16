@@ -178,7 +178,7 @@ Senaryo: masadan uzaktasın, "hangi projede neredeydim" veya hızlı not almak
 istiyorsun.
 
 1. Telefonda Tailscale uygulaması kurulu ve VPN açık (aynı hesap:
-   <tailscale-hesabın>).
+   fatihxserbest@gmail.com).
 2. Tarayıcıda hub adresine git (Pi'de `tailscale serve` açık olduğu için
    tailnet içinde HTTPS ile yayında), token'ı gir.
 3. "Ana ekrana ekle" ile PWA olarak kur — normal bir uygulama gibi açılır,

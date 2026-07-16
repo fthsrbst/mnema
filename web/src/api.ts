@@ -89,6 +89,31 @@ export interface ProjectMap {
   data_model?: string;
 }
 
+export interface ProfessionalProfileDocument {
+  id: number;
+  uid: string;
+  title: string;
+  uri: string;
+  source: string | null;
+  language: string | null;
+  updated_at: string;
+  markdown: string;
+}
+
+export interface ProfessionalProfileSource {
+  id: number;
+  uid: string;
+  title: string;
+  uri: string | null;
+  language: string | null;
+  updated_at: string;
+}
+
+export interface ProfessionalProfileBundle {
+  canonical: ProfessionalProfileDocument | null;
+  sources: ProfessionalProfileSource[];
+}
+
 export interface SessionLog {
   id: number;
   project: string | null;
@@ -154,6 +179,8 @@ export interface RagDocument {
   created_at: string;
   chunk_count: number;
   vec_count: number;
+  kind?: string;
+  updated_at?: string;
 }
 
 export interface RagChunk {

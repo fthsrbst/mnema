@@ -1,10 +1,11 @@
 import { config } from "./config.js";
 import { hasVec } from "./db.js";
 import { embeddingsEnabled } from "./embeddings.js";
-import { resolveRelated, searchMemories } from "./memories.js";
+import { recordMemoryAccess, resolveRelated, searchMemories } from "./memories.js";
 import { searchChunks } from "./documents.js";
 import { getProject, resolveProjectFromPath } from "./projects.js";
 import { recentSessionLogs } from "./sessions.js";
+import { listMemoryRelations } from "./relations.js";
 import type { ScoredChunk, ScoredMemory } from "./types.js";
 
 export interface RecallResult {
@@ -71,11 +72,14 @@ export async function recall(query: string, project?: string, cwd?: string): Pro
   const adjMems = adjustScores(memories, resolved, requireSemantic);
   const adjChunks = adjustScores(chunks, resolved, requireSemantic);
   const globalTop = Math.max(adjMems[0]?.score ?? 0, adjChunks[0]?.score ?? 0);
-  return {
-    memories: thresholdCut(adjMems, globalTop, config.recallMaxMemories),
+  const selectedMemories = thresholdCut(adjMems, globalTop, config.recallMaxMemories);
+  const result = {
+    memories: selectedMemories,
     chunks: thresholdCut(adjChunks, globalTop, config.recallMaxChunks),
     project: resolved,
   };
+  recordMemoryAccess(selectedMemories.map((item) => item.id));
+  return result;
 }
 
 /** Hook çıktısı: agent bağlamına enjekte edilecek kompakt markdown. Boşsa "". */
@@ -84,11 +88,28 @@ export function formatRecall(result: RecallResult): string {
   const scope = result.project ? ` (aktif proje: ${result.project})` : "";
   const lines: string[] = ["<hub-recall>", `Hub hafızasından bu mesajla yüksek benzerlikli kayıtlar${scope}:`];
   for (const m of result.memories) {
-    const body = m.body.length > 400 ? m.body.slice(0, 400) + "…" : m.body;
-    lines.push(`- [memory #${m.id} | ${m.type}${m.project ? ` | ${m.project}` : ""}] ${m.title}: ${body}`);
+    const compact = m.canonical_summary ?? m.body;
+    const body = compact.length > 400 ? compact.slice(0, 400) + "…" : compact;
+    const normalized = m.canonical_summary ? " | canonical-summary" : "";
+    lines.push(`- [memory #${m.id} | ${m.type}${m.project ? ` | ${m.project}` : ""}${normalized}] ${m.title}: ${body}`);
     // Bağlantılı kayıtlar tek satır başlık olarak gelir — agent derine inmek isterse id ile çeker
     const rel = resolveRelated(m).slice(0, 3);
     if (rel.length > 0) lines.push(`  ilgili: ${rel.map((r) => `#${r.id} ${r.title}`).join(" · ")}`);
+    const typed = listMemoryRelations({ memory_id: m.id, active_at: new Date().toISOString(), limit: 3 })
+      .filter((relation) => relation.relation_type !== "related");
+    if (typed.length > 0) {
+      lines.push(
+        `  ilişkiler: ${typed
+          .map((relation) => {
+            const outgoing = relation.from_id === m.id;
+            const otherId = outgoing ? relation.to_id : relation.from_id;
+            const otherTitle = outgoing ? relation.to_title : relation.from_title;
+            const arrow = outgoing ? "→" : "←";
+            return `${relation.relation_type}${arrow}#${otherId} ${otherTitle} (${relation.confidence.toFixed(2)})`;
+          })
+          .join(" · ")}`
+      );
+    }
   }
   for (const c of result.chunks) {
     const text = c.text.length > 400 ? c.text.slice(0, 400) + "…" : c.text;

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { IconRail, type RailItem } from "./components/ui/IconRail";
 import { Icon } from "./components/icons/Icons";
 import { Tabs } from "./components/ui/Tabs";
 import { Reveal } from "./components/ui/Reveal";
 import { Panel } from "./components/ui/Panel";
 import { Button } from "./components/ui/Button";
-import { TextField } from "./components/ui/Field";
+import { Select, TextField } from "./components/ui/Field";
 import { VStack } from "./components/ui/Stack";
 import { Heading, Text } from "./components/ui/Typography";
 import { ToastProvider } from "./components/ui/Toast";
@@ -21,10 +21,34 @@ import { Learning } from "./views/Learning";
 import { Machines } from "./views/Machines";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
+import { ProfessionalProfile } from "./views/ProfessionalProfile";
 import { getToken, setToken, setUnauthorizedHandler } from "./api";
 import { I18nContext, useI18n, useProvideI18n, type Lang, type TKey } from "./i18n";
 
 type SectionId = "overview" | "memory" | "projects" | "system";
+type ThemePreference = "system" | "dark" | "light";
+
+const CloudAccount = lazy(() =>
+  import("./views/CloudAccount").then((module) => ({ default: module.CloudAccount }))
+);
+
+const THEME_STORAGE_KEY = "mnema_theme";
+
+function getThemePreference(): ThemePreference {
+  const value = localStorage.getItem(THEME_STORAGE_KEY);
+  return value === "dark" || value === "light" ? value : "system";
+}
+
+function applyTheme(preference: ThemePreference): void {
+  const resolved =
+    preference === "system"
+      ? window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark"
+      : preference;
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.style.colorScheme = resolved;
+}
 
 interface TabDef {
   id: string;
@@ -38,6 +62,7 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
     icon: "overview",
     tabs: [
       { id: "dashboard", labelKey: "nav.dashboard" },
+      { id: "profile", labelKey: "nav.profile" },
       { id: "timeline", labelKey: "nav.timeline" },
       { id: "graph", labelKey: "nav.graph" },
     ],
@@ -70,6 +95,7 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
       { id: "machines", labelKey: "nav.machines" },
       { id: "media", labelKey: "nav.media" },
       { id: "skills", labelKey: "nav.skills" },
+      { id: "cloud", labelKey: "nav.cloud" },
       { id: "settings", labelKey: "nav.settings" },
     ],
   },
@@ -100,6 +126,7 @@ function Settings() {
   const { t } = useI18n();
   const [token, setTokenValue] = useState(getToken());
   const [saved, setSaved] = useState(false);
+  const [theme, setTheme] = useState<ThemePreference>(getThemePreference);
   return (
     <VStack gap={4}>
       <Heading level={3}>{t("settings.title")}</Heading>
@@ -131,6 +158,26 @@ function Settings() {
         <VStack gap={2}>
           <span className="u-label">{t("settings.language")}</span>
           <LanguageToggle />
+        </VStack>
+      </Panel>
+      <Panel>
+        <VStack gap={2}>
+          <Select
+            label={t("settings.theme")}
+            value={theme}
+            onChange={(value) => {
+              const next = value as ThemePreference;
+              setTheme(next);
+              localStorage.setItem(THEME_STORAGE_KEY, next);
+              applyTheme(next);
+            }}
+            options={[
+              { value: "system", label: t("settings.themeSystem") },
+              { value: "dark", label: t("settings.themeDark") },
+              { value: "light", label: t("settings.themeLight") },
+            ]}
+          />
+          <Text type="supporting" color="secondary">{t("settings.themeHelp")}</Text>
         </VStack>
       </Panel>
     </VStack>
@@ -172,6 +219,7 @@ function TokenGate({ onSubmit }: { onSubmit: (token: string) => void }) {
 
 function AppInner() {
   const { t } = useI18n();
+  const [railExpanded, setRailExpanded] = useState(false);
   const [section, setSection] = useState<SectionId>("overview");
   const [tabBySection, setTabBySection] = useState<Record<SectionId, string>>({
     overview: "dashboard",
@@ -184,6 +232,14 @@ function AppInner() {
   useEffect(() => {
     setUnauthorizedHandler(() => setNeedsToken(true));
     return () => setUnauthorizedHandler(null);
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const refresh = () => applyTheme(getThemePreference());
+    refresh();
+    media.addEventListener("change", refresh);
+    return () => media.removeEventListener("change", refresh);
   }, []);
 
   const activeSection = useMemo(() => SECTIONS.find((s) => s.id === section)!, [section]);
@@ -213,6 +269,8 @@ function AppInner() {
         return <Dashboard />;
       case "timeline":
         return <Timeline onNavigate={(target) => { const dest = TIMELINE_TARGETS[target]; goTo(dest.section, dest.tab); }} />;
+      case "profile":
+        return <ProfessionalProfile />;
       case "graph":
         return <Graph />;
       case "memories":
@@ -233,6 +291,8 @@ function AppInner() {
         return <Media />;
       case "skills":
         return <Skills />;
+      case "cloud":
+        return <Suspense fallback={<Text type="supporting" color="secondary">{t("common.loading")}</Text>}><CloudAccount /></Suspense>;
       case "settings":
         return <Settings />;
       default:
@@ -242,13 +302,29 @@ function AppInner() {
 
   return (
     <div className="app-shell">
-      <div className="app-rail-col">
+      <div className="app-rail-col" data-expanded={railExpanded}>
         <div className="app-rail-logo" title="AI Hub">
           <Icon name="hub" size={18} />
+          <span className="app-rail-logo-label">Mnema</span>
         </div>
-        <IconRail items={railItems} active={section} onSelect={(id) => setSection(id as SectionId)} />
+        <IconRail
+          items={railItems}
+          active={section}
+          expanded={railExpanded}
+          onSelect={(id) => setSection(id as SectionId)}
+        />
         <div className="app-rail-foot">
-          <Icon name="chevronRight" size={10} className="u-mono-dim" />
+          <button
+            type="button"
+            className="app-rail-toggle"
+            aria-expanded={railExpanded}
+            aria-label={railExpanded ? t("nav.collapseSidebar") : t("nav.expandSidebar")}
+            title={railExpanded ? t("nav.collapseSidebar") : t("nav.expandSidebar")}
+            onClick={() => setRailExpanded((value) => !value)}
+          >
+            <Icon name="chevronRight" size={10} className="app-rail-toggle-icon" />
+            <span className="app-rail-toggle-label">{t("nav.collapseSidebar")}</span>
+          </button>
         </div>
       </div>
       <div className="app-main">

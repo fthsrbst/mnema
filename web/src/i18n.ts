@@ -25,6 +25,7 @@ const dict = {
   "nav.sectionProjects": { tr: "Projeler", en: "Projects" },
   "nav.sectionSystem": { tr: "Sistem", en: "System" },
   "nav.dashboard": { tr: "Panel", en: "Dashboard" },
+  "nav.profile": { tr: "Profesyonel Profil", en: "Professional Profile" },
   "nav.rag": { tr: "RAG Yönetimi", en: "RAG Management" },
   "nav.prompts": { tr: "Prompt'lar", en: "Prompts" },
   "nav.memories": { tr: "Hafıza", en: "Memories" },
@@ -35,8 +36,11 @@ const dict = {
   "nav.machines": { tr: "Makineler", en: "Machines" },
   "nav.media": { tr: "Medya", en: "Media" },
   "nav.skills": { tr: "Skiller", en: "Skills" },
+  "nav.cloud": { tr: "Cloud", en: "Cloud" },
   "nav.settings": { tr: "Ayarlar", en: "Settings" },
   "nav.graph": { tr: "Graf", en: "Graph" },
+  "nav.expandSidebar": { tr: "Kenar çubuğunu genişlet", en: "Expand sidebar" },
+  "nav.collapseSidebar": { tr: "Kenar çubuğunu daralt", en: "Collapse sidebar" },
 
   // --- common ---
   "common.save": { tr: "Kaydet", en: "Save" },
@@ -76,6 +80,18 @@ const dict = {
   "settings.tokenLabel": { tr: "API Token (sunucuda HUB_TOKEN doluysa gerekli)", en: "API Token (required if HUB_TOKEN is set on the server)" },
   "settings.saved": { tr: "Kaydedildi (tarayıcıda saklanır)", en: "Saved (stored in browser)" },
   "settings.language": { tr: "Dil", en: "Language" },
+  "settings.theme": { tr: "Tema", en: "Theme" },
+  "settings.themeSystem": { tr: "Sistem ayarı", en: "System" },
+  "settings.themeDark": { tr: "Koyu", en: "Dark" },
+  "settings.themeLight": { tr: "Açık", en: "Light" },
+  "settings.themeHelp": { tr: "Tema seçimi bu tarayıcıda saklanır.", en: "Theme choice is stored in this browser." },
+
+  // --- professional profile ---
+  "profile.title": { tr: "Profesyonel Profil", en: "Professional Profile" },
+  "profile.description": { tr: "CV, iş eşleştirme ve ajan tanıtımları için kanonik kimlik alanı; proje değildir.", en: "Canonical identity for CVs, job matching, and agent introductions; this is not a project." },
+  "profile.canonicalMarkdown": { tr: "Kanonik profil (Markdown)", en: "Canonical profile (Markdown)" },
+  "profile.sources": { tr: "Kaynak belgeler", en: "Source documents" },
+  "profile.noSources": { tr: "Henüz kaynak belge yok.", en: "No source documents yet." },
 
   // --- token gate ---
   "tokenGate.title": { tr: "Oturum gerekli", en: "Session required" },
@@ -135,6 +151,14 @@ const dict = {
   "projects.commands": { tr: "Komutlar", en: "Commands" },
   "projects.conventions": { tr: "Kurallar", en: "Conventions" },
   "projects.dataModel": { tr: "Veri modeli", en: "Data model" },
+  "projects.knowledgeWorkspace": { tr: "Bağlı proje bilgisi", en: "Linked project knowledge" },
+  "projects.linkedDocuments": { tr: "doküman", en: "documents" },
+  "projects.linkedMemories": { tr: "hafıza", en: "memories" },
+  "projects.solutions": { tr: "sorun çözümü", en: "solutions" },
+  "projects.sessions": { tr: "oturum", en: "sessions" },
+  "projects.graphNeighbors": { tr: "graf komşusu", en: "graph neighbors" },
+  "projects.recentDocuments": { tr: "Son dokümanlar", en: "Recent documents" },
+  "projects.projectGraph": { tr: "Proje grafı", en: "Project graph" },
 
   // --- sessions ---
   "sessions.title": { tr: "Oturum Geçmişi", en: "Session History" },

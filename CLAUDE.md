@@ -1,4 +1,4 @@
-# mnema
+# ai-hub
 
 Tüm AI agentların ortak hafızası: MCP + REST üzerinden hafıza, RAG ve proje mapleri.
 Raspberry Pi 5'te systemd servisi olarak çalışır; istemciler Tailscale üzerinden bağlanır.

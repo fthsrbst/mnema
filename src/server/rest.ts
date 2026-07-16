@@ -1,4 +1,5 @@
 import { Router, raw } from "express";
+import { ZodError } from "zod";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -6,7 +7,9 @@ import {
   addRecallFeedback,
   addSessionLog,
   feedbackSummary,
+  feedbackQualityBreakdown,
   listRecallFeedback,
+  listAuditEvents,
   extractFileText,
   applyChanges,
   collectChanges,
@@ -23,19 +26,30 @@ import {
   bridge,
   deleteDocument,
   deleteMemory,
+  deleteMemoryRelation,
   formatRecall,
   composePrompt,
+  consolidateMemories,
+  contextGet,
   graphNeighbors,
   graphNode,
   graphSeed,
   type GraphNodeKind,
   deleteProject,
+  detachProjectReferences,
   deleteSessionLog,
   deleteSkill,
   getDocument,
   getMemory,
+  getMemoryRelation,
   getPromptRaw,
   growthStats,
+  knowledgeIntegrity,
+  verifyAuditChain,
+  flushVectorOutbox,
+  queueFullVectorProjection,
+  vectorStore,
+  verifyVectorProjectionParity,
   listPrompts,
   listSkills,
   ragStats,
@@ -47,19 +61,33 @@ import {
   saveSkill,
   updateDocumentMeta,
   getProject,
+  getProfessionalProfile,
   listDocuments,
   listMemories,
+  listMemoryRelations,
   listProjects,
+  migrateProjectReferences,
   recall,
   recentSessionLogs,
   saveMemory,
+  saveMemoryRelation,
   searchChunks,
   searchMemories,
   updateMemory,
+  updateMemoryRelation,
+  upsertProfessionalProfile,
   upsertProject,
   type FeedbackVerdict,
   type MemoryType,
   type ProjectMap,
+  contextGetSchema,
+  professionalProfileInputSchema,
+  documentMetaPatchSchema,
+  memoryRelationInputSchema,
+  memoryConsolidateSchema,
+  memoryRelationPatchSchema,
+  memoryRelationTypeSchema,
+  sessionInputSchema,
 } from "../core/index.js";
 
 function wrap(fn: (req: any, res: any) => Promise<void> | void) {
@@ -67,6 +95,12 @@ function wrap(fn: (req: any, res: any) => Promise<void> | void) {
     try {
       await fn(req, res);
     } catch (err) {
+      if (err instanceof ZodError) {
+        return void res.status(400).json({
+          error: "validation_error",
+          issues: err.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+        });
+      }
       res.status(500).json({ error: (err as Error).message });
     }
   };
@@ -74,6 +108,35 @@ function wrap(fn: (req: any, res: any) => Promise<void> | void) {
 
 export function buildRestRouter(): Router {
   const r = Router();
+
+  r.get("/integrity", wrap((_req, res) => res.json(knowledgeIntegrity())));
+  r.get("/vector-projection", wrap((_req, res) => res.json(vectorStore.status())));
+  r.get("/vector-projection/verify", wrap(async (_req, res) => res.json(await verifyVectorProjectionParity())));
+  r.post("/vector-projection/rebuild", wrap((_req, res) => {
+    res.json({ queued: queueFullVectorProjection(), status: vectorStore.status() });
+  }));
+  r.post("/vector-projection/flush", wrap(async (req, res) => {
+    const limit = req.body?.limit === undefined ? undefined : Number(req.body.limit);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 1000)) {
+      return void res.status(400).json({ error: "validation_error", issues: [{ path: "limit", message: "must be an integer from 1 to 1000" }] });
+    }
+    res.json({ result: await flushVectorOutbox(limit), status: vectorStore.status() });
+  }));
+  r.get("/audit", wrap((req, res) => res.json(listAuditEvents({
+    actor: req.query.actor as string | undefined,
+    action: req.query.action as string | undefined,
+    project: req.query.project as string | undefined,
+    before: req.query.before as string | undefined,
+    limit: req.query.limit ? Number(req.query.limit) : undefined,
+  }))));
+  r.get("/audit/verify", wrap((_req, res) => res.json(verifyAuditChain())));
+
+  // Preferred agent context entry point. Retrieved content is returned with
+  // provenance and an explicit data-not-instructions trust policy.
+  r.post("/context", wrap(async (req, res) => {
+    const input = contextGetSchema.omit({ record_usage: true }).parse(req.body);
+    res.json(await contextGet(input));
+  }));
 
   // --- memory ---
   r.post("/memory", wrap(async (req, res) => res.json(await saveMemory(req.body))));
@@ -103,6 +166,35 @@ export function buildRestRouter(): Router {
     mem ? res.json(mem) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.delete("/memory/:id", wrap((req, res) => res.json({ deleted: deleteMemory(Number(req.params.id)) })));
+  r.post("/memory/consolidate", wrap(async (req, res) => {
+    res.json(await consolidateMemories(memoryConsolidateSchema.parse(req.body)));
+  }));
+
+  r.post("/memory-relations", wrap((req, res) => {
+    res.json(saveMemoryRelation(memoryRelationInputSchema.parse(req.body)));
+  }));
+  r.get("/memory-relations", wrap((req, res) => {
+    const relationType = req.query.relation_type
+      ? memoryRelationTypeSchema.parse(req.query.relation_type)
+      : undefined;
+    res.json(listMemoryRelations({
+      memory_id: req.query.memory_id ? Number(req.query.memory_id) : undefined,
+      relation_type: relationType,
+      active_at: req.query.active_at as string | undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    }));
+  }));
+  r.get("/memory-relations/:id", wrap((req, res) => {
+    const relation = getMemoryRelation(req.params.id);
+    relation ? res.json(relation) : res.status(404).json({ error: "bulunamadı" });
+  }));
+  r.patch("/memory-relations/:id", wrap((req, res) => {
+    const relation = updateMemoryRelation(req.params.id, memoryRelationPatchSchema.parse(req.body));
+    relation ? res.json(relation) : res.status(404).json({ error: "bulunamadı" });
+  }));
+  r.delete("/memory-relations/:id", wrap((req, res) => {
+    res.json({ deleted: deleteMemoryRelation(req.params.id) });
+  }));
 
   // --- rag ---
   r.post("/rag/documents", wrap(async (req, res) => res.json(await addDocument(req.body))));
@@ -135,9 +227,7 @@ export function buildRestRouter(): Router {
     doc ? res.json(doc) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.patch("/rag/documents/:id", wrap((req, res) => {
-    const patch: { enabled?: boolean; project?: string | null } = {};
-    if (req.body.enabled !== undefined) patch.enabled = Boolean(req.body.enabled);
-    if (req.body.project !== undefined) patch.project = req.body.project === null ? null : String(req.body.project);
+    const patch = documentMetaPatchSchema.parse(req.body);
     const ok = updateDocumentMeta(Number(req.params.id), patch);
     ok ? res.json({ ok: true, ...patch }) : res.status(404).json({ error: "bulunamadı" });
   }));
@@ -151,14 +241,28 @@ export function buildRestRouter(): Router {
   r.get("/stats/usage", wrap((_req, res) => res.json(usageStats())));
   r.post("/rag/reindex", wrap(async (req, res) => res.json(await reindex(Boolean(req.body?.force)))));
   r.get("/rag/search", wrap(async (req, res) => {
-    const { q, project, limit } = req.query;
+    const { q, project, limit, include_archived, kind } = req.query;
     res.json(await searchChunks(String(q ?? ""), {
       project: project as string | undefined,
       limit: limit ? Number(limit) : undefined,
+      include_archived: include_archived === "1" || include_archived === "true",
+      kind: kind as "reference" | "status" | "decision" | "runbook" | "research" | "learning" | "source" | undefined,
     }));
   }));
 
+  // --- professional profile (global identity domain, deliberately not a project) ---
+  r.get("/profile", wrap((_req, res) => res.json(getProfessionalProfile())));
+  r.put("/profile", wrap(async (req, res) => {
+    res.json(await upsertProfessionalProfile(professionalProfileInputSchema.parse(req.body)));
+  }));
+
   // --- projects ---
+  r.post("/projects/migrate-references", wrap((req, res) => {
+    res.json(migrateProjectReferences(String(req.body.from ?? ""), String(req.body.to ?? "")));
+  }));
+  r.post("/projects/:name/detach-references", wrap((req, res) => {
+    res.json(detachProjectReferences(req.params.name));
+  }));
   r.get("/projects", wrap((_req, res) => res.json(listProjects())));
   r.get("/projects/:name", wrap((req, res) => {
     const proj = getProject(req.params.name);
@@ -199,7 +303,10 @@ export function buildRestRouter(): Router {
 
   // --- sessions ---
   r.post("/sessions", wrap((req, res) =>
-    res.json(addSessionLog(String(req.body.summary ?? ""), req.body.project, req.body.source))
+    res.json((() => {
+      const input = sessionInputSchema.parse(req.body);
+      return addSessionLog(input.summary, input.project, input.source);
+    })())
   ));
   r.get("/sessions", wrap((req, res) => {
     const { project, limit } = req.query;
@@ -303,6 +410,7 @@ export function buildRestRouter(): Router {
     const { verdict, limit } = req.query;
     res.json({
       summary: feedbackSummary(),
+      quality: feedbackQualityBreakdown(),
       items: listRecallFeedback({
         verdict: verdict as FeedbackVerdict | undefined,
         limit: limit ? Number(limit) : undefined,

@@ -10,7 +10,7 @@ function Write-Step($msg) { Write-Host "`n== $msg ==" -ForegroundColor Cyan }
 function Write-Warn2($msg) { Write-Host "uyarı: $msg" -ForegroundColor Yellow }
 function Test-Cmd($name) { return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
-$RepoUrl = if ($env:REPO_URL) { $env:REPO_URL } else { "https://github.com/fthsrbst/ai-hub.git" }
+$RepoUrl = if ($env:REPO_URL) { $env:REPO_URL } else { "https://github.com/fthsrbst/mnema.git" }
 
 # ---------------------------------------------------------------------------
 # 0) Repo kökünü bul: script zaten klonlanmış bir repo içindeyse onu kullan,

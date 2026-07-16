@@ -10,7 +10,17 @@ import { getDb } from "./db.js";
 
 export type GraphNodeKind = "project" | "memory" | "document" | "session" | "tag";
 
-export type GraphRel = "related" | "belongs" | "tagged" | "logged";
+export type GraphRel =
+  | "related"
+  | "supports"
+  | "contradicts"
+  | "supersedes"
+  | "caused_by"
+  | "derived_from"
+  | "applies_to"
+  | "belongs"
+  | "tagged"
+  | "logged";
 
 export interface GraphNode {
   /** "<kind>:<key>" — memory/document/session için sayısal id, project/tag için ad. */
@@ -28,6 +38,11 @@ export interface GraphEdge {
   from: string;
   to: string;
   rel: GraphRel;
+  confidence?: number;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  /** Typed memory relations are directed; project/tag membership is not. */
+  directed?: boolean;
 }
 
 export interface GraphPayload {
@@ -69,13 +84,12 @@ function parseArr(json: string | null | undefined): string[] {
  */
 function memoryDegree(row: MemoryRow): number {
   const db = getDb();
-  const incoming = (
+  const relations = (
     db
-      .prepare("SELECT COUNT(*) AS n FROM memories m, json_each(m.related) WHERE json_each.value = ? AND m.id != ?")
-      .get(row.uid, row.id) as { n: number }
+      .prepare("SELECT COUNT(*) AS n FROM memory_relations WHERE from_uid = ? OR to_uid = ?")
+      .get(row.uid, row.uid) as { n: number }
   ).n;
-  const outgoing = parseArr(row.related).length;
-  return incoming + outgoing + parseArr(row.tags).length + (row.project ? 1 : 0);
+  return relations + parseArr(row.tags).length + (row.project ? 1 : 0);
 }
 
 function memoryNode(row: MemoryRow): GraphNode {
@@ -203,7 +217,17 @@ export function graphNeighbors(kind: GraphNodeKind, key: string, offset = 0, lim
   const edges: GraphEdge[] = [];
 
   // Komşu listesi önce hafif (id + rel) toplanır; sayfa dilimi için node üretilir.
-  type Neighbor = { kind: GraphNodeKind; key: string; rel: GraphRel };
+  type Neighbor = {
+    kind: GraphNodeKind;
+    key: string;
+    rel: GraphRel;
+    from?: string;
+    to?: string;
+    confidence?: number;
+    valid_from?: string | null;
+    valid_to?: string | null;
+    directed?: boolean;
+  };
   const all: Neighbor[] = [];
 
   switch (kind) {
@@ -223,17 +247,40 @@ export function graphNeighbors(kind: GraphNodeKind, key: string, offset = 0, lim
       if (!row) return { nodes: [], edges: [], more: 0 };
       if (row.project) all.push({ kind: "project", key: row.project, rel: "belongs" });
       for (const tag of parseArr(row.tags)) all.push({ kind: "tag", key: tag, rel: "tagged" });
-      // giden related bağları (uid → yerel id)
-      const uidStmt = db.prepare("SELECT id FROM memories WHERE uid = ?");
-      for (const uid of parseArr(row.related)) {
-        const hit = uidStmt.get(uid) as { id: number } | undefined;
-        if (hit) all.push({ kind: "memory", key: String(hit.id), rel: "related" });
+      const relations = db
+        .prepare(
+          `SELECT r.from_uid, r.to_uid, r.relation_type, r.confidence, r.valid_from, r.valid_to,
+                  fm.id AS from_id, tm.id AS to_id
+           FROM memory_relations r
+           JOIN memories fm ON fm.uid = r.from_uid
+           JOIN memories tm ON tm.uid = r.to_uid
+           WHERE r.from_uid = ? OR r.to_uid = ?
+           ORDER BY r.updated_at DESC`
+        )
+        .all(row.uid, row.uid) as {
+          from_uid: string;
+          to_uid: string;
+          relation_type: GraphRel;
+          confidence: number;
+          valid_from: string | null;
+          valid_to: string | null;
+          from_id: number;
+          to_id: number;
+        }[];
+      for (const relation of relations) {
+        const otherId = relation.from_uid === row.uid ? relation.to_id : relation.from_id;
+        all.push({
+          kind: "memory",
+          key: String(otherId),
+          rel: relation.relation_type,
+          from: nodeId("memory", relation.from_id),
+          to: nodeId("memory", relation.to_id),
+          confidence: relation.confidence,
+          valid_from: relation.valid_from,
+          valid_to: relation.valid_to,
+          directed: relation.relation_type !== "related",
+        });
       }
-      // gelen related bağları
-      const incoming = db
-        .prepare("SELECT m.id FROM memories m, json_each(m.related) WHERE json_each.value = ? AND m.id != ?")
-        .all(row.uid, row.id) as { id: number }[];
-      for (const inc of incoming) all.push({ kind: "memory", key: String(inc.id), rel: "related" });
       break;
     }
     case "tag": {
@@ -254,21 +301,35 @@ export function graphNeighbors(kind: GraphNodeKind, key: string, offset = 0, lim
     }
   }
 
-  // Aynı komşu birden çok bağla gelebilir (ör. iki yönde related) — tekilleştir.
+  // Exact duplicate edges are collapsed, but different typed relations between
+  // the same memories are preserved.
   const seen = new Set<string>();
   const unique = all.filter((n) => {
     const id = nodeId(n.kind, n.key);
-    if (id === self || seen.has(id)) return false;
-    seen.add(id);
+    const edgeKey = `${id}|${n.rel}|${n.from ?? self}|${n.to ?? id}`;
+    if (id === self || seen.has(edgeKey)) return false;
+    seen.add(edgeKey);
     return true;
   });
 
   const page = unique.slice(offset, offset + limit);
+  const nodeSeen = new Set<string>();
   for (const n of page) {
     const node = graphNode(n.kind, n.key);
     if (!node) continue;
-    nodes.push(node);
-    edges.push({ from: self, to: node.id, rel: n.rel });
+    if (!nodeSeen.has(node.id)) {
+      nodes.push(node);
+      nodeSeen.add(node.id);
+    }
+    edges.push({
+      from: n.from ?? self,
+      to: n.to ?? node.id,
+      rel: n.rel,
+      confidence: n.confidence,
+      valid_from: n.valid_from,
+      valid_to: n.valid_to,
+      directed: n.directed,
+    });
   }
   return { nodes, edges, more: Math.max(0, unique.length - offset - limit) };
 }

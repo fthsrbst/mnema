@@ -31,7 +31,7 @@ interface TextFieldProps {
   required?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  type?: "text" | "password";
+  type?: "text" | "password" | "email";
   hasClear?: boolean;
   className?: string;
 }
@@ -99,13 +99,14 @@ interface SelectProps {
   options: { value: string; label: string }[];
   hideLabel?: boolean;
   placeholder?: string;
+  disabled?: boolean;
 }
 
-export function Select({ label, value, onChange, options, hideLabel, placeholder }: SelectProps) {
+export function Select({ label, value, onChange, options, hideLabel, placeholder, disabled }: SelectProps) {
   return (
     <FieldWrap label={label} hideLabel={hideLabel}>
       {(id) => (
-        <select id={id} className="select" value={value} onChange={(e) => onChange(e.target.value)} aria-label={hideLabel ? label : undefined}>
+        <select id={id} className="select" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} aria-label={hideLabel ? label : undefined}>
           {placeholder && <option value="">{placeholder}</option>}
           {options.map((o) => (
             <option key={o.value} value={o.value}>

@@ -1,0 +1,51 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - name: Install server dependencies
+        run: npm ci
+      - name: Install web dependencies
+        run: npm --prefix web ci
+      - name: Reject tracked runtime databases
+        shell: bash
+        run: |
+          if git ls-files | grep -E '(^|/)(data|backups)/|\.(db|sqlite|sqlite3)(-(wal|shm))?$'; then
+            echo "Runtime data must never be committed; use Mnema sync."
+            exit 1
+          fi
+      - name: Build server
+        run: npm run build
+      - name: Lint and build web
+        run: npm --prefix web run lint && npm --prefix web run build
+      - name: Community regression suite
+        env:
+          GEMINI_API_KEY: ""
+        run: npm run smoke
+      - name: Self-host authorization suite
+        run: npm run smoke:security
+      - name: Cloud tenant and billing suite
+        run: npm run smoke:cloud
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high

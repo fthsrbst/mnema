@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
-import { getDb, hasVec, NOW_MS } from "./db.js";
+import { getDb, NOW_MS } from "./db.js";
 import { embedOne, toBuffer } from "./embeddings.js";
 import { notifyWrite } from "./events.js";
 import { hybridSearch } from "./search.js";
 import { recordDeletion } from "./sync.js";
+import { assertProjectReference } from "./projects.js";
 import type { Memory, MemoryInput, RelatedRef, SavedMemory, ScoredMemory, SearchFilters, SimilarHit } from "./types.js";
+import { memoryConsolidateSchema, memoryInputSchema, memoryPatchSchema } from "./schemas.js";
+import {
+  deleteMemoryRelation,
+  deleteRelationsForMemoryUid,
+  listMemoryRelations,
+  replaceLegacyRelatedRelations,
+  saveMemoryRelation,
+} from "./relations.js";
+import { vectorStore } from "./vector-store.js";
 
 /** Önem çarpanını 0.5–2.0 aralığına kelepçeler. */
 function clampImportance(v: number | undefined): number {
@@ -54,29 +64,36 @@ export function resolveRelated(mem: Pick<Memory, "related">): RelatedRef[] {
  * Yeni eklenen vektöre en yakın k=3 komşuyu bulur (kendisi hariç, eşik altında olanlar).
  * Kayıt anında hafif dedup uyarısı için — sqlite-vec'teki KNN deseni search.ts#vecSearch ile aynı.
  */
-function findSimilar(id: number, vec: Float32Array): SimilarHit[] {
-  const db = getDb();
+async function findSimilar(id: number, vec: Float32Array): Promise<SimilarHit[]> {
   // k+1: kendi vektörü de sonuçlarda çıkar (mesafe 0), aşağıda rowid ile ele alınır
-  const rows = db
-    .prepare(`SELECT rowid, distance FROM memories_vec WHERE embedding MATCH ? AND k = ? ORDER BY distance`)
-    .all(toBuffer(vec), 4) as { rowid: number; distance: number }[];
-  const hits = rows.filter((r) => r.rowid !== id && r.distance <= config.dupDistance).slice(0, 3);
-  return hits.map((r) => ({ id: r.rowid, title: getMemory(r.rowid)?.title ?? "?", distance: r.distance }));
+  const rows = await vectorStore.search("memory", toBuffer(vec), 4);
+  const hits = rows.filter((r) => r.id !== id && r.distance <= config.dupDistance).slice(0, 3);
+  return hits.map((r) => ({ id: r.id, title: getMemory(r.id)?.title ?? "?", distance: r.distance }));
 }
 
-async function upsertVector(id: number, title: string, body: string): Promise<SimilarHit[] | undefined> {
-  if (!hasVec()) return undefined;
+async function upsertVector(
+  id: number,
+  title: string,
+  body: string,
+  canonicalSummary?: string | null
+): Promise<SimilarHit[] | undefined> {
+  if (!vectorStore.available()) return undefined;
   try {
-    const vec = await embedOne(`${title}\n${body}`, "RETRIEVAL_DOCUMENT");
+    const vec = await embedOne(
+      [title, canonicalSummary, body].filter((value): value is string => Boolean(value)).join("\n"),
+      "RETRIEVAL_DOCUMENT"
+    );
     if (!vec) return undefined;
     const db = getDb();
     // Embed (ağ çağrısı) beklenirken kayıt silinmiş olabilir; rowid yeniden
     // kullanıldığından öksüz vektör başka bir kayda yapışabilir — yazmadan önce doğrula.
     if (!db.prepare("SELECT 1 FROM memories WHERE id = ?").get(id)) return undefined;
     // sqlite-vec rowid için katı INTEGER ister; number REAL bağlandığından BigInt şart
-    db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(id));
-    db.prepare("INSERT INTO memories_vec(rowid, embedding) VALUES (?, ?)").run(BigInt(id), toBuffer(vec));
-    return findSimilar(id, vec);
+    const stored = db.prepare("SELECT project FROM memories WHERE id = ?").get(id) as
+      | { project: string | null }
+      | undefined;
+    vectorStore.putMemory(id, stored?.project, toBuffer(vec));
+    return await findSimilar(id, vec);
   } catch (err) {
     console.error(`[hub] memory #${id} embed edilemedi (FTS'te aranabilir): ${(err as Error).message}`);
     return undefined;
@@ -84,11 +101,19 @@ async function upsertVector(id: number, title: string, body: string): Promise<Si
 }
 
 export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
+  input = memoryInputSchema.parse(input);
+  assertProjectReference(input.project, "memory");
   const db = getDb();
+  const relatedUids = idsToUids(input.related_ids);
   const info = db
     .prepare(
-      `INSERT INTO memories(uid, type, title, body, project, tags, source, importance, related, created_at, updated_at)
-       VALUES (@uid, @type, @title, @body, @project, @tags, @source, @importance, @related, ${NOW_MS}, ${NOW_MS})`
+      `INSERT INTO memories(
+         uid, type, title, body, project, tags, source, language, canonical_summary,
+         normalizer_generation, importance, related, created_at, updated_at
+       ) VALUES (
+         @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
+         @normalizer_generation, @importance, @related, ${NOW_MS}, ${NOW_MS}
+       )`
     )
     .run({
       uid: randomUUID().replaceAll("-", ""),
@@ -98,11 +123,15 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
       project: input.project ?? null,
       tags: JSON.stringify(input.tags ?? []),
       source: input.source ?? null,
+      language: input.language ?? null,
+      canonical_summary: input.canonical_summary ?? null,
+      normalizer_generation: input.normalizer_generation ?? null,
       importance: clampImportance(input.importance),
-      related: JSON.stringify(idsToUids(input.related_ids)),
+      related: JSON.stringify(relatedUids),
     });
   const id = Number(info.lastInsertRowid);
-  const similar = await upsertVector(id, input.title, input.body);
+  replaceLegacyRelatedRelations(id, relatedUids);
+  const similar = await upsertVector(id, input.title, input.body, input.canonical_summary);
   notifyWrite();
   const mem = getMemory(id)!;
   return similar && similar.length > 0 ? { ...mem, similar } : mem;
@@ -116,14 +145,21 @@ export function getMemory(id: number): Memory | null {
 }
 
 export async function updateMemory(id: number, patch: Partial<MemoryInput>): Promise<Memory | null> {
+  patch = memoryPatchSchema.parse(patch);
   const existing = getMemory(id);
   if (!existing) return null;
+  if (patch.project !== undefined) assertProjectReference(patch.project, "memory");
   const merged = {
     type: patch.type ?? existing.type,
     title: patch.title ?? existing.title,
     body: patch.body ?? existing.body,
     project: patch.project === undefined ? existing.project : patch.project,
     tags: JSON.stringify(patch.tags ?? existing.tags),
+    language: patch.language === undefined ? existing.language : patch.language,
+    canonical_summary:
+      patch.canonical_summary === undefined ? existing.canonical_summary : patch.canonical_summary,
+    normalizer_generation:
+      patch.normalizer_generation === undefined ? existing.normalizer_generation : patch.normalizer_generation,
     importance: patch.importance === undefined ? existing.importance : clampImportance(patch.importance),
     // related_ids verilirse TAM listeyi değiştirir (ekleme değil) — memory_update sözleşmesiyle tutarlı
     related: patch.related_ids === undefined ? JSON.stringify(existing.related) : JSON.stringify(idsToUids(patch.related_ids, id)),
@@ -132,20 +168,131 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
   getDb()
     .prepare(
       `UPDATE memories SET type=@type, title=@title, body=@body, project=@project,
-       tags=@tags, importance=@importance, related=@related, updated_at=${NOW_MS} WHERE id=@id`
+       tags=@tags, language=@language, canonical_summary=@canonical_summary,
+       normalizer_generation=@normalizer_generation, importance=@importance,
+       related=@related, updated_at=${NOW_MS} WHERE id=@id`
     )
     .run(merged);
-  if (patch.title !== undefined || patch.body !== undefined) {
-    await upsertVector(id, merged.title, merged.body);
+  if (patch.related_ids !== undefined) replaceLegacyRelatedRelations(id, JSON.parse(merged.related) as string[]);
+  if (patch.title !== undefined || patch.body !== undefined || patch.canonical_summary !== undefined) {
+    await upsertVector(id, merged.title, merged.body, merged.canonical_summary);
+  } else if (patch.project !== undefined && vectorStore.available()) {
+    const embedding = vectorStore.get("memory", id);
+    if (embedding) vectorStore.putMemory(id, merged.project, embedding);
   }
   notifyWrite();
   return getMemory(id);
 }
 
+export interface MemoryConsolidationResult {
+  target: Memory;
+  deleted_source_ids: number[];
+  rewired_relations: number;
+}
+
+/**
+ * Explicit duplicate consolidation. The caller must provide the merged body;
+ * Mnema never lets an automatic summarizer destroy source information. Typed
+ * edges and the deprecated related-UID projection are rewired before sources
+ * are tombstoned.
+ */
+export async function consolidateMemories(input: {
+  target_id: number;
+  source_ids: number[];
+  body: string;
+  title?: string;
+  tags?: string[];
+  language?: string;
+  canonical_summary?: string;
+  normalizer_generation?: string;
+  source?: string;
+}): Promise<MemoryConsolidationResult> {
+  input = memoryConsolidateSchema.parse(input);
+  const target = getMemory(input.target_id);
+  if (!target) throw new Error(`target memory #${input.target_id} not found`);
+  const sourceIds = [...new Set(input.source_ids)];
+  const sources = sourceIds.map((id) => getMemory(id));
+  const missing = sourceIds.filter((_id, index) => !sources[index]);
+  if (missing.length > 0) throw new Error(`source memories not found: ${missing.join(", ")}`);
+  if (sources.some((memory) => memory!.project !== target.project)) {
+    throw new Error("all consolidated memories must have the same project scope");
+  }
+
+  const allRelations = new Map<string, ReturnType<typeof listMemoryRelations>[number]>();
+  for (const id of sourceIds) {
+    for (const relation of listMemoryRelations({ memory_id: id, limit: 500 })) {
+      allRelations.set(relation.id, relation);
+    }
+  }
+
+  const updated = await updateMemory(target.id, {
+    body: input.body,
+    title: input.title,
+    tags: input.tags,
+    language: input.language,
+    canonical_summary: input.canonical_summary,
+    normalizer_generation: input.normalizer_generation,
+  });
+  if (!updated) throw new Error("target memory disappeared during consolidation");
+  if (input.source) {
+    getDb().prepare(`UPDATE memories SET source = ?, updated_at = ${NOW_MS} WHERE id = ?`).run(input.source, target.id);
+  }
+
+  const sourceSet = new Set(sourceIds);
+  let rewired = 0;
+  for (const relation of allRelations.values()) {
+    const fromId = sourceSet.has(relation.from_id) ? target.id : relation.from_id;
+    const toId = sourceSet.has(relation.to_id) ? target.id : relation.to_id;
+    if (fromId !== toId) {
+      saveMemoryRelation({
+        from_id: fromId,
+        to_id: toId,
+        relation_type: relation.relation_type,
+        confidence: relation.confidence,
+        valid_from: relation.valid_from ?? undefined,
+        valid_to: relation.valid_to ?? undefined,
+        source: relation.source ?? undefined,
+        metadata: relation.metadata,
+      });
+      rewired++;
+    }
+    deleteMemoryRelation(relation.id);
+  }
+
+  const removedUids = new Set(sources.map((memory) => memory!.uid));
+  const targetUid = getDb().prepare("SELECT uid FROM memories WHERE id = ?").get(target.id) as { uid: string };
+  const rows = getDb().prepare("SELECT id, uid, related FROM memories").all() as {
+    id: number;
+    uid: string;
+    related: string;
+  }[];
+  const updateRelated = getDb().prepare(`UPDATE memories SET related = ?, updated_at = ${NOW_MS} WHERE id = ?`);
+  getDb().transaction(() => {
+    for (const row of rows) {
+      let related: string[];
+      try {
+        const parsed = JSON.parse(row.related);
+        related = Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+      } catch {
+        related = [];
+      }
+      const next = [...new Set(related.map((uid) => (removedUids.has(uid) ? targetUid.uid : uid)))]
+        .filter((uid) => uid !== row.uid);
+      if (JSON.stringify(next) !== JSON.stringify(related)) updateRelated.run(JSON.stringify(next), row.id);
+    }
+  })();
+
+  const deleted: number[] = [];
+  for (const id of sourceIds) if (deleteMemory(id)) deleted.push(id);
+  notifyWrite();
+  return { target: getMemory(target.id)!, deleted_source_ids: deleted, rewired_relations: rewired };
+}
+
 export function deleteMemory(id: number): boolean {
   const db = getDb();
   const row = db.prepare("SELECT uid FROM memories WHERE id = ?").get(id) as { uid: string } | undefined;
-  if (hasVec()) db.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(id));
+  if (row?.uid) deleteRelationsForMemoryUid(row.uid);
+  vectorStore.delete("memory", id);
   const deleted = db.prepare("DELETE FROM memories WHERE id = ?").run(id).changes > 0;
   if (deleted && row?.uid) recordDeletion("memories", row.uid);
   if (deleted) notifyWrite();
@@ -157,7 +304,11 @@ function parseSqliteUtc(ts: string): number {
   return Date.parse(ts.replace(" ", "T") + "Z");
 }
 
-function touchMemories(ids: number[]): void {
+/**
+ * Record evidence that was actually delivered to an agent. Candidate searches do
+ * not call this: access_count represents injected/returned context, not ranking work.
+ */
+export function recordMemoryAccess(ids: number[]): void {
   if (ids.length === 0) return;
   const placeholders = ids.map(() => "?").join(",");
   // updated_at'e DOKUNULMAZ: bu alanlar cihaz-yerel istatistiktir, sync'e girmez —
@@ -168,10 +319,13 @@ function touchMemories(ids: number[]): void {
 }
 
 export async function searchMemories(query: string, filters: SearchFilters = {}): Promise<ScoredMemory[]> {
-  // Filtre RRF SONRASI uygulanır; dar havuz + filtre = sonuç açlığı. Filtreli aramada havuzu büyüt.
-  const hasFilter = Boolean(filters.type || filters.project || filters.tag);
-  const pool = hasFilter ? config.searchCandidates * 2 : config.searchCandidates;
-  const ranked = await hybridSearch("memories_fts", "memories_vec", query, pool);
+  // Project/type/tag constraints are candidate-generation filters. The final
+  // relational checks below are defense in depth, not post-fusion filtering.
+  const ranked = await hybridSearch("memories_fts", "memories_vec", query, config.searchCandidates, {
+    project: filters.project,
+    memoryType: filters.type,
+    memoryTag: filters.tag,
+  });
   if (ranked.length === 0) return [];
   // N+1 yerine tek sorgu: sıralama RRF'ten gelir, satırlar id→row haritasından okunur.
   const placeholders = ranked.map(() => "?").join(",");
@@ -183,7 +337,7 @@ export async function searchMemories(query: string, filters: SearchFilters = {})
   const now = Date.now();
   const halflifeMs = Math.max(config.decayHalflifeDays, 1) * 86_400_000;
   const candidates: ScoredMemory[] = [];
-  for (const { id, score, channels } of ranked) {
+  for (const { id, score, channels, channel_ranks } of ranked) {
     const mem = byId.get(id);
     if (!mem) continue;
     if (filters.type && mem.type !== filters.type) continue;
@@ -196,12 +350,10 @@ export async function searchMemories(query: string, filters: SearchFilters = {})
     // (yani "yarı ömür" adı yalan çıkar, kayıtlar isimlendirildiğinden çok daha hızlı bayatlar).
     const decay = config.decayFloor + (1 - config.decayFloor) * Math.exp(-Math.LN2 * (ageMs / halflifeMs));
     const final = score * mem.importance * decay;
-    candidates.push({ ...mem, score: final, channels });
+    candidates.push({ ...mem, score: final, channels, channel_ranks });
   }
   candidates.sort((a, b) => b.score - a.score);
-  const out = candidates.slice(0, limit);
-  touchMemories(out.map((m) => m.id));
-  return out;
+  return candidates.slice(0, limit);
 }
 
 export function listMemories(filters: SearchFilters = {}): Memory[] {

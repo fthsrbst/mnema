@@ -2,9 +2,17 @@ import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { config } from "./config.js";
+import { CHUNKER_VERSION } from "./chunker.js";
 
 const require = createRequire(import.meta.url);
+
+export const GLOBAL_VECTOR_PROJECT = "__global__";
+
+export function vectorProject(project: string | null | undefined): string {
+  return project?.trim() || GLOBAL_VECTOR_PROJECT;
+}
 
 let db: Database.Database | null = null;
 let vecAvailable = false;
@@ -27,23 +35,26 @@ CREATE TABLE IF NOT EXISTS memories(
   project TEXT,
   tags TEXT NOT NULL DEFAULT '[]',
   source TEXT,
+  language TEXT,
+  canonical_summary TEXT,
+  normalizer_generation TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-  title, body, content='memories', content_rowid='id', tokenize='unicode61'
+  title, body, canonical_summary, content='memories', content_rowid='id', tokenize='unicode61'
 );
 
 CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-  INSERT INTO memories_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+  INSERT INTO memories_fts(rowid, title, body, canonical_summary) VALUES (new.id, new.title, new.body, new.canonical_summary);
 END;
 CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-  INSERT INTO memories_fts(memories_fts, rowid, title, body) VALUES('delete', old.id, old.title, old.body);
+  INSERT INTO memories_fts(memories_fts, rowid, title, body, canonical_summary) VALUES('delete', old.id, old.title, old.body, old.canonical_summary);
 END;
 CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-  INSERT INTO memories_fts(memories_fts, rowid, title, body) VALUES('delete', old.id, old.title, old.body);
-  INSERT INTO memories_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+  INSERT INTO memories_fts(memories_fts, rowid, title, body, canonical_summary) VALUES('delete', old.id, old.title, old.body, old.canonical_summary);
+  INSERT INTO memories_fts(rowid, title, body, canonical_summary) VALUES (new.id, new.title, new.body, new.canonical_summary);
 END;
 
 CREATE TABLE IF NOT EXISTS documents(
@@ -97,7 +108,8 @@ CREATE TABLE IF NOT EXISTS session_logs(
   project TEXT,
   summary TEXT NOT NULL,
   source TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
 -- Recall kalite geri bildirimi (agent'lardan): eşik kalibrasyonu verisi.
@@ -107,16 +119,59 @@ CREATE TABLE IF NOT EXISTS recall_feedback(
   query TEXT NOT NULL,
   verdict TEXT NOT NULL,
   memory_id INTEGER,
+  target_kind TEXT,
+  target_id INTEGER,
+  target_uid TEXT,
+  project TEXT,
+  intent TEXT,
+  rank INTEGER,
+  channels TEXT NOT NULL DEFAULT '[]',
+  delivery_id TEXT,
   note TEXT,
   source TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 
+-- Typed, temporal knowledge-graph edges. Memory IDs are device-local, so edges
+-- reference stable memory UIDs and carry their own syncable UID.
+CREATE TABLE IF NOT EXISTS memory_relations(
+  uid TEXT PRIMARY KEY,
+  from_uid TEXT NOT NULL,
+  to_uid TEXT NOT NULL,
+  relation_type TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 1.0,
+  valid_from TEXT,
+  valid_to TEXT,
+  source TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  CHECK(from_uid != to_uid),
+  CHECK(confidence >= 0 AND confidence <= 1)
+);
+
+-- Node-local tamper-evident audit chain. Request bodies, tokens, document text,
+-- and prompts are deliberately excluded by the writer.
+CREATE TABLE IF NOT EXISTS audit_events(
+  id INTEGER PRIMARY KEY,
+  request_id TEXT NOT NULL UNIQUE,
+  actor TEXT NOT NULL,
+  action TEXT NOT NULL,
+  resource TEXT,
+  project TEXT,
+  status INTEGER NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  previous_hash TEXT,
+  event_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+
 -- Cihazlar arası eşitleme: silinen kayıtların izi (LWW için)
 CREATE TABLE IF NOT EXISTS deletions(
-  uid TEXT PRIMARY KEY,
+  uid TEXT NOT NULL,
   tbl TEXT NOT NULL,
-  deleted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+  deleted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  PRIMARY KEY(tbl, uid)
 );
 
 CREATE TABLE IF NOT EXISTS sync_state(
@@ -124,6 +179,31 @@ CREATE TABLE IF NOT EXISTS sync_state(
   last_pull TEXT,
   last_push TEXT
 );
+
+CREATE TABLE IF NOT EXISTS system_metadata(
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+
+-- Durable projection queue for external vector indexes. The local sqlite-vec
+-- mutation commits in the same transaction as this entry; remote delivery is
+-- revision-guarded, idempotent, and retried out of band.
+CREATE TABLE IF NOT EXISTS vector_outbox(
+  entity TEXT NOT NULL CHECK(entity IN ('memory', 'chunk')),
+  row_id INTEGER NOT NULL,
+  operation TEXT NOT NULL CHECK(operation IN ('upsert', 'delete')),
+  payload TEXT,
+  embedding BLOB,
+  generation TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  last_error TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  PRIMARY KEY(entity, row_id)
+);
+CREATE INDEX IF NOT EXISTS idx_vector_outbox_due ON vector_outbox(next_attempt_at, updated_at);
 `;
 
 /** Var olan DB'lere eşitleme kolonlarını ekler (uid, updated_at) ve backfill yapar. */
@@ -136,7 +216,21 @@ function migrate(database: Database.Database): void {
   addColumn("documents", "uid", "uid TEXT");
   addColumn("documents", "updated_at", "updated_at TEXT");
   addColumn("documents", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
+  addColumn("vector_outbox", "revision", "revision INTEGER NOT NULL DEFAULT 1");
+  // Document lifecycle. Existing documents remain current reference material;
+  // operators can archive/supersede stale versions explicitly after migration.
+  addColumn("documents", "kind", "kind TEXT NOT NULL DEFAULT 'reference'");
+  addColumn("documents", "version", "version TEXT");
+  addColumn("documents", "is_current", "is_current INTEGER NOT NULL DEFAULT 1");
+  addColumn("documents", "supersedes_uid", "supersedes_uid TEXT");
+  addColumn("documents", "valid_from", "valid_from TEXT");
+  addColumn("documents", "valid_to", "valid_to TEXT");
+  addColumn("documents", "archived_at", "archived_at TEXT");
+  addColumn("documents", "content_hash", "content_hash TEXT");
+  addColumn("documents", "language", "language TEXT");
+  backfillDocumentHashes(database);
   addColumn("session_logs", "uid", "uid TEXT");
+  addColumn("session_logs", "updated_at", "updated_at TEXT");
   // Yerel LLM backend'leri: LM Studio'ya ek olarak Ollama (OpenAI-uyumlu /v1)
   addColumn("machines", "ollama_port", "ollama_port INTEGER");
   // Recall kalitesi: önem çarpanı + erişim takibi (bkz. memories.ts, search.ts)
@@ -146,16 +240,305 @@ function migrate(database: Database.Database): void {
   // Bağlantılı hafızalar: uid listesi (JSON). uid tutulur çünkü id'ler cihaz-yerel
   // autoincrement'tir — sync sonrası aynı kayıt farklı cihazda farklı id alabilir.
   addColumn("memories", "related", "related TEXT NOT NULL DEFAULT '[]'");
+  addColumn("memories", "language", "language TEXT");
+  addColumn("memories", "canonical_summary", "canonical_summary TEXT");
+  addColumn("memories", "normalizer_generation", "normalizer_generation TEXT");
+  // Retrieval feedback was memory-only in the first release. Keep memory_id for
+  // compatibility, but use target_kind/target_id for memory, chunk, document,
+  // or whole-context feedback and retain the delivered ranking evidence.
+  addColumn("recall_feedback", "target_kind", "target_kind TEXT");
+  addColumn("recall_feedback", "target_id", "target_id INTEGER");
+  addColumn("recall_feedback", "target_uid", "target_uid TEXT");
+  addColumn("recall_feedback", "project", "project TEXT");
+  addColumn("recall_feedback", "intent", "intent TEXT");
+  addColumn("recall_feedback", "rank", "rank INTEGER");
+  addColumn("recall_feedback", "channels", "channels TEXT NOT NULL DEFAULT '[]'");
+  addColumn("recall_feedback", "delivery_id", "delivery_id TEXT");
+  database.exec(`
+    UPDATE recall_feedback
+       SET target_kind = 'memory', target_id = memory_id
+     WHERE memory_id IS NOT NULL AND target_kind IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_recall_feedback_target
+      ON recall_feedback(target_kind, target_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_recall_feedback_project_intent
+      ON recall_feedback(project, intent, created_at);
+    CREATE INDEX IF NOT EXISTS idx_memory_relations_from ON memory_relations(from_uid, relation_type, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_memory_relations_to ON memory_relations(to_uid, relation_type, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_actor_action ON audit_events(actor, action, created_at);
+  `);
+  migrateLegacyRelations(database);
+  migrateMemoryFts(database);
   database.exec(`
     UPDATE memories SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
     UPDATE documents SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
     UPDATE documents SET updated_at = created_at WHERE updated_at IS NULL;
     UPDATE session_logs SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
+    UPDATE session_logs SET updated_at = created_at WHERE updated_at IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_uid ON memories(uid);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uid ON documents(uid);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_uid ON session_logs(uid);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uri_unique ON documents(uri) WHERE uri IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_documents_project_current ON documents(project, enabled, is_current);
   `);
   migrateSyncStatePeers(database);
+  migrateDeletionPrimaryKey(database);
+}
+
+function migrateLegacyRelations(database: Database.Database): void {
+  const marker = database.prepare("SELECT value FROM system_metadata WHERE key = 'legacy_relations_backfilled'").get() as
+    | { value: string }
+    | undefined;
+  if (marker?.value === "1") return;
+  const rows = database
+    .prepare(
+      `SELECT m.uid AS from_uid, json_each.value AS to_uid
+       FROM memories m, json_each(m.related)
+       WHERE json_valid(m.related) AND json_each.type = 'text' AND m.uid != json_each.value`
+    )
+    .all() as { from_uid: string; to_uid: string }[];
+  const insert = database.prepare(
+    `INSERT OR IGNORE INTO memory_relations(
+       uid, from_uid, to_uid, relation_type, confidence, source, metadata, created_at, updated_at
+     ) VALUES (?, ?, ?, 'related', 1.0, 'legacy-related-backfill', '{}', ${NOW_MS}, ${NOW_MS})`
+  );
+  database.transaction(() => {
+    for (const row of rows) {
+      const uid = createHash("sha256")
+        .update(`legacy-related\0${row.from_uid}\0${row.to_uid}`)
+        .digest("hex")
+        .slice(0, 32);
+      insert.run(uid, row.from_uid, row.to_uid);
+    }
+    database
+      .prepare(
+        `INSERT INTO system_metadata(key, value, updated_at) VALUES ('legacy_relations_backfilled', '1', ${NOW_MS})
+         ON CONFLICT(key) DO UPDATE SET value='1', updated_at=${NOW_MS}`
+      )
+      .run();
+  })();
+}
+
+function backfillDocumentHashes(database: Database.Database): void {
+  const docs = database
+    .prepare("SELECT id FROM documents WHERE content_hash IS NULL")
+    .all() as { id: number }[];
+  const chunks = database.prepare("SELECT seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq");
+  const update = database.prepare("UPDATE documents SET content_hash = ? WHERE id = ?");
+  database.transaction(() => {
+    for (const doc of docs) {
+      const rows = chunks.all(doc.id) as { seq: number; heading: string | null; text: string }[];
+      if (rows.length === 0) continue;
+      const hash = createHash("sha256")
+        .update("stored-chunks-v1\0")
+        .update(JSON.stringify(rows))
+        .digest("hex");
+      update.run(hash, doc.id);
+    }
+  })();
+}
+
+function migrateMemoryFts(database: Database.Database): void {
+  const row = database.prepare("SELECT sql FROM sqlite_master WHERE name = 'memories_fts'").get() as
+    | { sql: string }
+    | undefined;
+  if (row?.sql.includes("canonical_summary")) return;
+  database.transaction(() => {
+    database.exec(`
+      DROP TRIGGER IF EXISTS memories_ai;
+      DROP TRIGGER IF EXISTS memories_ad;
+      DROP TRIGGER IF EXISTS memories_au;
+      DROP TABLE IF EXISTS memories_fts;
+      CREATE VIRTUAL TABLE memories_fts USING fts5(
+        title, body, canonical_summary, content='memories', content_rowid='id', tokenize='unicode61'
+      );
+      CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, title, body, canonical_summary)
+          VALUES (new.id, new.title, new.body, new.canonical_summary);
+      END;
+      CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, title, body, canonical_summary)
+          VALUES('delete', old.id, old.title, old.body, old.canonical_summary);
+      END;
+      CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, title, body, canonical_summary)
+          VALUES('delete', old.id, old.title, old.body, old.canonical_summary);
+        INSERT INTO memories_fts(rowid, title, body, canonical_summary)
+          VALUES (new.id, new.title, new.body, new.canonical_summary);
+      END;
+      INSERT INTO memories_fts(rowid, title, body, canonical_summary)
+        SELECT id, title, body, canonical_summary FROM memories;
+    `);
+  })();
+}
+
+function migrateDeletionPrimaryKey(database: Database.Database): void {
+  const info = database.prepare("PRAGMA table_info(deletions)").all() as { name: string; pk: number }[];
+  const pk = info.filter((column) => column.pk > 0).sort((a, b) => a.pk - b.pk).map((column) => column.name);
+  if (pk.length === 2 && pk[0] === "tbl" && pk[1] === "uid") return;
+  database.transaction(() => {
+    database.exec(`
+      ALTER TABLE deletions RENAME TO deletions_legacy;
+      CREATE TABLE deletions(
+        uid TEXT NOT NULL,
+        tbl TEXT NOT NULL,
+        deleted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+        PRIMARY KEY(tbl, uid)
+      );
+      INSERT OR REPLACE INTO deletions(uid, tbl, deleted_at)
+        SELECT uid, tbl, deleted_at FROM deletions_legacy;
+      DROP TABLE deletions_legacy;
+    `);
+  })();
+}
+
+export function configuredEmbeddingGeneration(): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        provider: "gemini",
+        model: config.embeddingModel,
+        dimensions: config.embeddingDim,
+        normalization: "l2-v1",
+        chunker: CHUNKER_VERSION,
+      })
+    )
+    .digest("hex");
+}
+
+function setMetadata(database: Database.Database, key: string, value: string): void {
+  database
+    .prepare(
+      `INSERT INTO system_metadata(key, value, updated_at) VALUES (?, ?, ${NOW_MS})
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=${NOW_MS}`
+    )
+    .run(key, value);
+}
+
+function getMetadata(database: Database.Database, key: string): string | null {
+  const row = database.prepare("SELECT value FROM system_metadata WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+}
+
+function ensureEmbeddingGeneration(database: Database.Database): void {
+  const configured = configuredEmbeddingGeneration();
+  const active = getMetadata(database, "active_embedding_generation");
+  const vectorCount = vecAvailable
+    ? ((database.prepare("SELECT (SELECT COUNT(*) FROM memories_vec) + (SELECT COUNT(*) FROM chunks_vec) AS n").get() as { n: number }).n)
+    : 0;
+  setMetadata(database, "configured_embedding_generation", configured);
+  if (!active) {
+    setMetadata(database, "active_embedding_generation", configured);
+    setMetadata(database, "embedding_generation_provenance", vectorCount > 0 ? "inferred_on_upgrade" : "created_empty");
+    setMetadata(database, "embedding_reindex_required", "0");
+    return;
+  }
+  if (active !== configured && vectorCount > 0) {
+    setMetadata(database, "embedding_reindex_required", "1");
+  } else if (vectorCount === 0) {
+    setMetadata(database, "active_embedding_generation", configured);
+    setMetadata(database, "embedding_generation_provenance", "created_empty");
+    setMetadata(database, "embedding_reindex_required", "0");
+  }
+}
+
+function vectorTableSql(database: Database.Database, table: string): string | null {
+  const row = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as
+    | { sql: string }
+    | undefined;
+  return row?.sql ?? null;
+}
+
+/**
+ * sqlite-vec partition/metadata columns must be declared when vec0 is created.
+ * Existing v1 tables are rebuilt transactionally while preserving same-dimension
+ * embeddings. Filters can then run inside KNN instead of after global top-k.
+ */
+function ensureVectorSchema(database: Database.Database): void {
+  const memorySql = vectorTableSql(database, "memories_vec");
+  const chunkSql = vectorTableSql(database, "chunks_vec");
+  const expectedDim = `float[${config.embeddingDim}]`;
+
+  const rebuildMemories = Boolean(memorySql && (!memorySql.includes("project text partition key") || !memorySql.includes(expectedDim)));
+  const rebuildChunks = Boolean(
+    chunkSql &&
+      (!chunkSql.includes("project text partition key") ||
+        !chunkSql.includes("enabled integer") ||
+        !chunkSql.includes("is_current integer") ||
+        !chunkSql.includes("kind text") ||
+        !chunkSql.includes(expectedDim))
+  );
+
+  database.transaction(() => {
+    if (rebuildMemories) {
+      const sameDim = memorySql!.includes(expectedDim);
+      database.exec("DROP TABLE IF EXISTS temp.memories_vec_backup");
+      if (sameDim) {
+        database.exec(`CREATE TEMP TABLE memories_vec_backup AS
+          SELECT v.rowid, COALESCE(NULLIF(trim(m.project), ''), '${GLOBAL_VECTOR_PROJECT}') AS project, v.embedding
+          FROM memories_vec v JOIN memories m ON m.id = v.rowid`);
+      }
+      database.exec("DROP TABLE memories_vec");
+      database.exec(`CREATE VIRTUAL TABLE memories_vec USING vec0(
+        project text partition key,
+        embedding float[${config.embeddingDim}]
+      )`);
+      if (sameDim) {
+        database.prepare("INSERT INTO memories_vec(rowid, project, embedding) SELECT rowid, project, embedding FROM memories_vec_backup").run();
+        database.exec("DROP TABLE memories_vec_backup");
+      } else {
+        console.warn("[hub] embedding dimension changed; memory vectors were cleared and require reindex");
+      }
+    } else if (!memorySql) {
+      database.exec(`CREATE VIRTUAL TABLE memories_vec USING vec0(
+        project text partition key,
+        embedding float[${config.embeddingDim}]
+      )`);
+    }
+
+    if (rebuildChunks) {
+      const sameDim = chunkSql!.includes(expectedDim);
+      database.exec("DROP TABLE IF EXISTS temp.chunks_vec_backup");
+      if (sameDim) {
+        database.exec(`CREATE TEMP TABLE chunks_vec_backup AS
+          SELECT v.rowid,
+                 COALESCE(NULLIF(trim(d.project), ''), '${GLOBAL_VECTOR_PROJECT}') AS project,
+                 CAST(d.enabled AS INTEGER) AS enabled,
+                 CAST(d.is_current AS INTEGER) AS is_current,
+                 d.kind AS kind,
+                 v.embedding
+          FROM chunks_vec v
+          JOIN chunks c ON c.id = v.rowid
+          JOIN documents d ON d.id = c.document_id`);
+      }
+      database.exec("DROP TABLE chunks_vec");
+      database.exec(`CREATE VIRTUAL TABLE chunks_vec USING vec0(
+        project text partition key,
+        enabled integer,
+        is_current integer,
+        kind text,
+        embedding float[${config.embeddingDim}]
+      )`);
+      if (sameDim) {
+        database.prepare(
+          "INSERT INTO chunks_vec(rowid, project, enabled, is_current, kind, embedding) SELECT rowid, project, enabled, is_current, kind, embedding FROM chunks_vec_backup"
+        ).run();
+        database.exec("DROP TABLE chunks_vec_backup");
+      } else {
+        console.warn("[hub] embedding dimension changed; chunk vectors were cleared and require reindex");
+      }
+    } else if (!chunkSql) {
+      database.exec(`CREATE VIRTUAL TABLE chunks_vec USING vec0(
+        project text partition key,
+        enabled integer,
+        is_current integer,
+        kind text,
+        embedding float[${config.embeddingDim}]
+      )`);
+    }
+  })();
 }
 
 /**
@@ -208,10 +591,8 @@ export function getDb(): Database.Database {
   migrate(db);
 
   if (vecAvailable) {
-    db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0(embedding float[${config.embeddingDim}]);
-      CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(embedding float[${config.embeddingDim}]);
-    `);
+    ensureVectorSchema(db);
+    ensureEmbeddingGeneration(db);
   }
   return db;
 }
@@ -225,6 +606,70 @@ export function hasVec(): boolean {
 export function vecError(): string | null {
   getDb();
   return vecErrorMsg;
+}
+
+export interface EmbeddingGenerationState {
+  configured: string;
+  active: string | null;
+  provenance: string | null;
+  reindex_required: boolean;
+}
+
+export function embeddingGenerationState(): EmbeddingGenerationState {
+  const database = getDb();
+  return {
+    configured: configuredEmbeddingGeneration(),
+    active: getMetadata(database, "active_embedding_generation"),
+    provenance: getMetadata(database, "embedding_generation_provenance"),
+    reindex_required: getMetadata(database, "embedding_reindex_required") === "1",
+  };
+}
+
+export function vectorIndexReady(): boolean {
+  if (!hasVec()) return false;
+  const state = embeddingGenerationState();
+  return !state.reindex_required && state.active === state.configured;
+}
+
+export function markEmbeddingGenerationReady(provenance = "reindexed"): void {
+  const database = getDb();
+  setMetadata(database, "active_embedding_generation", configuredEmbeddingGeneration());
+  setMetadata(database, "configured_embedding_generation", configuredEmbeddingGeneration());
+  setMetadata(database, "embedding_generation_provenance", provenance);
+  setMetadata(database, "embedding_reindex_required", "0");
+}
+
+/** Insert or replace one memory vector with retrieval-time partition metadata. */
+export function putMemoryVector(rowid: number, project: string | null | undefined, embedding: Buffer): void {
+  if (!hasVec()) return;
+  if (embedding.byteLength !== config.embeddingDim * Float32Array.BYTES_PER_ELEMENT) {
+    throw new Error(`memory vector dimension mismatch: ${embedding.byteLength} bytes`);
+  }
+  const database = getDb();
+  database.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(rowid));
+  database
+    .prepare("INSERT INTO memories_vec(rowid, project, embedding) VALUES (?, ?, ?)")
+    .run(BigInt(rowid), vectorProject(project), embedding);
+}
+
+/** Insert or replace one chunk vector with project and lifecycle metadata. */
+export function putChunkVector(
+  rowid: number,
+  project: string | null | undefined,
+  enabled: boolean | number,
+  isCurrent: boolean | number,
+  embedding: Buffer,
+  kind = "reference"
+): void {
+  if (!hasVec()) return;
+  if (embedding.byteLength !== config.embeddingDim * Float32Array.BYTES_PER_ELEMENT) {
+    throw new Error(`chunk vector dimension mismatch: ${embedding.byteLength} bytes`);
+  }
+  const database = getDb();
+  database.prepare("DELETE FROM chunks_vec WHERE rowid = ?").run(BigInt(rowid));
+  database
+    .prepare("INSERT INTO chunks_vec(rowid, project, enabled, is_current, kind, embedding) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(BigInt(rowid), vectorProject(project), BigInt(enabled ? 1 : 0), BigInt(isCurrent ? 1 : 0), kind, embedding);
 }
 
 export function closeDb(): void {

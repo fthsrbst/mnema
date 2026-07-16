@@ -6,20 +6,20 @@
 ## Telefondan erişim (mobil)
 
 Pi'de `tailscale serve` aktif: hub, tailnet içinde HTTPS ile yayında —
-**https://<cihaz>.<tailnet>.ts.net** (dışarıya kapalı, sadece kendi cihazların).
+**https://fatihpi.tail2daf77.ts.net** (dışarıya kapalı, sadece kendi cihazların).
 
-1. **Tailscale uygulamasını kur** (iOS/Android), aynı hesapla (<tailscale-hesabın>) gir, VPN'i aç.
+1. **Tailscale uygulamasını kur** (iOS/Android), aynı hesapla (fatihxserbest@gmail.com) gir, VPN'i aç.
    MagicDNS mobilde varsayılan açık — adres doğrudan çözülür.
-2. **Web paneli**: tarayıcıda `https://<cihaz>.<tailnet>.ts.net` → token'ı gir (Pi `.env` → `HUB_TOKEN`).
+2. **Web paneli**: tarayıcıda `https://fatihpi.tail2daf77.ts.net` → token'ı gir (Pi `.env` → `HUB_TOKEN`).
    "Ana ekrana ekle" ile PWA olarak kur — uygulama gibi açılır.
 3. **AI uygulamalarından erişim (MCP)**:
-   - MCP destekleyen mobil/uzak istemcilere endpoint: `https://<cihaz>.<tailnet>.ts.net/mcp`,
+   - MCP destekleyen mobil/uzak istemcilere endpoint: `https://fatihpi.tail2daf77.ts.net/mcp`,
      header: `Authorization: Bearer <TOKEN>`.
    - **claude.ai / Claude mobil uygulaması custom connector**: Anthropic sunucuları tailnet'e giremez;
      bunun için endpoint'i internete açmak gerekir: `sudo tailscale funnel --bg 8033`.
      ⚠️ Funnel hub'ı HERKESE açar — tek koruma bearer token kalır. Açmadan önce düşün;
      kapatmak için `sudo tailscale funnel --https=443 off`.
-   - Tailnet içindeki her istemci (ör. dizüstünde Claude Code) zaten `http://<pi-tailscale-ip>:8033/mcp` ile bağlanır.
+   - Tailnet içindeki her istemci (ör. dizüstünde Claude Code) zaten `http://100.110.9.26:8033/mcp` ile bağlanır.
 
 Serve'i kapatmak: Pi'de `sudo tailscale serve --https=443 off`.
 

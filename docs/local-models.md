@@ -38,7 +38,7 @@ Bu, `~/.lmstudio/mcp.json`'a şunu yazar (URL/token CLI config'inden gelir):
 {
   "mcpServers": {
     "hub": {
-      "url": "http://<hub-host>:8033/mcp",
+      "url": "http://100.110.9.26:8033/mcp",
       "headers": { "Authorization": "Bearer <HUB_TOKEN>" }
     }
   }

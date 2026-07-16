@@ -6,7 +6,17 @@ export interface RailItem {
   icon: IconName;
 }
 
-export function IconRail({ items, active, onSelect }: { items: RailItem[]; active: string; onSelect: (id: string) => void }) {
+export function IconRail({
+  items,
+  active,
+  expanded,
+  onSelect,
+}: {
+  items: RailItem[];
+  active: string;
+  expanded: boolean;
+  onSelect: (id: string) => void;
+}) {
   return (
     <nav className="icon-rail" aria-label="Ana bölümler">
       {items.map((it) => (
@@ -16,11 +26,12 @@ export function IconRail({ items, active, onSelect }: { items: RailItem[]; activ
           className="icon-rail-btn"
           data-active={active === it.id}
           onClick={() => onSelect(it.id)}
-          title={it.label}
+          title={expanded ? undefined : it.label}
           aria-label={it.label}
           aria-current={active === it.id ? "page" : undefined}
         >
           <Icon name={it.icon} size={18} />
+          <span className="icon-rail-label">{it.label}</span>
         </button>
       ))}
     </nav>
