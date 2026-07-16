@@ -112,8 +112,9 @@ content, and secrets are never committed to either one.
   fully local-first.
 - **Mnema Cloud (in development):** accounts and organizations backed by
   Supabase Auth + Postgres, forced row-level security on every tenant-owned
-  table, and provider-neutral subscription state with a Paddle-first
-  Merchant-of-Record adapter.
+  table, verified-email team invitations, portable exports and delayed deletion,
+  plus provider-neutral subscription state with Paddle checkout and customer
+  portal support.
 
 See [ADR-004](docs/adr/004-cloud-multitenancy-and-billing.md), the
 [cloud threat model](docs/security/cloud-threat-model.md), and the

@@ -20,7 +20,14 @@ import {
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
-import { buildCloudAccountRouter, buildCloudWebhookRouter, loadCloudRuntimeConfig } from "../saas/index.js";
+import {
+  buildCloudAccountRouter,
+  buildCloudWebhookRouter,
+  cloudSecurityHeaders,
+  createCloudRateLimiter,
+  loadCloudRuntimeConfig,
+  purgeDueOrganizations,
+} from "../saas/index.js";
 import {
   authenticate,
   authenticationEnabled,
@@ -34,20 +41,30 @@ import {
 } from "./auth.js";
 
 const app = express();
+app.disable("x-powered-by");
 assertDeploymentSafety();
 const cloudConfig = loadCloudRuntimeConfig();
+if (cloudConfig?.trustProxyHops) app.set("trust proxy", cloudConfig.trustProxyHops);
+app.use(cloudSecurityHeaders({ supabaseUrl: cloudConfig?.supabaseUrl, httpsOnly: cloudConfig?.httpsOnly }));
 if (cloudConfig) {
   // Paddle signature verification requires the exact raw bytes. This route is
   // intentionally mounted before the global JSON parser and self-host auth.
   app.use(
     "/cloud/api/billing/webhook",
+    createCloudRateLimiter({ limit: cloudConfig.webhookRateLimitPerMinute, namespace: "cloud-webhook" }),
     express.raw({ type: "application/json", limit: "1mb" }),
     buildCloudWebhookRouter(cloudConfig)
   );
 }
 app.use(express.json({ limit: "10mb" }));
 
-if (cloudConfig) app.use("/cloud/api", buildCloudAccountRouter(cloudConfig));
+if (cloudConfig) {
+  app.use(
+    "/cloud/api",
+    createCloudRateLimiter({ limit: cloudConfig.rateLimitPerMinute, namespace: "cloud-api" }),
+    buildCloudAccountRouter(cloudConfig)
+  );
+}
 
 app.get("/health", (_req, res) => {
   // Auth'suz uç: ham hata mesajları (dosya yolu içerebilir) sızdırılmaz — sadece sabit kodlar.
@@ -228,6 +245,26 @@ app.listen(config.port, config.host, () => {
   console.log(`[hub] http://${config.host}:${config.port}  (MCP: /mcp, REST: /api, health: /health)`);
   console.log(`[hub] deployment profile: ${config.deploymentProfile}, vector backend: ${config.vectorBackend}`);
   console.log(`[hub] vektör arama: ${hasVec() ? "açık" : "KAPALI"}, embedding: ${embeddingsEnabled() ? "Gemini" : "YOK (FTS-only)"}, auth: ${authenticationEnabled() ? "açık" : "KAPALI (local-dev)"}`);
+
+  if (cloudConfig) {
+    let purgingOrganizations = false;
+    const purgeOrganizations = async (): Promise<void> => {
+      if (purgingOrganizations) return;
+      purgingOrganizations = true;
+      try {
+        const result = await purgeDueOrganizations(cloudConfig);
+        if (result.examined > 0) {
+          console.log(`[hub] Cloud lifecycle: purged=${result.purged}, waiting_for_billing=${result.waitingForBilling}`);
+        }
+      } catch (error) {
+        console.error(`[hub] Cloud lifecycle purge failed: ${(error as Error).name}`);
+      } finally {
+        purgingOrganizations = false;
+      }
+    };
+    void purgeOrganizations();
+    setInterval(purgeOrganizations, 60 * 60 * 1_000);
+  }
 
   if (config.vectorBackend === "qdrant") {
     const initialProjection = ensureVectorProjectionQueued();

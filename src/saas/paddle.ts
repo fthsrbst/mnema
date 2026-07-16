@@ -72,12 +72,50 @@ export async function createPaddleCheckout(
   return { transactionId: parsed.data.id, checkoutUrl: parsed.data.checkout.url };
 }
 
+const portalResponseSchema = z.object({
+  data: z.object({
+    id: z.string().min(1),
+    urls: z.object({ general: z.object({ overview: z.string().url() }) }),
+  }),
+});
+
+/** Creates a short-lived hosted portal link; callers must never persist it. */
+export async function createPaddlePortalSession(
+  config: Pick<PaddleCheckoutConfig, "apiKey" | "environment" | "fetch">,
+  input: { customerId: string; subscriptionId?: string }
+): Promise<{ sessionId: string; portalUrl: string }> {
+  if (!input.customerId.startsWith("ctm_")) throw new Error("Invalid Paddle customer id");
+  if (input.subscriptionId && !input.subscriptionId.startsWith("sub_")) throw new Error("Invalid Paddle subscription id");
+  const request = config.fetch ?? globalThis.fetch;
+  const base = config.environment === "sandbox" ? "https://sandbox-api.paddle.com" : "https://api.paddle.com";
+  const response = await request(`${base}/customers/${encodeURIComponent(input.customerId)}/portal-sessions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+      "Paddle-Version": "1",
+    },
+    body: JSON.stringify(input.subscriptionId ? { subscription_ids: [input.subscriptionId] } : {}),
+  });
+  if (!response.ok) throw new Error(`Paddle portal session failed with status ${response.status}`);
+  const parsed = portalResponseSchema.parse(await response.json());
+  return { sessionId: parsed.data.id, portalUrl: parsed.data.urls.general.overview };
+}
+
+const paddleEnvelopeSchema = z.object({
+  event_id: z.string().min(1),
+  event_type: z.string().min(1),
+  occurred_at: z.string().datetime(),
+  data: z.unknown(),
+});
+
 const paddleEventSchema = z.object({
   event_id: z.string().min(1),
   event_type: z.string().min(1),
   occurred_at: z.string().datetime(),
   data: z.object({
     id: z.string().min(1),
+    customer_id: z.string().min(1),
     status: z.enum(["trialing", "active", "past_due", "paused", "canceled"]),
     current_billing_period: z.object({ ends_at: z.string().datetime() }).nullable().optional(),
     scheduled_change: z.object({ action: z.string() }).nullable().optional(),
@@ -89,8 +127,11 @@ const paddleEventSchema = z.object({
 export interface PaddleWebhookStore {
   /** Atomically inserts provider+event id. False means already processed/claimed. */
   beginEvent(eventId: string, payloadSha256: string): Promise<boolean>;
+  getCustomer(organizationId: string): Promise<string | null>;
+  saveCustomer(organizationId: string, customerId: string): Promise<void>;
   getSubscription(organizationId: string): Promise<SubscriptionSnapshot | null>;
-  saveSubscription(organizationId: string, snapshot: SubscriptionSnapshot): Promise<void>;
+  /** Atomically applies only a snapshot newer than stored state. */
+  saveSubscription(organizationId: string, snapshot: SubscriptionSnapshot): Promise<boolean>;
   finishEvent(eventId: string, status: "processed" | "ignored" | "failed", errorCode?: string): Promise<void>;
 }
 
@@ -119,10 +160,12 @@ export async function processPaddleWebhook(
     return { accepted: false };
   }
   const rawText = Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : rawBody;
-  const parsed = paddleEventSchema.parse(JSON.parse(rawText));
-  if (!["subscription.created", "subscription.updated"].includes(parsed.event_type)) {
+  const rawJson: unknown = JSON.parse(rawText);
+  const envelope = paddleEnvelopeSchema.parse(rawJson);
+  if (!envelope.event_type.startsWith("subscription.")) {
     return { accepted: true };
   }
+  const parsed = paddleEventSchema.parse(rawJson);
   const organizationId = parsed.data.custom_data?.organization_id;
   if (typeof organizationId !== "string" || organizationId.length < 1) {
     throw new Error("Paddle subscription event is missing organization_id custom data");
@@ -134,6 +177,7 @@ export async function processPaddleWebhook(
     return { accepted: true, duplicate: true, organizationId };
   }
   try {
+    await config.store.saveCustomer(organizationId, parsed.data.customer_id);
     const event: NormalizedSubscriptionEvent = {
       id: parsed.event_id,
       occurredAt: parsed.occurred_at,
@@ -146,8 +190,10 @@ export async function processPaddleWebhook(
     };
     const current = await config.store.getSubscription(organizationId);
     const reduced = reduceSubscriptionEvent(current, event);
-    if (reduced.changed) await config.store.saveSubscription(organizationId, reduced.snapshot);
-    await config.store.finishEvent(parsed.event_id, reduced.changed ? "processed" : "ignored");
+    const applied = reduced.changed
+      ? await config.store.saveSubscription(organizationId, reduced.snapshot)
+      : false;
+    await config.store.finishEvent(parsed.event_id, applied ? "processed" : "ignored");
     return { accepted: true, organizationId };
   } catch (error) {
     await config.store.finishEvent(parsed.event_id, "failed", error instanceof Error ? error.name : "unknown_error");

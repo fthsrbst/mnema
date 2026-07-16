@@ -30,7 +30,26 @@ Mnema has two deployment profiles with one product model:
 Paddle is the initial billing adapter, but billing state uses provider-neutral
 identifiers and normalized subscription events. Lemon Squeezy remains a compatible
 fallback. Provider webhooks are verified over the untouched raw request body,
-deduplicated by provider event id, and applied only when newer than stored state.
+atomically claimed by provider event id, and applied only when newer than stored
+state. A failed claim may be retried; a completed/concurrent duplicate or a
+different payload for the same event id cannot be applied. Subscription state is
+also reduced inside a tenant-locking database RPC, closing the race between two
+different out-of-order event ids.
+
+Organization membership is invitation-only for authenticated clients. An invite
+is bound to a verified email address, reserves the plan's member quota, and is
+accepted atomically. Existing users discover it in-app; new-user email delivery
+is delegated to Supabase Auth.
+
+Membership listing, role changes, ownership transfer, and removal use
+AAL2-protected RPCs. Authenticated clients have no direct organization or
+membership mutation grants, so they cannot bypass MFA through PostgREST.
+
+Owners receive an RLS-scoped NDJSON portability export. Organization deletion is
+delayed, cannot precede the end of an active paid term, blocks new writes once
+scheduled, and is purged only after billing is canceled. Account deletion is
+server-only and refused while the user owns an organization. The final purge is
+one database transaction that locks and rechecks the deletion and billing state.
 
 ## Security invariants
 
@@ -45,6 +64,13 @@ deduplicated by provider event id, and applied only when newer than stored state
   metadata.
 - Webhook handlers verify signatures before JSON parsing and persist event ids
   before side effects.
+- Public Cloud routes send restrictive browser headers and use a process-local
+  IP/token limiter; production scale-out additionally requires a shared edge
+  limiter.
+- The browser receives only Supabase's public key. Server-only Supabase and
+  Paddle credentials are never used as application bearer tokens.
+- Opaque Supabase secret keys are sent only as API keys; the legacy
+  `Authorization: Bearer` form is retained only for legacy service-role JWTs.
 - Billable project and document allocations use transaction-scoped Postgres RPCs;
   authenticated clients do not have direct insert grants that could bypass quotas.
 - Tenant isolation is release-blocking and tested against Postgres-compatible RLS,

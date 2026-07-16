@@ -2,7 +2,10 @@ import { createHmac } from "node:crypto";
 import fs from "node:fs";
 import {
   canTenantAccess,
+  cloudServiceHeaders,
   createPaddleCheckout,
+  createPaddlePortalSession,
+  loadCloudRuntimeConfig,
   processPaddleWebhook,
   reduceSubscriptionEvent,
   requireTenantAccess,
@@ -10,6 +13,7 @@ import {
   verifyPaddleSignature,
   type PaddlePriceCatalog,
   type PaddleWebhookStore,
+  type CloudRuntimeConfig,
   type SubscriptionSnapshot,
   type TenantPrincipal,
 } from "../src/saas/index.js";
@@ -41,6 +45,14 @@ try {
   if (error instanceof TenantAccessError) mfaCode = error.code;
 }
 check("sensitive owner action requires MFA", mfaCode === "mfa_required");
+
+let partialCloudConfigRejected = false;
+try {
+  loadCloudRuntimeConfig({ SUPABASE_SECRET_KEY: "sb_secret_partial" });
+} catch {
+  partialCloudConfigRejected = true;
+}
+check("a partial secret-key Cloud configuration fails closed", partialCloudConfigRejected);
 
 const secret = "pdl_ntfset_test_secret";
 const timestamp = 1_750_000_000;
@@ -75,6 +87,31 @@ const prices: PaddlePriceCatalog = {
   pro: { monthly: "pri_pro_month", annual: "pri_pro_year" },
   team: { monthly: "pri_team_month", annual: "pri_team_year" },
 };
+const serviceHeaderConfig = (key: string): CloudRuntimeConfig => ({
+  appUrl: "https://app.mnema.example",
+  supabaseUrl: "https://project.supabase.co",
+  supabasePublicKey: "sb_publishable_public",
+  supabaseServiceRoleKey: key,
+  httpsOnly: true,
+  trustProxyHops: 1,
+  rateLimitPerMinute: 300,
+  webhookRateLimitPerMinute: 120,
+  paddle: {
+    apiKey: "pdl_api",
+    webhookSecret: "pdl_secret",
+    environment: "sandbox",
+    approvedCheckoutUrl: "https://app.mnema.example/billing/complete",
+    prices,
+  },
+});
+const opaqueServiceHeaders = cloudServiceHeaders(serviceHeaderConfig("sb_secret_private"));
+const legacyServiceHeaders = cloudServiceHeaders(serviceHeaderConfig("legacy.service.role.jwt"));
+check(
+  "opaque Supabase secret keys stay out of the JWT Authorization header",
+  opaqueServiceHeaders.apikey === "sb_secret_private" &&
+    opaqueServiceHeaders.Authorization === undefined &&
+    legacyServiceHeaders.Authorization === "Bearer legacy.service.role.jwt"
+);
 let checkoutRequestBody: Record<string, unknown> | null = null;
 const checkout = await createPaddleCheckout(
   {
@@ -101,7 +138,26 @@ check(
     checkoutCustomData?.organization_id === "org-a"
 );
 
+const portal = await createPaddlePortalSession(
+  {
+    apiKey: "test-api-key",
+    environment: "sandbox",
+    fetch: async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { subscription_ids?: string[] };
+      return Response.json({
+        data: {
+          id: "cpls_1",
+          urls: { general: { overview: body.subscription_ids?.[0] === "sub_1" ? "https://portal.paddle.test/session" : "" } },
+        },
+      }, { status: 201 });
+    },
+  },
+  { customerId: "ctm_1", subscriptionId: "sub_1" }
+);
+check("customer portal session is short-lived and subscription-scoped", portal.portalUrl === "https://portal.paddle.test/session");
+
 const subscriptions = new Map<string, SubscriptionSnapshot>();
+const customers = new Map<string, string>();
 const claimedEvents = new Set<string>();
 const store: PaddleWebhookStore = {
   async beginEvent(eventId) {
@@ -109,11 +165,18 @@ const store: PaddleWebhookStore = {
     claimedEvents.add(eventId);
     return true;
   },
+  async getCustomer(organizationId) {
+    return customers.get(organizationId) ?? null;
+  },
+  async saveCustomer(organizationId, customerId) {
+    customers.set(organizationId, customerId);
+  },
   async getSubscription(organizationId) {
     return subscriptions.get(organizationId) ?? null;
   },
   async saveSubscription(organizationId, snapshot) {
     subscriptions.set(organizationId, snapshot);
+    return true;
   },
   async finishEvent() {},
 };
@@ -123,6 +186,7 @@ const webhookBody = JSON.stringify({
   occurred_at: "2026-07-16T12:00:00.000Z",
   data: {
     id: "sub_1",
+    customer_id: "ctm_1",
     status: "active",
     current_billing_period: { ends_at: "2026-08-16T12:00:00.000Z" },
     scheduled_change: null,
@@ -137,8 +201,27 @@ const processed = await processPaddleWebhook(webhookBody, `ts=${webhookTs};h1=${
 const duplicate = await processPaddleWebhook(webhookBody, `ts=${webhookTs};h1=${webhookSig}`, webhookConfig);
 check(
   "verified webhook provisions tenant subscription exactly once",
-  processed.accepted && processed.organizationId === "org-a" && duplicate.duplicate === true && subscriptions.get("org-a")?.plan === "pro"
+  processed.accepted && processed.organizationId === "org-a" && duplicate.duplicate === true &&
+    subscriptions.get("org-a")?.plan === "pro" && customers.get("org-a") === "ctm_1"
 );
+
+const canceledWebhookBody = JSON.stringify({
+  event_id: "evt_webhook_2",
+  event_type: "subscription.canceled",
+  occurred_at: "2026-07-16T13:00:00.000Z",
+  data: {
+    id: "sub_1",
+    customer_id: "ctm_1",
+    status: "canceled",
+    current_billing_period: null,
+    scheduled_change: null,
+    custom_data: { organization_id: "org-a" },
+    items: [{ price: { id: "pri_pro_month" } }],
+  },
+});
+const canceledWebhookSig = createHmac("sha256", secret).update(`${webhookTs}:${canceledWebhookBody}`).digest("hex");
+await processPaddleWebhook(canceledWebhookBody, `ts=${webhookTs};h1=${canceledWebhookSig}`, webhookConfig);
+check("subscription.canceled webhook revokes paid state", subscriptions.get("org-a")?.status === "canceled");
 
 const migration = fs.readFileSync(new URL("../cloud/migrations/0001_tenancy.sql", import.meta.url), "utf8");
 const tenantTables = ["projects", "memories", "documents", "document_chunks", "session_logs", "memory_relations", "audit_events"];

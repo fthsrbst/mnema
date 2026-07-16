@@ -6,7 +6,7 @@
 # Idempotent: ikinci çalıştırma güvenlidir (mevcut .env/servis dosyalarını korur).
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/fthsrbst/ai-hub.git}"
+REPO_URL="${REPO_URL:-https://github.com/fthsrbst/mnema.git}"
 
 log() { echo -e "\n== $1 =="; }
 have() { command -v "$1" >/dev/null 2>&1; }
