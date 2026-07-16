@@ -11,7 +11,7 @@ import { Collapsible } from "../components/ui/Collapsible";
 import { ListRow } from "../components/ui/ListRow";
 import { Ticker } from "../components/ui/Ticker";
 import { Dither } from "../components/ui/Dither";
-import { api, type GrowthStats, type HealthStatus, type RagStats, type SessionLog, type UsageStats } from "../api";
+import { api, fetchActiveAgents, type AgentPresence, type GrowthStats, type HealthStatus, type RagStats, type SessionLog, type UsageStats } from "../api";
 import { useI18n, type Lang, type TKey } from "../i18n";
 import { Markdown } from "../components/Markdown";
 
@@ -247,13 +247,41 @@ function UsageSection({ usage, formatRelative }: { usage: UsageStats; formatRela
   );
 }
 
-export function Dashboard() {
+function ActiveAgentsCard({ agents, onOpen }: { agents: AgentPresence[] | null; onOpen?: () => void }) {
+  const { t } = useI18n();
+  const fresh = (agents ?? []).filter((a) => !a.stale);
+  return (
+    <Panel className="active-agents-card" style={onOpen ? { cursor: "pointer" } : undefined} onClick={onOpen}>
+      <VStack gap={2}>
+        <HStack hAlign="between" vAlign="center">
+          <span className="u-label">{t("dashboard.activeAgentsTitle")}</span>
+          <StatusDot variant={fresh.length > 0 ? "success" : "neutral"} label={String((agents ?? []).length)} pulsing={fresh.length > 0} />
+        </HStack>
+        {agents === null ? (
+          <Text type="supporting" color="secondary">{t("common.loading")}</Text>
+        ) : agents.length === 0 ? (
+          <Text type="supporting" color="secondary">{t("dashboard.activeAgentsNone")}</Text>
+        ) : (
+          <div className="active-agents-chips">
+            {agents.slice(0, 8).map((a) => (
+              <Tag key={a.uid} variant={a.stale ? "warn" : "accent"}>{a.machine} · {a.project}</Tag>
+            ))}
+          </div>
+        )}
+        {onOpen && <Text type="supporting" color="secondary">{t("dashboard.activeAgentsView")}</Text>}
+      </VStack>
+    </Panel>
+  );
+}
+
+export function Dashboard({ onOpenAgents }: { onOpenAgents?: () => void }) {
   const { t } = useI18n();
   const [stats, setStats] = useState<RagStats | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [sessions, setSessions] = useState<SessionLog[] | null>(null);
   const [growth, setGrowth] = useState<GrowthStats | null>(null);
   const [usage, setUsage] = useState<UsageStats | null>(null);
+  const [agents, setAgents] = useState<AgentPresence[] | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -294,6 +322,11 @@ export function Dashboard() {
       setUsage(await api<UsageStats>("GET", "/api/stats/usage"));
     } catch {
       setUsage(null);
+    }
+    try {
+      setAgents(await fetchActiveAgents());
+    } catch {
+      setAgents(null);
     }
   }, []);
 
@@ -372,6 +405,8 @@ export function Dashboard() {
               </VStack>
             </Panel>
           </Grid>
+
+          <ActiveAgentsCard agents={agents} onOpen={onOpenAgents} />
 
           <Grid minWidth={300} gap={4}>
             <Panel>

@@ -12,7 +12,9 @@ import { DataTable, type Column } from "../components/ui/DataTable";
 import { useToast } from "../components/ui/useToast";
 import {
   api,
+  fetchActiveAgents,
   fetchGraphNeighbors,
+  type AgentPresence,
   type GraphPayload,
   type Memory,
   type ProjectMap,
@@ -27,6 +29,18 @@ const STATUS_OPTIONS = ["active", "paused", "done", "idea"];
 
 function statusVariant(s: string | undefined): "success" | "warning" | "neutral" | "error" {
   return s === "active" ? "success" : s === "paused" ? "warning" : s === "done" ? "neutral" : "neutral";
+}
+
+/** Proje kartlarında/detayında "N agent çalışıyor" rozeti — 1-bit estetiğe uygun, emoji yok. */
+function ProjectAgentsBadge({ agents }: { agents: AgentPresence[] }) {
+  const { t } = useI18n();
+  if (agents.length === 0) return null;
+  const fresh = agents.some((a) => !a.stale);
+  return (
+    <span className="project-agents-badge">
+      <StatusDot variant={fresh ? "success" : "warning"} label={`${agents.length} ${t("projects.agentsRunning")}`} pulsing={fresh} />
+    </span>
+  );
 }
 
 /** Kod haritası alanları (mimari, modüller, komutlar vb.) — backend'de opsiyonel, doluysa gösterilir. */
@@ -201,12 +215,21 @@ export function Projects() {
   const [newName, setNewName] = useState("");
   const [workspace, setWorkspace] = useState<ProjectWorkspaceData | null>(null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [agentsByProject, setAgentsByProject] = useState<Record<string, AgentPresence[]>>({});
 
   const load = async () => {
     try {
       setProjects(await api<ProjectMap[]>("GET", "/api/projects"));
     } catch (err) {
       setError((err as Error).message);
+    }
+    try {
+      const active = await fetchActiveAgents();
+      const grouped: Record<string, AgentPresence[]> = {};
+      for (const a of active) (grouped[a.project] ??= []).push(a);
+      setAgentsByProject(grouped);
+    } catch {
+      setAgentsByProject({});
     }
   };
   useEffect(() => {
@@ -319,6 +342,7 @@ export function Projects() {
             <Button label={t("common.back")} variant="secondary" onClick={() => setSelected(null)} />
             <Heading level={3}>{selected.name}</Heading>
             <StatusDot variant={statusVariant(selected.status)} label={selected.status ?? t("projects.unknownStatus")} />
+            <ProjectAgentsBadge agents={agentsByProject[selected.name] ?? []} />
           </HStack>
           <Button label={t("common.delete")} variant="destructive" onClick={() => setDeleteTarget(selected)} />
         </HStack>
@@ -401,6 +425,7 @@ export function Projects() {
                 </HStack>
                 <Text type="supporting" color="secondary">{p.summary ?? ""}</Text>
                 {p.current_focus && <Text type="supporting">Odak: {p.current_focus}</Text>}
+                <ProjectAgentsBadge agents={agentsByProject[p.name] ?? []} />
                 <HStack gap={2}>
                   <Button label={t("common.open")} variant="secondary" size="sm" onClick={() => open(p)} />
                   <Button label={t("common.delete")} variant="ghost" size="sm" onClick={() => setDeleteTarget(p)} />
