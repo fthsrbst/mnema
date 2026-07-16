@@ -6,6 +6,7 @@ const supabasePublicKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
 export const cloudConfigured = Boolean(supabaseUrl && supabasePublicKey);
+export const googleAuthEnabled = import.meta.env.VITE_CLOUD_GOOGLE_AUTH_ENABLED?.trim() === "true";
 
 export const supabase = cloudConfigured
   ? createClient(supabaseUrl!, supabasePublicKey!, {
@@ -29,7 +30,7 @@ export async function cloudApi<T>(
   headers.set("Authorization", `Bearer ${data.session.access_token}`);
   headers.set("Content-Type", "application/json");
   if (organizationId) headers.set("X-Mnema-Organization-Id", organizationId);
-  const response = await fetch(`/cloud/api${route}`, { ...init, headers });
+  const response = await fetch(`/cloud/api${route}`, { ...init, headers, cache: init.cache ?? "no-store" });
   const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) throw new Error(typeof json.error === "string" ? json.error : `Cloud request failed (${response.status})`);
   return json as T;

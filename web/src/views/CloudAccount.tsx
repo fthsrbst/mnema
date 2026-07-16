@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { cloudApi, cloudConfigured, downloadCloudExport, supabase } from "../cloud";
+import { cloudApi, cloudConfigured, downloadCloudExport, googleAuthEnabled, supabase } from "../cloud";
+import { CloudAuthExperience, PixelCelebration } from "../components/CloudAuthExperience";
 import { Button } from "../components/ui/Button";
 import { Select, TextArea, TextField } from "../components/ui/Field";
 import { Panel } from "../components/ui/Panel";
@@ -51,6 +52,8 @@ interface CloudEntitlement {
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   billingEnabled: boolean;
+  testBillingEnabled: boolean;
+  testSubscription: boolean;
   entitlements: { projects: number; members: number; storageMb: number };
 }
 
@@ -108,6 +111,8 @@ function friendlyCloudError(error: unknown, tr: boolean): string {
   }
   const messages: Record<string, [string, string]> = {
     billing_not_configured: ["Paddle sandbox henüz açık değil. Ücretsiz Cloud önizlemesini kullanabilirsin; ücretli ödeme testi açıldığında bu buton doğrudan checkout'a gidecek.", "Paddle sandbox is not open yet. You can use the free Cloud preview; this button will open checkout when paid testing is enabled."],
+    test_subscription_disabled: ["Staging abonelik geçişi bu sunucuda kapalı.", "Staging subscription activation is disabled on this server."],
+    real_subscription_exists: ["Gerçek bir abonelik test planıyla değiştirilemez.", "A real subscription cannot be replaced by a test plan."],
     mfa_required: ["Abonelik ve hassas işlemler için önce TOTP ile iki aşamalı doğrulamayı tamamla.", "Complete TOTP two-factor authentication before billing or sensitive actions."],
     email_not_verified: ["Devam etmek için e-posta adresini doğrula.", "Verify your email address to continue."],
     organization_create_failed: ["Çalışma alanı oluşturulamadı. Slug başka bir hesapta kullanılıyor olabilir.", "The workspace could not be created. Its slug may already be in use."],
@@ -137,6 +142,7 @@ export function CloudAccount() {
   const [entitlement, setEntitlement] = useState<CloudEntitlement | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PaidPlan | null>(queryPlan);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>(queryInterval);
+  const [celebration, setCelebration] = useState<{ plan: PaidPlan; testMode: boolean } | null>(null);
   const [personalInvitations, setPersonalInvitations] = useState<PersonalInvitation[]>([]);
   const [organizationInvitations, setOrganizationInvitations] = useState<OrganizationInvitation[]>([]);
   const [organizationMembers, setOrganizationMembers] = useState<OrganizationMember[]>([]);
@@ -168,6 +174,18 @@ export function CloudAccount() {
     }
     const payload = await cloudApi<{ projects: CloudProject[] }>("/knowledge/projects", {}, organizationId);
     setProjects(payload.projects);
+  };
+
+  const refreshEntitlement = async (organizationId: string, checkPending = false) => {
+    const payload = await cloudApi<CloudEntitlement>("/billing/subscription", {}, organizationId);
+    setEntitlement(payload);
+    if (checkPending && payload.plan !== "free") {
+      const pending = sessionStorage.getItem("mnema_pending_subscription");
+      if (pending === `${organizationId}:${payload.plan}`) {
+        sessionStorage.removeItem("mnema_pending_subscription");
+        setCelebration({ plan: payload.plan, testMode: payload.testSubscription });
+      }
+    }
   };
 
   const refreshPersonalInvitations = async () => {
@@ -203,6 +221,7 @@ export function CloudAccount() {
     if (!session) {
       setAccount(null);
       setPersonalInvitations([]);
+      setCelebration(null);
       return;
     }
     void Promise.all([refreshAccount(), refreshPersonalInvitations()]).catch((error) => setMessage((error as Error).message));
@@ -224,7 +243,7 @@ export function CloudAccount() {
       ["owner", "admin"].includes(selectedMembership?.role ?? "viewer");
     void Promise.all([
       refreshProjects(activeOrganization),
-      cloudApi<CloudEntitlement>("/billing/subscription", {}, activeOrganization).then(setEntitlement),
+      refreshEntitlement(activeOrganization, true),
       mayManageTeam ? refreshOrganizationInvitations(activeOrganization) : Promise.resolve(setOrganizationInvitations([])),
       mayManageTeam ? refreshOrganizationMembers(activeOrganization) : Promise.resolve(setOrganizationMembers([])),
     ]).catch((error) => setMessage((error as Error).message));
@@ -259,56 +278,56 @@ export function CloudAccount() {
 
   if (!session) {
     return (
-      <VStack gap={4} style={{ maxWidth: 520 }}>
-        <VStack gap={1}>
-          <Heading level={2}>Mnema Cloud</Heading>
-          <Text type="supporting" color="secondary">
-            {tr ? "Hesabına gir veya e-posta doğrulamalı yeni bir hesap aç." : "Sign in or create an email-verified account."}
-          </Text>
-        </VStack>
-        {selectedPlan && (
-          <Panel raised>
-            <Text type="supporting" color="secondary">
-              {tr
-                ? `${selectedPlan.toUpperCase()} planını seçtin. Hesabını doğrulayıp bir çalışma alanı oluşturduktan sonra aynı seçimle devam edeceksin.`
-                : `${selectedPlan.toUpperCase()} is selected. After verifying your account and creating a workspace, you will continue with the same choice.`}
-            </Text>
-          </Panel>
-        )}
-        <Panel raised>
-          <VStack gap={3}>
-            <TextField label="E-mail" type="email" value={email} onChange={setEmail} />
-            <TextField label={tr ? "Parola (en az 12 karakter)" : "Password (12+ characters)"} type="password" value={password} onChange={setPassword} />
-            <HStack gap={2} wrap="wrap">
-              <Button
-                label={tr ? "Giriş yap" : "Sign in"}
-                variant="primary"
-                disabled={busy || !email || password.length < 12}
-                onClick={() => run(async () => {
-                  const { error } = await cloudClient.auth.signInWithPassword({ email, password });
-                  if (error) throw error;
-                })}
-              />
-              <Button
-                label={tr ? "Hesap oluştur" : "Create account"}
-                disabled={busy || !email || password.length < 12}
-                onClick={() => run(async () => {
-                  const { error } = await cloudClient.auth.signUp({ email, password });
-                  if (error) throw error;
-                  setMessage(tr ? "Doğrulama e-postası gönderildi." : "Verification email sent.");
-                })}
-              />
-            </HStack>
-          </VStack>
-        </Panel>
-        {message && <Text type="supporting" color="secondary">{message}</Text>}
-      </VStack>
+      <CloudAuthExperience
+        tr={tr}
+        email={email}
+        password={password}
+        busy={busy}
+        message={message}
+        selectedPlan={selectedPlan}
+        billingInterval={billingInterval}
+        googleEnabled={googleAuthEnabled}
+        onEmailChange={setEmail}
+        onPasswordChange={setPassword}
+        onSignIn={() => void run(async () => {
+          const { error } = await cloudClient.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+        })}
+        onSignUp={() => void run(async () => {
+          const { error } = await cloudClient.auth.signUp({ email, password });
+          if (error) throw error;
+          setMessage(tr ? "Doğrulama e-postası gönderildi." : "Verification email sent.");
+        })}
+        onGoogle={() => {
+          if (!googleAuthEnabled) {
+            setMessage(tr
+              ? "Google OAuth arayüzü hazır. Google Cloud uygulaması ve Supabase provider ayarı eklendiğinde bu buton doğrudan çalışacak; şimdilik e-posta ile devam et."
+              : "The Google OAuth interface is ready. This button will go live after the Google Cloud app and Supabase provider are configured; use email for now.");
+            return;
+          }
+          void run(async () => {
+            const { error } = await cloudClient.auth.signInWithOAuth({
+              provider: "google",
+              options: { redirectTo: window.location.href },
+            });
+            if (error) throw error;
+          });
+        }}
+      />
     );
   }
 
   const active = account?.organizations.find((item) => item.organization_id === activeOrganization);
   return (
     <VStack gap={4}>
+      {celebration && (
+        <PixelCelebration
+          plan={celebration.plan}
+          tr={tr}
+          testMode={celebration.testMode}
+          onClose={() => setCelebration(null)}
+        />
+      )}
       <HStack hAlign="between" vAlign="center" wrap="wrap">
         <VStack gap={1}>
           <Heading level={2}>Mnema Cloud</Heading>
@@ -325,6 +344,29 @@ export function CloudAccount() {
           })} />
         </HStack>
       </HStack>
+
+      <section className="cloud-workspace-intro">
+        <div className="cloud-workspace-intro__lead">
+          <span>MNEMA CLOUD // MANAGED CONTEXT FABRIC</span>
+          <h2>{tr ? "Agent bağlamını ekipçe taşı, ara ve yönet." : "Move, search, and govern agent context as a team."}</h2>
+          <p>{tr
+            ? "Cloud; Community bilgisini bir hesaba, izole workspace'e ve ortak API'ye bağlar. Sunucu işletmeden projelerinin haritasını, memory'lerini ve dokümanlarını cihazlar arasında erişilebilir tutarsın."
+            : "Cloud connects Community knowledge to an account, an isolated workspace, and a shared API. Keep project maps, memories, and documents available across devices without operating the server."}</p>
+        </div>
+        <div className="cloud-workspace-intro__route">
+          <article><b>01</b><span>{tr ? "WORKSPACE" : "WORKSPACE"}</span><p>{tr ? "Her ekip için RLS ile izole veri sınırı." : "An RLS-isolated data boundary for each team."}</p></article>
+          <article><b>02</b><span>{tr ? "MAP + MEMORY" : "MAP + MEMORY"}</span><p>{tr ? "Agent API ile harita, karar, memory ve doküman yaz." : "Write maps, decisions, memories, and docs through the agent API."}</p></article>
+          <article><b>03</b><span>{tr ? "TENANT RECALL" : "TENANT RECALL"}</span><p>{tr ? "Yalnızca seçili workspace içinde güvenli arama yap." : "Search safely inside the selected workspace only."}</p></article>
+          <article><b>04</b><span>{tr ? "GOVERN" : "GOVERN"}</span><p>{tr ? "Rol, davet, MFA, kota, export ve yaşam döngüsü." : "Roles, invites, MFA, quotas, export, and lifecycle."}</p></article>
+        </div>
+        <div className="cloud-workspace-intro__difference">
+          <strong>{tr ? "Kısa fark" : "The short version"}</strong>
+          <span>{tr
+            ? "Kendi serverındaki Mnema: donanım, TLS, yedek, update ve erişim sende. Mnema Cloud: hesap/tenant/ekip katmanı ve operasyon ürünün parçası."
+            : "Mnema on your server: hardware, TLS, backups, updates, and access are yours. Mnema Cloud: account, tenant, team, and operations are part of the product."}</span>
+          <em>{entitlement ? `${entitlement.plan.toUpperCase()} // ${entitlement.entitlements.projects} PROJECTS // ${entitlement.entitlements.storageMb} MB` : "SYNCING ENTITLEMENTS..."}</em>
+        </div>
+      </section>
 
       {personalInvitations.length > 0 && (
         <Panel raised>
@@ -668,7 +710,9 @@ export function CloudAccount() {
               <Text type="supporting" color="secondary">
                 {entitlement?.billingEnabled
                   ? (tr ? "Plan seçimi güvenli Paddle checkout'ını açar." : "Choosing a plan opens secure Paddle checkout.")
-                  : (tr ? "Ücretsiz önizleme açık. Ücretli checkout, Paddle sandbox anahtarları eklenene kadar kapalı." : "The free preview is open. Paid checkout stays offline until Paddle sandbox credentials are added.")}
+                  : entitlement?.testBillingEnabled
+                    ? (tr ? "Staging pass açık: ödeme almadan gerçek plan kotalarını uygulayıp abonelik akışını test edebilirsin." : "Staging pass is open: apply real plan quotas and test subscription UX without charging a payment.")
+                    : (tr ? "Ücretsiz önizleme açık. Ücretli checkout, Paddle sandbox anahtarları eklenene kadar kapalı." : "The free preview is open. Paid checkout stays offline until Paddle sandbox credentials are added.")}
               </Text>
             </VStack>
           </Grid>
@@ -681,14 +725,32 @@ export function CloudAccount() {
                   <Text type="supporting" color="secondary">{plan.projects} projects · {plan.storage}</Text>
                   <Button
                     label={tr
-                      ? `${plan.id.toUpperCase()} ${billingInterval === "annual" ? "yıllık" : "aylık"} aboneliğine geç`
-                      : `Subscribe to ${plan.id.toUpperCase()} ${billingInterval}`}
+                      ? entitlement?.testBillingEnabled && !entitlement.billingEnabled
+                        ? `${plan.id.toUpperCase()} staging pass'i etkinleştir`
+                        : `${plan.id.toUpperCase()} ${billingInterval === "annual" ? "yıllık" : "aylık"} aboneliğine geç`
+                      : entitlement?.testBillingEnabled && !entitlement.billingEnabled
+                        ? `Activate ${plan.id.toUpperCase()} staging pass`
+                        : `Subscribe to ${plan.id.toUpperCase()} ${billingInterval}`}
                     variant={plan.id === selectedPlan || (!selectedPlan && plan.id === "starter") ? "primary" : "secondary"}
                     disabled={busy || !activeOrganization || !["owner", "admin"].includes(active?.role ?? "viewer")}
                     onClick={() => run(async () => {
                       setSelectedPlan(plan.id);
+                      if (entitlement?.testBillingEnabled && !entitlement.billingEnabled) {
+                        const next = await cloudApi<CloudEntitlement>(
+                          "/billing/test-subscription",
+                          { method: "POST", body: JSON.stringify({ plan: plan.id, interval: billingInterval }) },
+                          activeOrganization
+                        );
+                        setEntitlement(next);
+                        setCelebration({ plan: plan.id, testMode: true });
+                        setMessage(tr
+                          ? `${plan.id.toUpperCase()} staging pass aktif; ödeme alınmadı.`
+                          : `${plan.id.toUpperCase()} staging pass is active; no payment was charged.`);
+                        return;
+                      }
                       if (!entitlement?.billingEnabled) throw new Error("billing_not_configured");
                       if (account?.user.aal !== "aal2") throw new Error("mfa_required");
+                      sessionStorage.setItem("mnema_pending_subscription", `${activeOrganization}:${plan.id}`);
                       const result = await cloudApi<{ checkoutUrl: string }>(
                         "/billing/checkout",
                         { method: "POST", body: JSON.stringify({ plan: plan.id, interval: billingInterval }) },
@@ -701,7 +763,25 @@ export function CloudAccount() {
               </Panel>
             ))}
           </Grid>
-          {entitlement && entitlement.plan !== "free" && (
+          {entitlement?.testSubscription && (
+            <HStack gap={2} wrap="wrap">
+              <Tag>STAGING PASS · NO CHARGE</Tag>
+              <Button
+                label={tr ? "Test planını Free'ye sıfırla" : "Reset test plan to Free"}
+                disabled={busy || !activeOrganization || !["owner", "admin"].includes(active?.role ?? "viewer")}
+                onClick={() => run(async () => {
+                  const next = await cloudApi<CloudEntitlement>(
+                    "/billing/test-subscription",
+                    { method: "DELETE" },
+                    activeOrganization
+                  );
+                  setEntitlement(next);
+                  setMessage(tr ? "Staging pass kapatıldı; çalışma alanı Free plana döndü." : "Staging pass closed; the workspace is back on Free.");
+                })}
+              />
+            </HStack>
+          )}
+          {entitlement && entitlement.plan !== "free" && !entitlement.testSubscription && (
             <Button
               label={tr ? "Abonelik, fatura ve ödeme yöntemini yönet" : "Manage subscription, invoices, and payment method"}
               disabled={busy || !activeOrganization || account?.user.aal !== "aal2" || !["owner", "admin"].includes(active?.role ?? "viewer")}

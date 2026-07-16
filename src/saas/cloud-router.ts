@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { once } from "node:events";
 import { z } from "zod";
-import { PLAN_ENTITLEMENTS, subscriptionHasAccess } from "./billing.js";
+import { PLAN_ENTITLEMENTS, subscriptionHasAccess, type SubscriptionSnapshot } from "./billing.js";
 import type { CloudRuntimeConfig } from "./cloud-config.js";
 import { createSupabasePaddleStore, deleteSupabaseUser, sendSupabaseUserInvite } from "./cloud-store.js";
 import { createPaddleCheckout, createPaddlePortalSession, processPaddleWebhook } from "./paddle.js";
@@ -39,6 +39,25 @@ const membershipSchema = z.object({
     .nullable()
     .optional(),
 });
+
+function isTestSubscription(subscription: SubscriptionSnapshot | null): boolean {
+  return Boolean(subscription?.providerSubscriptionId.startsWith("test:"));
+}
+
+function subscriptionPayload(config: CloudRuntimeConfig, subscription: SubscriptionSnapshot | null) {
+  const hasAccess = Boolean(subscription && subscriptionHasAccess(subscription.status));
+  const plan = hasAccess && subscription ? subscription.plan : "free";
+  return {
+    plan,
+    status: subscription?.status ?? "none",
+    currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
+    cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
+    billingEnabled: Boolean(config.paddle),
+    testBillingEnabled: config.testSubscriptionsEnabled,
+    testSubscription: hasAccess && isTestSubscription(subscription),
+    entitlements: PLAN_ENTITLEMENTS[plan],
+  };
+}
 type CloudMembership = z.infer<typeof membershipSchema>;
 
 const projectSchema = z.object({
@@ -462,7 +481,7 @@ export function buildCloudAccountRouter(
       if (!paddle) throw new CloudHttpError(503, "billing_not_configured");
       const input = z.object({ plan: z.enum(["starter", "pro", "team"]), interval: z.enum(["monthly", "annual"]) }).parse(req.body);
       const existingSubscription = await billingStore.getSubscription(organizationId);
-      if (existingSubscription && existingSubscription.status !== "canceled") {
+      if (existingSubscription && existingSubscription.status !== "canceled" && !isTestSubscription(existingSubscription)) {
         throw new CloudHttpError(409, "subscription_already_exists");
       }
       const checkout = await createPaddleCheckout(
@@ -485,15 +504,64 @@ export function buildCloudAccountRouter(
       const user = await verifyCloudUser(req, config, request);
       const { organizationId } = await requireMembership(req, config, user, request);
       const subscription = await billingStore.getSubscription(organizationId);
-      const plan = subscription && subscriptionHasAccess(subscription.status) ? subscription.plan : "free";
-      res.json({
-        plan,
-        status: subscription?.status ?? "none",
-        currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
-        cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
-        billingEnabled: Boolean(config.paddle),
-        entitlements: PLAN_ENTITLEMENTS[plan],
-      });
+      res.json(subscriptionPayload(config, subscription));
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.post("/billing/test-subscription", async (req, res) => {
+    try {
+      if (!config.testSubscriptionsEnabled) throw new CloudHttpError(404, "test_subscription_disabled");
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId, membership } = await requireMembership(req, config, user, request);
+      if (!["owner", "admin"].includes(membership.role)) throw new CloudHttpError(403, "forbidden");
+      const input = z.object({ plan: z.enum(["starter", "pro", "team"]), interval: z.enum(["monthly", "annual"]) }).parse(req.body);
+      const existing = await billingStore.getSubscription(organizationId);
+      if (existing && existing.status !== "canceled" && !isTestSubscription(existing)) {
+        throw new CloudHttpError(409, "real_subscription_exists");
+      }
+      const now = new Date();
+      const periodEnd = new Date(now);
+      if (input.interval === "annual") periodEnd.setUTCFullYear(periodEnd.getUTCFullYear() + 1);
+      else periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
+      const snapshot: SubscriptionSnapshot = {
+        provider: "paddle",
+        providerSubscriptionId: `test:${organizationId}`,
+        plan: input.plan,
+        status: "active",
+        currentPeriodEnd: periodEnd.toISOString(),
+        cancelAtPeriodEnd: false,
+        lastEventId: `test-activate:${organizationId}:${now.getTime()}`,
+        lastEventAt: now.toISOString(),
+      };
+      if (!await billingStore.saveSubscription(organizationId, snapshot)) {
+        throw new CloudHttpError(409, "test_subscription_not_applied");
+      }
+      res.status(201).json(subscriptionPayload(config, snapshot));
+    } catch (error) {
+      sendCloudError(res, error);
+    }
+  });
+  router.delete("/billing/test-subscription", async (req, res) => {
+    try {
+      if (!config.testSubscriptionsEnabled) throw new CloudHttpError(404, "test_subscription_disabled");
+      const user = await verifyCloudUser(req, config, request);
+      const { organizationId, membership } = await requireMembership(req, config, user, request);
+      if (!["owner", "admin"].includes(membership.role)) throw new CloudHttpError(403, "forbidden");
+      const existing = await billingStore.getSubscription(organizationId);
+      if (!existing || !isTestSubscription(existing)) throw new CloudHttpError(404, "test_subscription_not_found");
+      const now = new Date();
+      const canceled: SubscriptionSnapshot = {
+        ...existing,
+        status: "canceled",
+        cancelAtPeriodEnd: false,
+        lastEventId: `test-cancel:${organizationId}:${now.getTime()}`,
+        lastEventAt: now.toISOString(),
+      };
+      if (!await billingStore.saveSubscription(organizationId, canceled)) {
+        throw new CloudHttpError(409, "test_subscription_not_applied");
+      }
+      res.json(subscriptionPayload(config, canceled));
     } catch (error) {
       sendCloudError(res, error);
     }
@@ -511,6 +579,7 @@ export function buildCloudAccountRouter(
         billingStore.getSubscription(organizationId),
       ]);
       if (!customerId || !subscription) throw new CloudHttpError(404, "subscription_not_found");
+      if (isTestSubscription(subscription)) throw new CloudHttpError(409, "test_subscription_has_no_portal");
       const portal = await createPaddlePortalSession(
         { apiKey: paddle.apiKey, environment: paddle.environment, fetch: request },
         { customerId, subscriptionId: subscription.providerSubscriptionId }
