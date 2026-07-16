@@ -261,6 +261,15 @@ check(
 );
 
 check("context intent: güncel durum", resolveContextIntent("Bu projenin güncel durumu nedir?") === "current_status");
+check(
+  "context intent: ajan iletişim tercihi",
+  resolveContextIntent("How should an AI agent communicate with Fatih?") === "preference" &&
+    resolveContextIntent("Yapay zeka Fatih ile nasıl konuşmalı?") === "preference"
+);
+check(
+  "context intent: teknik geçmiş tercihe dönüşmez",
+  resolveContextIntent("Bu hatayı nasıl çözdük?") === "technical_history"
+);
 const statusContext = await contextGet({
   query: "Bu projenin güncel durumu nedir?",
   project: "ai-hub",

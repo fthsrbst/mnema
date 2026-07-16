@@ -144,7 +144,7 @@ const STATUS_RE = /\b(current|status|latest|progress|now|today|where\s+(?:did\s+
 const DECISION_RE = /\b(why|decision|rationale|trade-?off|neden|karar|gerekçe|tercih\s+edildi)\b/iu;
 const HISTORY_RE = /\b(how|fix|fixed|error|incident|root\s+cause|nasıl|hata|çözüm|kök\s+neden|çözdük)\b/iu;
 const DOC_RE = /\b(document|documentation|docs?|readme|spec|runbook|doküman|belge|şartname|kılavuz)\b/iu;
-const PREFERENCE_RE = /\b(preference|prefer|style|convention|tercih|alışkanlık|konvansiyon)\b/iu;
+const PREFERENCE_RE = /(?<![\p{L}\p{N}_])(preference|prefer|style|convention|tercih|alışkanlık|konvansiyon|how\s+should\s+(?:an?\s+)?(?:ai\s+)?agent\s+(?:communicate|respond|behave|work|code)|nasıl\s+(?:konuşmalı|iletişim\s+kurmalı|cevap\s+vermeli|davranmalı|çalışmalı|kod\s+yazmalı))(?![\p{L}\p{N}_])/iu;
 const CONTEXT_INTENTS = new Set<ContextIntent>([
   "auto",
   "current_status",
@@ -159,9 +159,9 @@ export function resolveContextIntent(query: string, requested: ContextIntent = "
   if (requested !== "auto") return requested;
   if (STATUS_RE.test(query)) return "current_status";
   if (DECISION_RE.test(query)) return "decision";
+  if (PREFERENCE_RE.test(query)) return "preference";
   if (HISTORY_RE.test(query)) return "technical_history";
   if (DOC_RE.test(query)) return "documentation";
-  if (PREFERENCE_RE.test(query)) return "preference";
   return "general";
 }
 
