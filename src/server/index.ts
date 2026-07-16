@@ -241,7 +241,10 @@ app.listen(config.port, config.host, () => {
   }
 
   if (config.primaryUrls.length > 0) {
-    console.log(`[hub] eşitleme: ${config.primaryUrls.join(", ")} ile her ${config.syncIntervalSec}sn (+ yazımda anında push)`);
+    console.log(
+      `[hub] eşitleme: ${config.primaryUrls.join(", ")} ile her ${config.syncIntervalSec}sn ` +
+      `(+ yazımdan ${config.syncDebounceMs}ms sonra push)`
+    );
 
     // Eşzamanlı sync çalışmasın: devam eden varsa yeni istek kuyruğa alınır (tek pending yeter,
     // üst üste binen istekler tek turda toplanır).
@@ -276,14 +279,14 @@ app.listen(config.port, config.host, () => {
     void runSync();
     setInterval(runSync, config.syncIntervalSec * 1000);
 
-    // Push-on-write: her yazımdan 5sn sonra (art arda yazımlar tek sync'e toplanır).
+    // Push-on-write: kısa debounce, art arda yazımları tek sync'e toplar.
     let debounceTimer: NodeJS.Timeout | null = null;
     onWrite(() => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         debounceTimer = null;
         void runSync();
-      }, 5000);
+      }, config.syncDebounceMs);
     });
   }
 

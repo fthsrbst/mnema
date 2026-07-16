@@ -118,6 +118,9 @@ export const config = {
     .filter((u) => u.length > 0),
   primaryToken: process.env.HUB_PRIMARY_TOKEN ?? "",
   syncIntervalSec: envNumber("HUB_SYNC_INTERVAL", 60, { min: 1, max: 86_400, integer: true }),
+  // Local writes remain authoritative immediately; this controls how quickly
+  // they are mirrored to the primary after a burst of writes.
+  syncDebounceMs: envNumber("HUB_SYNC_DEBOUNCE_MS", 250, { min: 0, max: 60_000, integer: true }),
   // Recall skorlamasında güncellik decay yarı ömrü (gün). Büyütmek eski kayıtları daha uzun canlı tutar.
   decayHalflifeDays: envNumber("HUB_DECAY_HALFLIFE_DAYS", 90, { min: 1, max: 36_500 }),
   // Decay taban değeri: skor çarpanı asla bunun altına inmez. Eski bilgi (1 yıl önceki
