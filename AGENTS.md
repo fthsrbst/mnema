@@ -1,7 +1,7 @@
-# mnema
+# mnema — Agent Talimatları
 
-> Bu dosya [AGENTS.md](AGENTS.md) ile eş içeriklidir (Codex/opencode AGENTS.md okur,
-> Claude Code CLAUDE.md okur). Birini güncellerken diğerini de güncelle.
+> Bu dosya [CLAUDE.md](CLAUDE.md) ile eş içeriklidir (Codex/opencode gibi AGENTS.md okuyan
+> agentlar için). Birini güncellerken diğerini de güncelle.
 
 Tüm AI agentların ortak hafızası: MCP + REST üzerinden hafıza, RAG, proje mapleri ve agent
 koordinasyonu. Raspberry Pi 5'te systemd servisi olarak çalışır; istemciler Tailscale/LAN
