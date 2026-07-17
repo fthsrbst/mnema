@@ -307,6 +307,11 @@ export function CloudAccount() {
   }
 
   const active = account?.organizations.find((item) => item.organization_id === activeOrganization);
+  // Free/Starter (1 koltuk) hiç davet gönderemez (member_quota_exceeded) — her zaman
+  // başarısız olacak formu göstermek yerine paneli tek satıra indiriyoruz. Plan düşürülmüş
+  // ama hâlâ çok üyeli/davetli org'lar yönetim için listeyi görmeye devam eder.
+  const teamPanelUnlocked =
+    (entitlement?.entitlements.members ?? 1) > 1 || organizationMembers.length > 1 || organizationInvitations.length > 0;
   return (
     <VStack gap={4}>
       <HStack hAlign="between" vAlign="center" wrap="wrap">
@@ -438,7 +443,14 @@ export function CloudAccount() {
             </VStack>
             {active && <Tag>{active.role}</Tag>}
           </HStack>
-          {organizationMembers.map((member) => {
+          {!teamPanelUnlocked && (
+            <Text type="supporting" color="secondary">
+              {tr
+                ? "Ekip üyeleri Pro ve Team planlarında kullanılabilir. Şu anki planında tek koltuk var."
+                : "Team members are available on the Pro and Team plans. Your current plan has a single seat."}
+            </Text>
+          )}
+          {teamPanelUnlocked && organizationMembers.map((member) => {
             const currentUser = member.member_user_id === account?.user.id;
             const mayRemove = !currentUser && (
               active?.role === "owner" ||
@@ -484,7 +496,7 @@ export function CloudAccount() {
               </HStack>
             );
           })}
-          {organizationInvitations.map((invitation) => (
+          {teamPanelUnlocked && organizationInvitations.map((invitation) => (
             <HStack key={invitation.invitation_id} hAlign="between" vAlign="center" wrap="wrap">
               <VStack gap={0}>
                 <strong>{invitation.email}</strong>
@@ -502,6 +514,7 @@ export function CloudAccount() {
               )}
             </HStack>
           ))}
+          {teamPanelUnlocked && (<>
           <Grid minWidth={220} gap={2}>
             <TextField label={tr ? "Davet e-postası" : "Invite email"} type="email" value={inviteEmail} onChange={setInviteEmail} />
             <Select
@@ -531,6 +544,7 @@ export function CloudAccount() {
               await refreshOrganizationInvitations(activeOrganization);
             })}
           />
+          </>)}
         </VStack>
       </Panel>
 
@@ -680,11 +694,13 @@ export function CloudAccount() {
                   <Heading level={3}>{plan.price}<span style={{ fontSize: 12 }}>/mo</span></Heading>
                   <Text type="supporting" color="secondary">{plan.projects} projects · {plan.storage}</Text>
                   <Button
-                    label={tr
-                      ? `${plan.id.toUpperCase()} ${billingInterval === "annual" ? "yıllık" : "aylık"} aboneliğine geç`
-                      : `Subscribe to ${plan.id.toUpperCase()} ${billingInterval}`}
+                    label={entitlement?.billingEnabled
+                      ? (tr
+                        ? `${plan.id.toUpperCase()} ${billingInterval === "annual" ? "yıllık" : "aylık"} aboneliğine geç`
+                        : `Subscribe to ${plan.id.toUpperCase()} ${billingInterval}`)
+                      : (tr ? `${plan.id.toUpperCase()} — yakında` : `${plan.id.toUpperCase()} — coming soon`)}
                     variant={plan.id === selectedPlan || (!selectedPlan && plan.id === "starter") ? "primary" : "secondary"}
-                    disabled={busy || !activeOrganization || !["owner", "admin"].includes(active?.role ?? "viewer")}
+                    disabled={busy || !entitlement?.billingEnabled || !activeOrganization || !["owner", "admin"].includes(active?.role ?? "viewer")}
                     onClick={() => run(async () => {
                       setSelectedPlan(plan.id);
                       if (!entitlement?.billingEnabled) throw new Error("billing_not_configured");
