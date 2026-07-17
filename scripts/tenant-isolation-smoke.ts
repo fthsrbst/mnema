@@ -28,8 +28,10 @@ await db.exec(`
     select nullif(auth.jwt() ->> 'sub', '')::uuid
   $$;
 `);
-const migration = fs.readFileSync(new URL("../cloud/migrations/0001_tenancy.sql", import.meta.url), "utf8");
-await db.exec(migration);
+const migrationsDir = new URL("../cloud/migrations/", import.meta.url);
+for (const file of fs.readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort()) {
+  await db.exec(fs.readFileSync(new URL(file, migrationsDir), "utf8"));
+}
 
 const userA = "10000000-0000-4000-8000-000000000001";
 const userB = "10000000-0000-4000-8000-000000000002";
@@ -99,6 +101,34 @@ try {
   directProjectInsertDenied = true;
 }
 check("authenticated clients cannot bypass project quota with direct inserts", directProjectInsertDenied);
+
+// 0002 kota çiti: kota-muhasebesiz tablolara doğrudan yazma grant seviyesinde kapalı olmalı
+// (üye kendi org'una bile PostgREST'ten sınırsız summary yazıp depolama kotasını atlatamamalı).
+let directSessionLogInsertDenied = false;
+try {
+  await db.query("insert into public.session_logs(organization_id, summary) values ($1, repeat('x', 1000000))", [orgA]);
+} catch {
+  directSessionLogInsertDenied = true;
+}
+check("authenticated clients cannot write session_logs directly (storage-quota fencing)", directSessionLogInsertDenied);
+
+let directRelationInsertDenied = false;
+try {
+  await db.query(
+    "insert into public.memory_relations(organization_id, from_memory_id, to_memory_id, relation_type) values ($1, gen_random_uuid(), gen_random_uuid(), 'related')",
+    [orgA]
+  );
+} catch {
+  directRelationInsertDenied = true;
+}
+check("authenticated clients cannot write memory_relations directly (storage-quota fencing)", directRelationInsertDenied);
+
+// RLS'te yetkisiz UPDATE/DELETE hata fırlatmaz, sessizce 0 satır etkiler — bu yüzden
+// cross-tenant hedefli yazmalar "hata bekle" değil "0 satır etkilendi" ile doğrulanır.
+const crossOrgUpdate = await db.query("update public.memories set title = 'pwned' where organization_id = $1", [orgB]);
+check("cross-tenant targeted UPDATE affects zero rows", (crossOrgUpdate.affectedRows ?? 0) === 0);
+const crossOrgDelete = await db.query("delete from public.memories where organization_id = $1", [orgB]);
+check("cross-tenant targeted DELETE affects zero rows", (crossOrgDelete.affectedRows ?? 0) === 0);
 
 let directLifecycleMutationDenied = false;
 try {
