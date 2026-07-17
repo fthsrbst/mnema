@@ -1,67 +1,78 @@
 {
   "schema_version": 1,
-  "description": "Seed regression suite for context orchestration. Expand to 50-100 held-out cases before retrieval tuning.",
+  "description": "Seed regression suite for context orchestration, written against the canonical live knowledge state (project: mnema). Cases stay lexically close to stored titles so they hold in FTS-only mode. Expand to 50-100 human-reviewed held-out cases before retrieval tuning.",
   "cases": [
     {
-      "id": "ai-hub-current-status-authority",
-      "query": "What is the current status and next step of ai-hub?",
-      "project": "ai-hub",
+      "id": "mnema-current-status-authority",
+      "query": "What is the current status and next step of mnema?",
+      "project": "mnema",
       "intent": "current_status",
       "expect": {
         "intent": "current_status",
-        "authority_project": "ai-hub",
+        "authority_project": "mnema",
         "latest_session": true,
         "max_memories": 0,
         "max_chunks": 2
       }
     },
     {
-      "id": "ai-hub-current-status-turkish-auto-intent",
-      "query": "Bu projede şu an nerede kaldık ve sıradaki adım ne?",
-      "project": "ai-hub",
+      "id": "mnema-current-status-turkish-unaccented-auto-intent",
+      "query": "mnema projesinde nerede kalmistim, siradaki adim ne?",
+      "project": "mnema",
       "intent": "auto",
       "expect": {
         "intent": "current_status",
-        "authority_project": "ai-hub",
+        "authority_project": "mnema",
         "latest_session": true,
         "max_memories": 0,
         "max_chunks": 2
       }
     },
     {
-      "id": "voiceweb-current-status-no-stale-v01",
-      "query": "VoiceWeb'in güncel sürümü ve şu anki durumu nedir?",
-      "project": "bitirme-projesi",
+      "id": "mnema-cloud-rls-decision",
+      "query": "Why does hosted Cloud use forced RLS plus transactional quotas for tenant isolation?",
+      "project": "mnema",
+      "intent": "auto",
+      "expect": {
+        "intent": "decision",
+        "authority_project": "mnema",
+        "memory_title_any": ["forced RLS"]
+      }
+    },
+    {
+      "id": "mnema-supabase-keys-history",
+      "query": "How do we use Supabase opaque secret keys in API requests?",
+      "project": "mnema",
+      "intent": "auto",
+      "max_tokens": 2000,
+      "expect": {
+        "intent": "technical_history",
+        "authority_project": "mnema",
+        "memory_title_any": ["Supabase opaque secret keys"]
+      }
+    },
+    {
+      "id": "mnema-pi-deploy-history-turkish",
+      "query": "Raspberry Pi'ye canonical Mnema nasil deploy edilir, runtime veriyi tasimadan?",
+      "project": "mnema",
+      "intent": "auto",
+      "max_tokens": 2000,
+      "expect": {
+        "intent": "technical_history",
+        "authority_project": "mnema",
+        "memory_title_any": ["Deploy canonical Mnema"]
+      }
+    },
+    {
+      "id": "mnema-cloud-launch-status-doc",
+      "query": "What is the Mnema Cloud launch status right now?",
+      "project": "mnema",
       "intent": "current_status",
       "expect": {
         "intent": "current_status",
-        "authority_project": "bitirme-projesi",
-        "authority_focus_any": ["v0.5"],
+        "authority_project": "mnema",
         "max_memories": 0,
-        "max_chunks": 2,
-        "forbidden_chunk_title_any": ["v0.1"]
-      }
-    },
-    {
-      "id": "mnema-kit-plugin-decision",
-      "query": "Why was mnema-kit designed with a plugin architecture?",
-      "project": "mnema-kit",
-      "intent": "decision",
-      "expect": {
-        "intent": "decision",
-        "authority_project": "mnema-kit",
-        "memory_title_any": ["plugin tabanlı hub sürümü"]
-      }
-    },
-    {
-      "id": "ai-hub-ssh-history",
-      "query": "How was the persistent Pi and Mac git origin and SSH access problem fixed?",
-      "project": "ai-hub",
-      "intent": "technical_history",
-      "expect": {
-        "intent": "technical_history",
-        "authority_project": "ai-hub",
-        "memory_title_any": ["Pi/Mac git origin"]
+        "chunk_title_any": ["Cloud launch status"]
       }
     },
     {

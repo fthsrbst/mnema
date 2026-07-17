@@ -320,6 +320,18 @@ check(
   "context intent: teknik geçmiş tercihe dönüşmez",
   resolveContextIntent("Bu hatayı nasıl çözdük?") === "technical_history"
 );
+check(
+  "context intent: aksansız/çekimli Türkçe de yakalanır",
+  resolveContextIntent("nerede kalmistim?") === "current_status" &&
+    resolveContextIntent("Nerede kalmıştık, son oturumda ne yaptık?") === "current_status" &&
+    resolveContextIntent("bugun ne durumdayiz") === "current_status" &&
+    resolveContextIntent("bunu niye boyle yaptik, gerekcesi neydi") === "decision" &&
+    resolveContextIntent("dokumantasyonu goster") === "documentation"
+);
+check(
+  "context intent: İngilizce eşleşme Türkçe katlamadan etkilenmez (AI → aı olmamalı)",
+  resolveContextIntent("How should an AI agent communicate with Fatih?") === "preference"
+);
 const statusContext = await contextGet({
   query: "Bu projenin güncel durumu nedir?",
   project: "ai-hub",
