@@ -1,11 +1,16 @@
 import { z } from "zod";
 
+// Unicode doğrulama .refine() ile: .regex() olsaydı üretilen JSON şemasına \p{L} kalıbı
+// yazılır, claude.ai/ChatGPT gibi istemcilerin şema doğrulayıcıları (Python re, \p desteklemez)
+// tool'u "invalid schema" diye reddederdi. refine JSON şemasına pattern yazmaz.
 export const projectNameSchema = z
   .string()
   .trim()
   .min(1)
   .max(100)
-  .regex(/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u, "project name may contain letters, numbers, dot, underscore, and dash");
+  .refine((value) => /^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u.test(value), {
+    message: "project name may contain letters, numbers, dot, underscore, and dash",
+  });
 
 export const memoryTypeSchema = z.enum(["fact", "preference", "decision", "howto", "context"]);
 export const documentKindSchema = z.enum([
