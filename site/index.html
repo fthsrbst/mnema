@@ -580,6 +580,17 @@ PC ◄═══► NODE
       </article>
       <article class="fcard reveal">
         <pre class="icon" aria-hidden="true">
+A ▶ work ◀ B
+  ⚠ aware</pre>
+        <h3>Agent presence</h3>
+        <p>Agents check in when they start on a project and out when they
+        finish; the next session's bridge warns "another agent is active
+        here" with branch, task and heartbeat age. Advisory, not a lock —
+        crashed agents just go stale after a TTL.</p>
+        <span class="tag">checkin · advisory</span>
+      </article>
+      <article class="fcard reveal">
+        <pre class="icon" aria-hidden="true">
 ▓▒░ UI ░▒▓
 █ ▀▄ ▄▀ █
 ▓▒░░░░░▒▓</pre>
@@ -683,11 +694,11 @@ AUDIT ◀───┘</pre>
         <article class="toolgroup" data-tool-group="knowledge"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 02</span><span>07 tools</span></div><h3>Knowledge core</h3><p>Write, correct, consolidate and retrieve durable memory plus source-backed documents.</p><div class="toolgroup__tools"><code>memory_save</code><code>memory_update</code><code>memory_delete</code><code>memory_consolidate</code><code>rag_add</code><code>rag_search</code><code>profile_get</code></div></article>
         <article class="toolgroup" data-tool-group="maps"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 03</span><span>06 tools</span></div><h3>Maps + identity</h3><p>Maintain grounded project maps, decisions, global professional identity and handoff state.</p><div class="toolgroup__tools"><code>project_list</code><code>project_update</code><code>project_add_decision</code><code>project_delete</code><code>profile_update</code><code>session_log</code></div></article>
         <article class="toolgroup" data-tool-group="trust"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 04</span><span>07 tools</span></div><h3>Graph + trust</h3><p>Trace typed relations, inspect provenance and prove lifecycle and vector integrity.</p><div class="toolgroup__tools"><code>memory_relation_add</code><code>memory_relation_list</code><code>graph_node</code><code>graph_neighbors</code><code>integrity_check</code><code>audit_verify</code><code>vector_projection_verify</code></div></article>
-        <article class="toolgroup" data-tool-group="runtime"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 05</span><span>06 tools</span></div><h3>Agent runtime</h3><p>Share role prompts and skills, route local model work, and see which compute is available.</p><div class="toolgroup__tools"><code>prompt_list</code><code>prompt_get</code><code>skill_list</code><code>skill_save</code><code>local_llm</code><code>machine_status</code></div></article>
+        <article class="toolgroup" data-tool-group="runtime"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 05</span><span>09 tools</span></div><h3>Agent runtime</h3><p>Share role prompts and skills, coordinate concurrent agents with advisory presence, route local model work, and see which compute is available.</p><div class="toolgroup__tools"><code>prompt_list</code><code>prompt_get</code><code>skill_list</code><code>skill_save</code><code>agent_checkin</code><code>agent_checkout</code><code>agent_active</code><code>local_llm</code><code>machine_status</code></div></article>
         <article class="toolgroup" data-tool-group="mesh"><span class="toolgroup__signal" aria-hidden="true"></span><div class="toolgroup__meta"><span>BUS 06</span><span>04 tools</span></div><h3>Mesh + media</h3><p>Enroll another node, inspect projections and send image or video workflows to your GPU box.</p><div class="toolgroup__tools"><code>machine_register</code><code>workflow_list</code><code>media_generate</code><code>vector_projection_status</code></div></article>
       </div>
     </div>
-    <p class="tracks__total"><b>36 tools shown · 43 in the current server</b> · REST mirrors the Community core</p>
+    <p class="tracks__total"><b>39 tools shown · 46 in the current server</b> · REST mirrors the Community core</p>
   </div>
 </section>
 

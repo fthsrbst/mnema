@@ -64,10 +64,17 @@ and searchable across tools and devices.
 - **Local AI orchestration** — route simple/bulk text work to a local LLM
   (LM Studio, zero API cost) and image/video/audio generation to ComfyUI,
   both driven from any connected agent via `local_llm` / `media_generate`.
+- **Agent presence (advisory coordination)** — agents check in when they start
+  working on a project (`agent_checkin`) and out when they finish; the next
+  agent's session bridge warns "another agent is active on this project" with
+  machine, branch, task, and heartbeat age. Deliberately not a lock: crashed
+  agents go stale after a TTL instead of deadlocking anyone, and presence
+  records sync across devices like everything else.
 - **Cross-device sync** — a local-first, last-write-wins sync model so
-  memories and project maps created on one machine reconcile cleanly with
-  the primary instance. Runtime data moves through Mnema's sync protocol,
-  never through the source-code Git repository.
+  memories, project maps, skills/prompts (DB-authoritative assets), and agent
+  presence created on one machine reconcile cleanly with the primary instance.
+  Runtime data moves through Mnema's sync protocol, never through the
+  source-code Git repository.
 - **Knowledge lifecycle** — canonical document identity, current/archive and
   supersession metadata, versioned embedding generations, multilingual
   canonical summaries, and typed temporal memory relations.
