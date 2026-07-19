@@ -60,6 +60,11 @@
   --sp-7: 48px;
   --sp-8: 64px;
 
+  /* --- kabuk düzeni --- */
+  /* Rail logosu ile topbar aynı yatay çizgide bitmeli (tek kaynak — ikisi de buradan
+     yükseklik alır, birbirinden bağımsız sabit değer YASAK). 8px ızgaraya uyar. */
+  --topbar-h: 56px;
+
   /* --- köşe: sıfır. bilinçli tasarım kararı --- */
   --radius: 0px;
 

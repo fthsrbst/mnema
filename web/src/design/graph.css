@@ -279,3 +279,20 @@
     max-height: 50%;
   }
 }
+
+/* --- Dashboard graf önizleme kartı --- */
+/* GraphCanvas'ı aynen kullanır (position:absolute inset:0 iç kuralı), sadece sabit
+   yükseklikli bir konteynere oturtur. Salt-okunur: tıklama tüm kartı kaplayan
+   Panel'e düşsün diye canvas'ın kendisi pointer-events almaz. */
+.graph-preview-canvas {
+  position: relative;
+  height: 190px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border-hairline);
+}
+
+.graph-preview-canvas .graph-canvas {
+  cursor: default;
+  pointer-events: none;
+}

@@ -9,6 +9,9 @@ export default defineConfig({
     // Üretimde web build'i backend Express'ten aynı origin'de servis edilir — proxy devre dışıdır.
     proxy: {
       '/api': 'http://127.0.0.1:8033',
+      // Dashboard /health'i doğrudan çağırır; üretimde aynı origin'den gelir,
+      // dev'de proxy'lenmezse SPA index.html'ine düşüp JSON parse hatası verir.
+      '/health': 'http://127.0.0.1:8033',
     },
   },
 })

@@ -98,7 +98,6 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
       { id: "machines", labelKey: "nav.machines" },
       { id: "media", labelKey: "nav.media" },
       { id: "skills", labelKey: "nav.skills" },
-      { id: "cloud", labelKey: "nav.cloud" },
       { id: "settings", labelKey: "nav.settings" },
     ],
   },
@@ -281,7 +280,12 @@ function AppInner() {
   const renderTab = () => {
     switch (activeTab) {
       case "dashboard":
-        return <Dashboard onOpenAgents={() => goTo("system", "agents")} />;
+        return (
+          <Dashboard
+            onOpenAgents={() => goTo("system", "agents")}
+            onOpenGraph={() => goTo("overview", "graph")}
+          />
+        );
       case "timeline":
         return <Timeline onNavigate={(target) => { const dest = TIMELINE_TARGETS[target]; goTo(dest.section, dest.tab); }} />;
       case "profile":

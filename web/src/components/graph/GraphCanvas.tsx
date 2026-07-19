@@ -13,8 +13,8 @@ import type { GraphStore, KindFilter, SimNode } from "./types";
 import { reheat } from "./store";
 
 export interface GraphCanvasHandle {
-  /** Görünür grafı viewport'a sığdırır. */
-  fit(): void;
+  /** Görünür grafı viewport'a sığdırır. `padding` küçük önizleme kartlarında daraltılabilir (vsy. 90). */
+  fit(padding?: number): void;
   /** Tuval merkezine göre çarpanla zoom. */
   zoomBy(factor: number): void;
   /** Viewport'u düğüme odaklar. */
@@ -33,6 +33,12 @@ interface GraphCanvasProps {
   onExpand: (id: string) => void;
   onZoomChange: (k: number) => void;
   ariaLabel: string;
+  /**
+   * false ise pan/zoom/sürükle/seç/hover tamamen devre dışı kalır — salt-okunur
+   * önizleme modu (bkz. Dashboard grafik önizleme kartı). Bileşenin ömrü boyunca
+   * sabit kalması beklenir (kurulum efekti sadece mount'ta okur). Varsayılan true.
+   */
+  interactive?: boolean;
 }
 
 interface View {
@@ -115,7 +121,7 @@ function markerColor(kind: GraphNodeKind, p: Palette): string {
 }
 
 export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvas(
-  { store, filters, selectedId, onSelect, onExpand, onZoomChange, ariaLabel },
+  { store, filters, selectedId, onSelect, onExpand, onZoomChange, ariaLabel, interactive = true },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -332,7 +338,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
   };
 
   useImperativeHandle(ref, () => ({
-    fit() {
+    fit(padding = 90) {
       const { w, h } = size.current;
       const visible = [...store.nodes.values()].filter((n) => filtersRef.current[n.kind]);
       if (!visible.length || !w || !h) return;
@@ -348,7 +354,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       }
       const bw = Math.max(1, maxX - minX);
       const bh = Math.max(1, maxY - minY);
-      const pad = 90;
+      const pad = Math.max(0, padding);
       const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min((w - pad * 2) / bw, (h - pad * 2) / bh, 1.4)));
       view.current.x = w / 2 - ((minX + maxX) / 2) * k;
       view.current.y = h / 2 - ((minY + maxY) / 2) * k;
@@ -408,15 +414,17 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
       const rect = canvas.getBoundingClientRect();
       zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0016));
     };
-    canvas.addEventListener("wheel", onWheel, { passive: false });
+    // Önizleme modunda (interactive=false) tekerlek zoom'u da devre dışı — dashboard
+    // kartı salt-okunur kalsın diye listener hiç bağlanmaz.
+    if (interactive) canvas.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
       ro.disconnect();
-      canvas.removeEventListener("wheel", onWheel);
+      if (interactive) canvas.removeEventListener("wheel", onWheel);
       cancelAnimationFrame(rafId.current);
       rafId.current = 0;
     };
-    // schedule/zoomAt stabil (ref tabanlı) — bilinçli boş bağımlılık.
+    // schedule/zoomAt stabil (ref tabanlı); interactive bileşen ömrü boyunca sabit varsayılır — bilinçli boş bağımlılık.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -527,12 +535,13 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(funct
     <canvas
       ref={canvasRef}
       className="graph-canvas"
-      role="application"
-      aria-label={ariaLabel}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerLeave}
+      role={interactive ? "application" : undefined}
+      aria-label={interactive ? ariaLabel : undefined}
+      aria-hidden={interactive ? undefined : true}
+      onPointerDown={interactive ? onPointerDown : undefined}
+      onPointerMove={interactive ? onPointerMove : undefined}
+      onPointerUp={interactive ? onPointerUp : undefined}
+      onPointerLeave={interactive ? onPointerLeave : undefined}
     />
   );
 });

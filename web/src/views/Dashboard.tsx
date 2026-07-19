@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { VStack, HStack, Grid } from "../components/ui/Stack";
 import { Panel } from "../components/ui/Panel";
 import { Button } from "../components/ui/Button";
@@ -11,9 +11,23 @@ import { Collapsible } from "../components/ui/Collapsible";
 import { ListRow } from "../components/ui/ListRow";
 import { Ticker } from "../components/ui/Ticker";
 import { Dither } from "../components/ui/Dither";
-import { api, fetchActiveAgents, type AgentPresence, type GrowthStats, type HealthStatus, type RagStats, type SessionLog, type UsageStats } from "../api";
+import {
+  api,
+  fetchActiveAgents,
+  fetchGraphSeed,
+  type AgentPresence,
+  type GraphPayload,
+  type GrowthStats,
+  type HealthStatus,
+  type RagStats,
+  type SessionLog,
+  type UsageStats,
+} from "../api";
 import { useI18n, type Lang, type TKey } from "../i18n";
 import { Markdown } from "../components/Markdown";
+import { GraphCanvas, type GraphCanvasHandle } from "../components/graph/GraphCanvas";
+import { addPayload, createGraphStore, reheat, settle } from "../components/graph/store";
+import { ALL_KINDS, type GraphStore, type KindFilter } from "../components/graph/types";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -274,7 +288,101 @@ function ActiveAgentsCard({ agents, onOpen }: { agents: AgentPresence[] | null; 
   );
 }
 
-export function Dashboard({ onOpenAgents }: { onOpenAgents?: () => void }) {
+// --- Graf önizleme kartı ---
+// Tam Graph.tsx ile aynı veri/render katmanını (store + GraphCanvas) kullanır; ikinci bir
+// graf motoru YAZILMAZ. Fark: küçük, tek seferlik bir seed + settle() ile sabit bir düzen
+// üretilir, sonra bir daha reheat edilmez — GraphCanvas'ın rAF döngüsü boşta kalır (kısa
+// spawn animasyonu dışında). interactive={false} pan/zoom/sürükle/seçimi kapatır; tek
+// etkileşim tüm kartı kaplayan tıklama alanıdır (bkz. ActiveAgentsCard ile aynı desen).
+const GRAPH_PREVIEW_TAG_LIMIT = 6;
+const GRAPH_PREVIEW_MAX_NODES = 18;
+const GRAPH_PREVIEW_FILTERS: KindFilter = Object.fromEntries(ALL_KINDS.map((k) => [k, true])) as KindFilter;
+
+/** Küçük kartta onlarca düğüm birikmesin diye seed payload'ını sert bir üst sınıra keser. */
+function capGraphPayload(payload: GraphPayload, maxNodes: number): GraphPayload {
+  if (payload.nodes.length <= maxNodes) return payload;
+  const nodes = payload.nodes.slice(0, maxNodes);
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = payload.edges.filter((e) => ids.has(e.from) && ids.has(e.to));
+  return { nodes, edges, more: 0 };
+}
+
+function GraphPreviewCard({ onOpenGraph }: { onOpenGraph?: () => void }) {
+  const { t } = useI18n();
+  const storeRef = useRef<GraphStore | null>(null);
+  if (!storeRef.current) storeRef.current = createGraphStore();
+  const store = storeRef.current;
+  const canvasRef = useRef<GraphCanvasHandle>(null);
+  const seeded = useRef(false);
+
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [nodeCount, setNodeCount] = useState(0);
+
+  const noopSelect = useCallback(() => {}, []);
+  const noopExpand = useCallback(() => {}, []);
+  const noopZoom = useCallback(() => {}, []);
+
+  useEffect(() => {
+    if (seeded.current) return; // StrictMode çift çalıştırma koruması
+    seeded.current = true;
+    fetchGraphSeed(GRAPH_PREVIEW_TAG_LIMIT)
+      .then((payload) => {
+        const capped = capGraphPayload(payload, GRAPH_PREVIEW_MAX_NODES);
+        addPayload(store, capped);
+        reheat(store, 1);
+        settle(store); // tek seferlik yerleşim — sürekli fizik simülasyonu yok
+        setNodeCount(store.nodes.size);
+        setLoading(false);
+        canvasRef.current?.fit(20);
+      })
+      .catch(() => {
+        setFailed(true);
+        setLoading(false);
+      });
+  }, [store]);
+
+  return (
+    <Panel style={onOpenGraph ? { cursor: "pointer" } : undefined} onClick={onOpenGraph}>
+      <VStack gap={2}>
+        <HStack hAlign="between" vAlign="center">
+          <span className="u-label">{t("dashboard.graphPreviewTitle")}</span>
+          {!loading && !failed && nodeCount > 0 && (
+            <Text type="supporting" color="secondary">{nodeCount} {t("graph.nodes")}</Text>
+          )}
+        </HStack>
+
+        {loading ? (
+          <Text type="supporting" color="secondary">{t("common.loading")}</Text>
+        ) : failed ? (
+          <EmptyState title={t("dashboard.graphPreviewFailed")} description={t("common.loadFailed")} />
+        ) : nodeCount === 0 ? (
+          <EmptyState title={t("dashboard.graphPreviewEmpty")} description={t("dashboard.graphPreviewEmptyDesc")} />
+        ) : (
+          <div className="graph-preview-canvas">
+            <GraphCanvas
+              ref={canvasRef}
+              store={store}
+              filters={GRAPH_PREVIEW_FILTERS}
+              selectedId={null}
+              onSelect={noopSelect}
+              onExpand={noopExpand}
+              onZoomChange={noopZoom}
+              ariaLabel={t("graph.canvasLabel")}
+              interactive={false}
+            />
+          </div>
+        )}
+
+        {onOpenGraph && !loading && !failed && nodeCount > 0 && (
+          <Text type="supporting" color="secondary">{t("dashboard.graphPreviewOpen")}</Text>
+        )}
+      </VStack>
+    </Panel>
+  );
+}
+
+export function Dashboard({ onOpenAgents, onOpenGraph }: { onOpenAgents?: () => void; onOpenGraph?: () => void }) {
   const { t } = useI18n();
   const [stats, setStats] = useState<RagStats | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
@@ -460,6 +568,8 @@ export function Dashboard({ onOpenAgents }: { onOpenAgents?: () => void }) {
               </VStack>
             </Panel>
           )}
+
+          <GraphPreviewCard onOpenGraph={onOpenGraph} />
 
           {usage && <UsageSection usage={usage} formatRelative={formatRelative} />}
 

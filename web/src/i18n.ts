@@ -408,6 +408,11 @@ const dict = {
   "dashboard.activeAgentsTitle": { tr: "Aktif Agent'lar", en: "Active Agents" },
   "dashboard.activeAgentsNone": { tr: "Şu an çalışan agent yok", en: "No agents running right now" },
   "dashboard.activeAgentsView": { tr: "Agent'ları gör →", en: "View agents →" },
+  "dashboard.graphPreviewTitle": { tr: "Bilgi grafiği", en: "Knowledge graph" },
+  "dashboard.graphPreviewOpen": { tr: "Tam graf görünümünü aç →", en: "Open full graph view →" },
+  "dashboard.graphPreviewFailed": { tr: "Graf önizlemesi yüklenemedi", en: "Graph preview failed to load" },
+  "dashboard.graphPreviewEmpty": { tr: "Henüz graf verisi yok", en: "No graph data yet" },
+  "dashboard.graphPreviewEmptyDesc": { tr: "Projeler ve etiketler eklendikçe burada bir önizleme oluşacak.", en: "A preview will appear here as projects and tags are added." },
 
   // --- graph ---
   "graph.searchPlaceholder": { tr: "Düğüm ara (proje, etiket, hafıza)...", en: "Search nodes (project, tag, memory)..." },
