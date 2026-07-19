@@ -6,7 +6,7 @@
 <title>MNEMA — One memory for every AI agent</title>
 <meta name="description" content="Mnema is the local-first context layer for AI agents: authoritative context, memory, RAG, project maps, professional profiles, typed relations and cross-device sync over MCP + REST. Open source, MIT.">
 <meta property="og:title" content="MNEMA — One memory for every AI agent">
-<meta property="og:description" content="Authoritative, local-first context for AI agents. Memory, RAG, project maps, professional profiles, typed relations and an optional managed Cloud profile.">
+<meta property="og:description" content="Authoritative, local-first context for AI agents. Memory, RAG, project maps, professional profiles, typed relations — with a hosted Cloud profile in active development.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Mnema">
 <meta property="og:url" content="https://fthsrbst.github.io/mnema/">
@@ -280,33 +280,14 @@ section{position:relative}
 }
 .tracks__total b{color:var(--phos);font-weight:400}
 
-/* ---------- pricing ---------- */
+/* ---------- cloud roadmap ---------- */
 .pricing{border-bottom:1px solid var(--paper)}
-.pricegrid{
-  display:grid;grid-template-columns:repeat(5,1fr);
-  border-top:1px solid var(--paper);border-left:1px solid var(--paper);
-  margin-bottom:24px;
-}
-@media(max-width:960px){.pricegrid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:560px){.pricegrid{grid-template-columns:1fr}}
-.pricecard{border-right:1px solid var(--paper);border-bottom:1px solid var(--paper);padding:24px;position:relative;display:flex;flex-direction:column}
-.pricecard--focus{background:#071006;box-shadow:inset 0 0 0 2px var(--phos)}
-.pricecard__badge{position:absolute;top:8px;right:8px;font:8px var(--pix);letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
-.pricecard__name{font-family:var(--pix);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--phos)}
-.pricecard__price{font-family:var(--crt);font-size:42px;line-height:1;margin:14px 0 5px}
-.pricecard__price small{font-family:var(--mono);font-size:11px;color:var(--grey)}
-.pricecard__for{color:var(--grey);font-size:12px;min-height:38px;margin-bottom:15px}
-.pricecard ul{list-style:none;font-size:12px;flex:1}
-.pricecard li{padding:7px 0;border-top:1px dashed var(--phos-dim)}
-.pricecard li::before{content:"■";color:var(--phos);margin-right:8px;font-size:8px}
-.pricecard__cta{display:block;text-align:center;margin-top:20px;padding:11px 8px;font-size:9px}
 .cloudgate{display:grid;grid-template-columns:1.4fr 1fr;gap:0;border:1px solid var(--phos-dim);background:#030703;margin-bottom:24px;scroll-margin-top:20px}
 .cloudgate__copy{padding:20px;border-right:1px solid var(--phos-dim)}
 .cloudgate__eyebrow{font:9px var(--pix);letter-spacing:.14em;text-transform:uppercase;color:var(--phos)}
 .cloudgate h3{font-family:var(--crt);font-size:30px;line-height:1;margin:9px 0}
 .cloudgate p{font-size:12px;color:var(--grey)}
 .cloudgate__actions{padding:20px;display:flex;flex-direction:column;justify-content:center;gap:10px}
-.cloudgate__actions code{font-size:11px;color:var(--paper);overflow-wrap:anywhere}
 @media(max-width:720px){.cloudgate{grid-template-columns:1fr}.cloudgate__copy{border-right:0;border-bottom:1px solid var(--phos-dim)}}
 .pricing__note{color:var(--grey);font-size:12px;max-width:78ch;margin-bottom:clamp(44px,7vh,80px)}
 .pricing__note b{color:var(--paper);font-weight:500}
@@ -375,7 +356,7 @@ a:focus-visible,.btn:focus-visible,button:focus-visible{outline:2px solid var(--
 
 <div class="ticker" aria-hidden="true">
   <div class="ticker__inner">
-    <span>MNEMA <b>///</b> one context for every AI agent</span><span><b>■</b> local-first</span><span><b>■</b> open source · MIT</span><span><b>■</b> 43 MCP tools + REST</span><span><b>■</b> authoritative context</span><span><b>■</b> project maps + profile</span><span><b>■</b> optional cloud profile</span><span>MNEMA <b>///</b> one context for every AI agent</span><span><b>■</b> local-first</span><span><b>■</b> open source · MIT</span><span><b>■</b> 43 MCP tools + REST</span><span><b>■</b> authoritative context</span><span><b>■</b> project maps + profile</span><span><b>■</b> optional cloud profile</span>
+    <span>MNEMA <b>///</b> one context for every AI agent</span><span><b>■</b> local-first</span><span><b>■</b> open source · MIT</span><span><b>■</b> 43 MCP tools + REST</span><span><b>■</b> authoritative context</span><span><b>■</b> project maps + profile</span><span><b>■</b> cloud in development</span><span>MNEMA <b>///</b> one context for every AI agent</span><span><b>■</b> local-first</span><span><b>■</b> open source · MIT</span><span><b>■</b> 43 MCP tools + REST</span><span><b>■</b> authoritative context</span><span><b>■</b> project maps + profile</span><span><b>■</b> cloud in development</span>
   </div>
 </div>
 
@@ -402,13 +383,13 @@ a:focus-visible,.btn:focus-visible,button:focus-visible{outline:2px solid var(--
       Claude Code, Cursor, opencode, Codex CLI — each forgets when the session ends.
       Mnema is a <b>local-first context layer</b> that gives them all one common brain:
       authoritative context, structured memory, hybrid RAG, detailed project maps,
-      a separate professional profile and typed relations. Keep it on infrastructure
-      you control, or use the managed Cloud profile after provider staging completes.
+      a separate professional profile and typed relations. Run it entirely on
+      infrastructure you control — a hosted Cloud profile is in active development.
     </p>
     <nav class="cta" aria-label="Primary">
       <a class="btn btn--solid" href="https://github.com/fthsrbst/mnema">Star on GitHub</a>
       <a class="btn" href="#quickstart">Quick start</a>
-      <a class="btn" href="#pricing">Cloud plans</a>
+      <a class="btn" href="#roadmap">Roadmap</a>
     </nav>
     <div class="hero__stamps" aria-hidden="true">
       <span class="stamp stamp--go">Self-hosted</span>
@@ -416,7 +397,7 @@ a:focus-visible,.btn:focus-visible,button:focus-visible{outline:2px solid var(--
       <span class="stamp">TypeScript</span>
       <span class="stamp">SQLite</span>
       <span class="stamp">MCP</span>
-      <span class="stamp">Cloud optional</span>
+      <span class="stamp">Cloud roadmap</span>
     </div>
   </div>
 </header>
@@ -702,73 +683,34 @@ AUDIT ◀───┘</pre>
   </div>
 </section>
 
-<!-- ============ 05 PRICING ============ -->
-<section class="pricing" id="pricing" aria-labelledby="pricing-t">
+<!-- ============ 05 CLOUD ROADMAP ============ -->
+<section class="pricing" id="roadmap" aria-labelledby="roadmap-t">
   <div class="shell">
     <div class="shead">
       <span class="shead__no">05</span>
-      <h2 class="shead__t" id="pricing-t">Choose your authority</h2>
-      <span class="shead__d">community stays free · cloud stays optional</span>
-    </div>
-    <div class="pricegrid">
-      <article class="pricecard reveal">
-        <span class="pricecard__badge">available now</span>
-        <div class="pricecard__name">Community</div>
-        <div class="pricecard__price">$0</div>
-        <p class="pricecard__for">Self-host on hardware you control.</p>
-        <ul><li>Full open-source server</li><li>SQLite authority + own sync</li><li>Raspberry Pi / workstation / VM</li></ul>
-        <a class="btn pricecard__cta" href="#quickstart">Install Community</a>
-      </article>
-      <article class="pricecard reveal">
-        <span class="pricecard__badge">local preview</span>
-        <div class="pricecard__name">Cloud Free</div>
-        <div class="pricecard__price">$0</div>
-        <p class="pricecard__for">Evaluate managed Mnema.</p>
-        <ul><li>2 projects</li><li>1 member · 100 MB</li><li>No payment method</li></ul>
-        <a class="btn pricecard__cta" href="http://127.0.0.1:8044/?plan=free">Create test account</a>
-      </article>
-      <article class="pricecard pricecard--focus reveal">
-        <span class="pricecard__badge">sandbox gate</span>
-        <div class="pricecard__name">Starter</div>
-        <div class="pricecard__price">$9 <small>/ month</small></div>
-        <p class="pricecard__for">An individual developer's durable workspace.</p>
-        <ul><li>10 projects</li><li>1 member · 1 GB</li><li>1M embedding tokens</li></ul>
-        <a class="btn btn--solid pricecard__cta" href="http://127.0.0.1:8044/?plan=starter&amp;interval=annual">Subscribe to Starter</a>
-      </article>
-      <article class="pricecard reveal">
-        <span class="pricecard__badge">sandbox gate</span>
-        <div class="pricecard__name">Pro</div>
-        <div class="pricecard__price">$19 <small>/ month</small></div>
-        <p class="pricecard__for">Power users with larger context.</p>
-        <ul><li>50 projects · 5 GB</li><li>Priority retrieval capacity</li><li>Longer audit retention</li></ul>
-        <a class="btn pricecard__cta" href="http://127.0.0.1:8044/?plan=pro&amp;interval=annual">Subscribe to Pro</a>
-      </article>
-      <article class="pricecard reveal">
-        <span class="pricecard__badge">sandbox gate</span>
-        <div class="pricecard__name">Team</div>
-        <div class="pricecard__price">$49 <small>/ month</small></div>
-        <p class="pricecard__for">One governed workspace for a small team.</p>
-        <ul><li>Up to 10 members</li><li>250 projects · 20 GB</li><li>Admin and billing controls</li></ul>
-        <a class="btn pricecard__cta" href="http://127.0.0.1:8044/?plan=team&amp;interval=annual">Subscribe to Team</a>
-      </article>
+      <h2 class="shead__t" id="roadmap-t">Cloud — next phase</h2>
+      <span class="shead__d">community stays free · cloud is in development</span>
     </div>
     <div class="cloudgate reveal" id="cloud-preview">
       <div class="cloudgate__copy">
-        <span class="cloudgate__eyebrow">Cloud access / honest status</span>
-        <h3>Free account testing is open locally.</h3>
-        <p>The account, tenant-RLS and Free workspace flow can be tested now on this computer. A selected paid plan carries into the app, but checkout remains blocked until real Paddle sandbox products and webhook credentials are provisioned. The public hosted Cloud URL has not launched yet.</p>
+        <span class="cloudgate__eyebrow">Roadmap / honest status</span>
+        <h3>A hosted Mnema Cloud is in active development.</h3>
+        <p>Community — the self-hosted server on this page — is the full open-source
+        product, free today. Cloud adds accounts, organization tenancy and
+        database-enforced isolation on top of the same core: one MCP + REST surface,
+        one authoritative store. There is no public URL and no checkout yet.</p>
       </div>
       <div class="cloudgate__actions">
-        <code>http://127.0.0.1:8044/</code>
-        <a class="btn btn--solid" href="http://127.0.0.1:8044/?plan=free">Open local test app</a>
-        <a class="btn" href="https://github.com/fthsrbst/mnema">Track hosted release</a>
+        <span class="stamp stamp--go">Accounts</span>
+        <span class="stamp stamp--go">Organization tenancy</span>
+        <span class="stamp stamp--go">Database-enforced isolation</span>
       </div>
     </div>
-    <p class="pricing__note"><b>Security model:</b> Supabase Auth, one organization per active tenant context,
+    <p class="pricing__note"><b>Planned security model:</b> Supabase Auth, one organization per active tenant context,
       forced Postgres row-level security, composite tenant foreign keys, guarded Postgres RPCs,
       MFA for billing/destructive actions, a shared fail-closed Valkey limiter,
-      and signed idempotent Paddle webhooks. <b>Cloud remains provider-staging gated;</b> these prices are
-      a pre-launch hypothesis, not a promise of current availability.</p>
+      and signed idempotent Paddle webhooks. Community — self-hosted, free, open source —
+      is unaffected either way.</p>
   </div>
 </section>
 
@@ -827,7 +769,7 @@ Stop and explain the blocker instead of claiming success if any live verificatio
 <span class="p">$</span> npm run build
 <span class="p">$</span> cp .env.example .env   <span class="c"># set HUB_TOKEN</span>
 <span class="p">$</span> npm run dev
-<span class="o">→ http://127.0.0.1:8033</span></pre>
+<span class="o">→ http://localhost:8033</span></pre>
       </div>
       <div class="term reveal">
         <div class="term__bar"><b>FIRST RUN ·· map a real project</b><span class="dots">·····</span></div>
