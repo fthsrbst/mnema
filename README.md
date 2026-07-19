@@ -252,6 +252,119 @@ and updates a managed block in `CLAUDE.md` / `AGENTS.md` so every agent knows
 the hub exists and when to use it. Full client details:
 [`deploy/clients.md`](deploy/clients.md).
 
+## Tools
+
+Mnema exposes **46 MCP tools** on one endpoint (`$HUB_URL/mcp`, Streamable
+HTTP). Every capability is also reachable over REST at `$HUB_URL/api` — same
+contract, same authority, same data. Tool names are stable and should be
+treated as the public API.
+
+### Context and recall
+
+| Tool | What it does |
+|---|---|
+| `context_get` | Preferred entry point for a task. Combines the current project map, latest session, durable memories and RAG evidence with intent-aware authority ordering, provenance and a token budget. |
+| `recall` | Returns the memories and document chunks relevant to one message or task in a single call — hybrid search with a precision filter. |
+| `recall_feedback` | Reports whether recalled evidence was helpful, noisy or missing, so retrieval quality can be measured over time. |
+| `session_recent` | "Where did I leave off?" — returns the most recent session logs. |
+
+### Memory
+
+| Tool | What it does |
+|---|---|
+| `memory_save` | Stores a durable fact, a decision with its reasoning, a user preference, a learned how-to or project context. |
+| `memory_search` | Hybrid keyword + semantic search across stored memories. |
+| `memory_update` | Corrects a memory that has gone stale or been proven wrong. |
+| `memory_delete` | Removes an incorrect or no longer valid memory. |
+| `memory_consolidate` | Merges duplicate memories into one target, rewiring typed relations and tombstoning the sources. |
+
+### Knowledge graph
+
+| Tool | What it does |
+|---|---|
+| `memory_relation_add` | Creates a directional, temporal edge between two memories: `supports`, `contradicts`, `supersedes`, `caused_by`, `derived_from`, `applies_to` or `related`. |
+| `memory_relation_list` | Inspects typed edges by memory, relation type, or validity at a given timestamp. |
+| `memory_relation_update` | Updates confidence, temporal validity, source or metadata on an edge. |
+| `memory_relation_delete` | Deletes a provably incorrect edge. Prefer setting `valid_to` for edges that were historically true. |
+| `graph_node` | Resolves a project, memory, document, session or tag node and its degree without loading the whole graph. |
+| `graph_neighbors` | Pages through immediate neighbors, preserving edge direction, confidence and validity. |
+
+### Documents and RAG
+
+| Tool | What it does |
+|---|---|
+| `rag_add` | Indexes a document or note into the RAG archive with automatic chunking and embedding. Calling it again with the same URI re-indexes in place. |
+| `rag_search` | Hybrid search across indexed documents; returns source-referenced chunks. |
+
+### Project maps
+
+| Tool | What it does |
+|---|---|
+| `project_list` | Lists every project map with its status. |
+| `project_get` | Full project context: summary, stack, decisions, current focus and next steps, plus the code map (architecture, modules, entry points, commands, conventions, data model). |
+| `project_update` | Creates or merges into a project map — focus changes, decisions, completed steps and discovered code structure. |
+| `project_add_decision` | Appends one line to the project decision history. |
+| `project_delete` | Permanently deletes a project map; the tombstone propagates to every device. |
+| `project_detach_references` | Rewrites a pseudo-project's memories, documents, sessions and vector partitions to global scope. |
+| `project_migrate_references` | Atomically moves references from a stale or alias project name onto a canonical project map. |
+
+### Sessions
+
+| Tool | What it does |
+|---|---|
+| `session_log` | Records what was finished, what was left open and the next step, so the next session on any device continues from there. |
+
+### Professional profile
+
+| Tool | What it does |
+|---|---|
+| `profile_get` | Returns the canonical professional profile and its source-document metadata — a separate identity domain, not a project map. |
+| `profile_update` | Replaces the canonical profile document while leaving the source documents unchanged. |
+
+### Prompts and skills
+
+| Tool | What it does |
+|---|---|
+| `prompt_list` | Lists the role-based system prompts on the hub: architect, code reviewer, debugging, security, frontend, devops and ML. |
+| `prompt_get` | Returns a role's system prompt, prefixed with a shared engineering-discipline core. Use it as the system prompt when delegating work to another model. |
+| `skill_list` | Lists the agent skills stored on the hub. |
+| `skill_save` | Creates or updates a skill in `SKILL.md` format. Persistence and cross-device distribution are automatic — no Git commit required. |
+
+### Multi-agent coordination
+
+| Tool | What it does |
+|---|---|
+| `agent_checkin` | Announces which device and branch an agent is working on. Advisory only — this is **not** a mutual-exclusion lock. |
+| `agent_checkout` | Closes a presence record as `done` or `abandoned`. Forgetting to call it never leaves a lock behind; stale heartbeats expire on their own. |
+| `agent_active` | Lists agents currently checked in on a project, flagging records whose heartbeat has gone stale. |
+
+### Machines and local models
+
+| Tool | What it does |
+|---|---|
+| `machine_register` | Registers or updates a machine that runs local AI services. |
+| `machine_status` | Returns live status and loaded models for registered LM Studio, Ollama and ComfyUI services. |
+| `local_llm` | Runs a prompt against a registered local model (LM Studio or Ollama) at no API cost — suited to summarizing, classification, drafting and data conversion. |
+
+### Media generation
+
+| Tool | What it does |
+|---|---|
+| `workflow_list` | Lists the available ComfyUI generation workflows. |
+| `media_generate` | Generates an image, video, audio or 3D asset through a registered ComfyUI node and returns the output paths and URLs. |
+
+### Integrity, audit and vector operations
+
+| Tool | What it does |
+|---|---|
+| `integrity_check` | Read-only audit for unknown project references, document lifecycle conflicts, missing or orphan vectors, duplicate URIs, invalid metadata and dangling relations. |
+| `audit_list` | Reads redacted, node-local request audit events. Prompts, tokens, request bodies and document text are never written to this log. |
+| `audit_verify` | Verifies that the node-local audit hash chain has not been modified or reordered. |
+| `vector_projection_status` | Reports the active vector backend, local generation readiness and external-projection outbox depth. |
+| `vector_projection_rebuild` | Queues every authoritative memory and chunk vector for idempotent redelivery to the configured external backend. Does not delete SQLite data. |
+| `vector_projection_verify` | Compares authoritative `sqlite-vec` counts against the active external generation and requires a ready, empty outbox. |
+| `vector_projection_flush` | Attempts one bounded delivery batch now; failed rows stay durable and back off exponentially. |
+
 ## Auto-recall hook
 
 This is the feature that makes the shared memory actually get used instead of
