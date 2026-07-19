@@ -424,7 +424,9 @@ export function Projects() {
                   <StatusDot variant={statusVariant(p.status)} label={p.status ?? t("projects.unknownStatus")} />
                 </HStack>
                 <Text type="supporting" color="secondary">{p.summary ?? ""}</Text>
-                {p.current_focus && <Text type="supporting">Odak: {p.current_focus}</Text>}
+                {p.current_focus && (
+                  <Text type="supporting">{t("projects.currentFocus")}: {p.current_focus}</Text>
+                )}
                 <ProjectAgentsBadge agents={agentsByProject[p.name] ?? []} />
                 <HStack gap={2}>
                   <Button label={t("common.open")} variant="secondary" size="sm" onClick={() => open(p)} />
