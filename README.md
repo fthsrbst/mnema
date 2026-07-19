@@ -137,9 +137,14 @@ For the full data model and phased build plan, see [`PLAN.md`](PLAN.md).
 
 ## Screenshots
 
-| Dashboard | RAG search | Prompts | Mobile |
-|---|---|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![RAG](docs/screenshots/rag.png) | ![Prompts](docs/screenshots/prompts.png) | ![Mobile](docs/screenshots/mobile.png) |
+Captured against a seeded demo dataset, not a real workspace.
+
+| | |
+|---|---|
+| **Dashboard** — server, database and embedding status at a glance, plus which agents are working right now.<br><br>![Mnema dashboard showing server status, embedding ratios and active agents](docs/screenshots/dashboard.png) | **Knowledge graph** — projects, memories, documents and tags as one traversable graph with typed edges.<br><br>![Knowledge graph view with project and tag nodes connected by typed edges](docs/screenshots/graph.png) |
+| **Memories** — typed records (decision, how-to, preference, fact, context) with hybrid keyword + semantic search.<br><br>![Memory list showing typed records scoped per project](docs/screenshots/memories.png) | **Documents and RAG** — indexed sources with chunk counts, embedding status and a live hybrid-search test.<br><br>![RAG management view listing indexed documents with chunk and embedding status](docs/screenshots/rag.png) |
+| **Project maps** — one evidence-backed record per repository, carrying current focus and next steps.<br><br>![Project cards showing status, summary and current focus](docs/screenshots/projects.png) | **Session history** — what each agent finished, what it left open, and where the next one picks up.<br><br>![Session history listing summaries from different agent clients](docs/screenshots/sessions.png) |
+| **Multi-agent presence** — advisory coordination across machines and branches; never a lock.<br><br>![Agents view showing three active agents on different machines and branches](docs/screenshots/agents.png) | **Mobile** — the same UI against the same self-hosted server.<br><br>![Mnema dashboard on a narrow mobile viewport](docs/screenshots/mobile.png) |
 
 ## Quick start
 
