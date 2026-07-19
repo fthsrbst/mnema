@@ -1,8 +1,24 @@
 import { z } from "zod";
 import { addDocument, getDocument, listDocuments, updateDocumentMeta, type DocumentListItem } from "./documents.js";
 
-export const PROFESSIONAL_PROFILE_URI = "profiles/fatih-serbest/canonical";
-export const LEGACY_PROFESSIONAL_PROFILE_URI = "professional-profile/canonical/profile";
+export const PROFESSIONAL_PROFILE_URI = "profiles/canonical";
+
+/**
+ * Canonical URIs used before the profile path was de-personalized. Reads fall
+ * back through this list in order, so profiles written by older versions keep
+ * resolving; writes always go to PROFESSIONAL_PROFILE_URI.
+ */
+export const LEGACY_PROFESSIONAL_PROFILE_URIS = [
+  "profiles/fatih-serbest/canonical",
+  "professional-profile/canonical/profile",
+];
+
+/** Source-document prefixes, newest first; older prefixes stay readable. */
+export const PROFESSIONAL_PROFILE_SOURCE_PREFIXES = [
+  "profiles/source/",
+  "profiles/fatih-serbest/source/",
+  "professional-profile/source/",
+];
 
 export const professionalProfileInputSchema = z
   .object({
@@ -63,15 +79,15 @@ function documentToProfile(id: number): ProfessionalProfileDocument | null {
  */
 export function getProfessionalProfile(): ProfessionalProfileBundle {
   const documents = listDocuments(undefined, 500);
+  const findByUri = (uri: string) => documents.find((document) => document.uri === uri);
   const canonicalMeta =
-    documents.find((document) => document.uri === PROFESSIONAL_PROFILE_URI) ??
-    documents.find((document) => document.uri === LEGACY_PROFESSIONAL_PROFILE_URI);
+    findByUri(PROFESSIONAL_PROFILE_URI) ??
+    LEGACY_PROFESSIONAL_PROFILE_URIS.map(findByUri).find(Boolean);
   const sources = documents
     .filter((document) =>
       Boolean(
         document.uri &&
-          (document.uri.startsWith("profiles/fatih-serbest/source/") ||
-            document.uri.startsWith("professional-profile/source/"))
+          PROFESSIONAL_PROFILE_SOURCE_PREFIXES.some((prefix) => document.uri!.startsWith(prefix))
       )
     )
     .map(({ id, uid, title, uri, language, updated_at }) => ({ id, uid, title, uri, language, updated_at }));
@@ -89,7 +105,7 @@ export async function upsertProfessionalProfile(input: {
 }): Promise<ProfessionalProfileBundle> {
   const value = professionalProfileInputSchema.parse(input);
   const result = await addDocument({
-    title: value.title ?? "Fatih Serbest - Canonical Professional Profile",
+    title: value.title ?? "Canonical Professional Profile",
     text: value.markdown,
     source: value.source ?? "professional-profile",
     uri: PROFESSIONAL_PROFILE_URI,

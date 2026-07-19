@@ -40,7 +40,7 @@ export function ProfessionalProfile() {
     try {
       const profile = await api<ProfessionalProfileBundle>("PUT", "/api/profile", {
         markdown,
-        title: "Fatih Serbest - Canonical Professional Profile",
+        title: "Canonical Professional Profile",
         source: "professional-profile-ui",
         language: "en",
       });

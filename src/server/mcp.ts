@@ -410,7 +410,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Get the canonical professional profile",
       description:
-        "Return Fatih Serbest's global professional profile and its source-document metadata. This identity domain is not a project map. Use it for CV tailoring, introductions, job-fit analysis, and evidence-backed career claims.",
+        "Return the hub owner's canonical professional profile and its source-document metadata. This identity domain is a global profile, not a project map. Use it for CV tailoring, introductions, job-fit analysis, and evidence-backed career claims.",
       inputSchema: {},
     },
     async () => json(getProfessionalProfile())
@@ -665,7 +665,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Yerel LLM çalıştır",
       description:
-        "Fatih'in makinesindeki yerel modelle (LM Studio veya Ollama) üretim yapar (API maliyeti yok). Basit işler için uygun: özetleme, sınıflandırma, taslak, veri dönüştürme. Model belirtilmezse yüklü ilk model, backend belirtilmezse LM Studio öncelikli kullanılır.",
+        "Generate text with a local model (LM Studio or Ollama) on a registered machine, at no API cost. Suited to simple, high-volume work: summarizing, classification, drafting, data conversion. Defaults to the first loaded model and prefers the LM Studio backend when neither is specified. Call machine_status first to see which machines and models are online.",
       inputSchema: {
         prompt: z.string().describe("Kullanıcı mesajı (messages yerine kısayol)"),
         machine: z.string().optional(),
@@ -700,7 +700,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Medya üret (ComfyUI): görsel/video/ses/3D",
       description:
-        "Fatih'in PC'sindeki ComfyUI ile görsel, video, ses veya 3D üretir. workflow: workflows/ klasöründeki isim (workflow_list ile gör; isim türü söyler: *-t2i görsel, *-t2v/*-i2v video, *-audio ses); inputs: workflow'daki {{placeholder}} değerleri (örn. prompt, negative, width, height, seed). Üretilen dosya yolları ve /outputs URL'leri döner. Video/3D dakikalar sürebilir — timeoutSec'i yüksek tut (600+).",
+        "Generate an image, video, audio or 3D asset through ComfyUI on a registered machine. workflow: a name from the workflows/ folder (list them with workflow_list; the suffix tells you the type: *-t2i image, *-t2v/*-i2v video, *-audio audio). inputs: the {{placeholder}} values that workflow declares (e.g. prompt, negative, width, height, seed). Returns the generated file paths and their /outputs URLs. Video and 3D can take minutes — set a high timeoutSec (600+).",
       inputSchema: {
         workflow: z.string(),
         inputs: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),

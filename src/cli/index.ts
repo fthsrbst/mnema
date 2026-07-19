@@ -316,7 +316,7 @@ program
             {
               role: "system",
               content:
-                "Fatih'in kişisel bilgi asistanısın. Aşağıdaki bağlam onun ortak hafızasından geliyor; cevabını öncelikle buna dayandır, bağlamda yoksa bunu belirt. Türkçe ve öz cevap ver.\n\nBAĞLAM:\n" +
+                "Kullanıcının kişisel bilgi asistanısın. Aşağıdaki bağlam onun ortak hafızasından geliyor; cevabını öncelikle buna dayandır, bağlamda yoksa bunu belirt. Türkçe ve öz cevap ver.\n\nBAĞLAM:\n" +
                 (ctxText || "(ilgili kayıt bulunamadı)"),
             },
             { role: "user", content: question },

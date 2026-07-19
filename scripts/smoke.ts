@@ -289,13 +289,13 @@ check(
 );
 const profileBundle = await upsertProfessionalProfile({
   markdown:
-    "# Fatih Serbest\n\n## Verified facts\n\nBorn in Manisa. Final GPA: 3.25. Vitriol internship ended on 2026-06-16.\n\n## Provenance\n\nUser-confirmed smoke fixture.",
+    "# Example Engineer\n\n## Verified facts\n\nBased in Istanbul. Graduated in 2026 with a 3.25 GPA. Backend internship ended on 2026-06-16.\n\n## Provenance\n\nUser-confirmed smoke fixture.",
   source: "smoke",
   language: "en",
 });
 check(
   "professional profile: first-class global document bundle",
-  profileBundle.canonical?.uri === "profiles/fatih-serbest/canonical" &&
+  profileBundle.canonical?.uri === "profiles/canonical" &&
     getDocument(profileBundle.canonical.id)?.project === null &&
     getProfessionalProfile().sources.some((source) => source.id === profileSource.document_id),
   `canonical=${profileBundle.canonical?.uri}, sources=${profileBundle.sources.length}`
@@ -313,8 +313,8 @@ check(
 check("context intent: güncel durum", resolveContextIntent("Bu projenin güncel durumu nedir?") === "current_status");
 check(
   "context intent: ajan iletişim tercihi",
-  resolveContextIntent("How should an AI agent communicate with Fatih?") === "preference" &&
-    resolveContextIntent("Yapay zeka Fatih ile nasıl konuşmalı?") === "preference"
+  resolveContextIntent("How should an AI agent communicate with the user?") === "preference" &&
+    resolveContextIntent("Yapay zeka kullanici ile nasil konusmali?") === "preference"
 );
 check(
   "context intent: teknik geçmiş tercihe dönüşmez",
@@ -330,7 +330,7 @@ check(
 );
 check(
   "context intent: İngilizce eşleşme Türkçe katlamadan etkilenmez (AI → aı olmamalı)",
-  resolveContextIntent("How should an AI agent communicate with Fatih?") === "preference"
+  resolveContextIntent("How should an AI agent communicate with the user?") === "preference"
 );
 const statusContext = await contextGet({
   query: "Bu projenin güncel durumu nedir?",
