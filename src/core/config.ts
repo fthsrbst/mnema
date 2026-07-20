@@ -142,6 +142,15 @@ export const config = {
   // Agent presence advisory sinyali: bu süreden eski heartbeat "stale" (muhtemelen düşmüş) sayılır.
   // Kilit DEĞİL — sadece bridge/agent_active çıktısındaki bir uyarı eşiği.
   presenceTtlMin: envNumber("HUB_PRESENCE_TTL_MIN", 30, { min: 1, max: 10_080, integer: true }),
+  // --- Agent Intelligence Platform ---
+  // Worker queue processing interval in ms
+  workerIntervalMs: envNumber("HUB_WORKER_INTERVAL_MS", 5000, { min: 1000, max: 300_000, integer: true }),
+  // Agent capability TTL: agents not seen for this many minutes are marked offline
+  agentTtlMin: envNumber("HUB_AGENT_TTL_MIN", 60, { min: 5, max: 10_080, integer: true }),
+  // Task auto-prune: completed/cancelled tasks older than this many days are pruned
+  taskPruneDays: envNumber("HUB_TASK_PRUNE_DAYS", 30, { min: 1, max: 365, integer: true }),
+  // Log level: debug, info, warn, error
+  logLevel: process.env.HUB_LOG_LEVEL ?? "info",
 };
 
 if (config.vectorBackend === "qdrant" && !config.qdrantUrl) {

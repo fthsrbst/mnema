@@ -384,4 +384,125 @@ program
     }
   });
 
+// --- Agent Intelligence Platform CLI ---
+
+program
+  .command("tasks [project]")
+  .description("Görev kuyruğunu listele")
+  .option("-s, --status <status>", "pending|claimed|in_progress|blocked|done|cancelled")
+  .action(async (project: string | undefined, opts: { status?: string }) => {
+    try {
+      const params = new URLSearchParams();
+      if (project) params.set("project", project);
+      if (opts.status) params.set("status", opts.status);
+      const qs = params.toString();
+      const tasks = await api<{ uid: string; title: string; status: string; priority: number; claimed_by: string | null; project: string | null }[]>(
+        "GET", `/api/tasks${qs ? `?${qs}` : ""}`
+      );
+      if (tasks.length === 0) return console.log("görev yok");
+      for (const t of tasks) {
+        const status = t.status.padEnd(12);
+        const prio = String(t.priority).padStart(2);
+        const agent = t.claimed_by ?? "—";
+        const proj = t.project ?? "";
+        console.log(`[${status}] P${prio} ${t.title} ${proj ? `(${proj})` : ""} → ${agent}`);
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("task <action> [title...]")
+  .description("Görev oluştur/tamamla: hub task create \"başlık\" | hub task done <uid>")
+  .option("-p, --project <name>")
+  .option("--priority <n>", "öncelik", "0")
+  .option("--agent <name>", "claim eden agent")
+  .action(async (action: string, words: string[] | undefined, opts: { project?: string; priority: string; agent?: string }) => {
+    try {
+      if (action === "create") {
+        const title = (words ?? []).join(" ");
+        if (!title) return console.log("kullanım: hub task create \"başlık\" --project X");
+        const task = await api<{ uid: string }>("POST", "/api/tasks", {
+          title,
+          project: opts.project,
+          priority: Number(opts.priority) || 0,
+          created_by: "hub-cli",
+        });
+        console.log(`oluşturuldu: ${task.uid}`);
+      } else if (action === "done" || action === "complete") {
+        const uid = (words ?? [])[0];
+        if (!uid) return console.log("kullanım: hub task done <uid>");
+        await api("POST", `/api/tasks/${uid}/complete`, {});
+        console.log(`tamamlandı: ${uid}`);
+      } else if (action === "claim") {
+        const uid = (words ?? [])[0];
+        if (!uid) return console.log("kullanım: hub task claim <uid> --agent X");
+        await api("POST", `/api/tasks/${uid}/claim`, { agent: opts.agent ?? "hub-cli" });
+        console.log(`claim edildi: ${uid}`);
+      } else {
+        console.log("kullanım: hub task <create|done|claim> ...");
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("hygiene")
+  .description("Bellek hijyen raporu")
+  .option("--run", "otomatik temizlik çalıştır")
+  .action(async (opts: { run?: boolean }) => {
+    try {
+      if (opts.run) {
+        const res = await api<{ archived: number; consolidated: number }>("POST", "/api/hygiene/run");
+        console.log(`arşivlenen: ${res.archived}, birleştirilen: ${res.consolidated}`);
+      } else {
+        const report = await api<{ duplicates: { count: number }; stale: { count: number }; contradictions: { count: number }; suggestions: string[] }>("GET", "/api/hygiene");
+        console.log(`Tekrarlar: ${report.duplicates.count}`);
+        console.log(`Eskiler: ${report.stale.count}`);
+        console.log(`Çelişkiler: ${report.contradictions.count}`);
+        if (report.suggestions.length) {
+          console.log("\nÖneriler:");
+          for (const s of report.suggestions) console.log(`  • ${s}`);
+        }
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("compact <project>")
+  .description("Proje bilgisini sıkıştır (oturumlar + kararlar → özet doküman)")
+  .option("--full", "tam distill (hafızalar dahil)")
+  .action(async (project: string, opts: { full?: boolean }) => {
+    try {
+      const endpoint = opts.full ? "/api/compact" : "/api/compact";
+      const res = await api<{ document_uid: string; sessions_compacted?: number }>("POST", endpoint, {
+        project,
+        mode: opts.full ? "distill" : "sessions",
+      });
+      console.log(`sıkıştırıldı: ${res.document_uid}${res.sessions_compacted ? ` (${res.sessions_compacted} oturum)` : ""}`);
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("registered-agents")
+  .description("Kayıtlı agent yetenekleri")
+  .action(async () => {
+    try {
+      const agents = await api<{ agent: string; machine: string | null; capabilities: string[]; status: string; last_seen_at: string | null }[]>("GET", "/api/agents");
+      if (agents.length === 0) return console.log("kayıtlı agent yok");
+      for (const a of agents) {
+        const caps = a.capabilities.join(", ") || "—";
+        console.log(`${a.agent} (${a.machine ?? "?"}) [${a.status}] — ${caps}`);
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
 program.parseAsync(process.argv);

@@ -23,6 +23,8 @@ import { Agents } from "./views/Agents";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
 import { ProfessionalProfile } from "./views/ProfessionalProfile";
+import { Tasks } from "./views/Tasks";
+import { System } from "./views/System";
 import { getToken, setToken, setUnauthorizedHandler } from "./api";
 import { cloudConfigured } from "./cloud";
 import { I18nContext, useI18n, useProvideI18n, type Lang, type TKey } from "./i18n";
@@ -87,6 +89,7 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
     tabs: [
       { id: "projects", labelKey: "nav.projects" },
       { id: "sessions", labelKey: "nav.sessions" },
+      { id: "tasks", labelKey: "nav.tasks" },
     ],
   },
   {
@@ -98,6 +101,7 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
       { id: "machines", labelKey: "nav.machines" },
       { id: "media", labelKey: "nav.media" },
       { id: "skills", labelKey: "nav.skills" },
+      { id: "system", labelKey: "nav.system" },
       { id: "settings", labelKey: "nav.settings" },
     ],
   },
@@ -312,6 +316,10 @@ function AppInner() {
         return <Media />;
       case "skills":
         return <Skills />;
+      case "tasks":
+        return <Tasks />;
+      case "system":
+        return <System />;
       case "cloud":
         return <Suspense fallback={<Text type="supporting" color="secondary">{t("common.loading")}</Text>}><CloudAccount /></Suspense>;
       case "settings":

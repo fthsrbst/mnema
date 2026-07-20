@@ -251,3 +251,277 @@ export interface AgentPresence {
 export interface AgentPresenceView extends AgentPresence {
   stale: boolean;
 }
+
+// ============================================================================
+// Agent Coordination Types
+// ============================================================================
+
+export type TaskStatus = "pending" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled";
+
+/** Task queue item: agent-to-agent work delegation and tracking. */
+export interface Task {
+  id: number;
+  uid: string;
+  project: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: number;
+  created_by: string | null;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  depends_on: string[];
+  tags: string[];
+  result: string | null;
+  error: string | null;
+  due_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskInput {
+  project?: string;
+  title: string;
+  description?: string;
+  priority?: number;
+  created_by?: string;
+  depends_on?: string[];
+  tags?: string[];
+  due_at?: string;
+}
+
+export interface TaskPatch {
+  status?: TaskStatus;
+  priority?: number;
+  description?: string;
+  result?: string;
+  error?: string;
+  tags?: string[];
+}
+
+export interface TaskFilter {
+  project?: string;
+  status?: TaskStatus;
+  claimed_by?: string;
+  created_by?: string;
+  tag?: string;
+  limit?: number;
+}
+
+export type AgentCapabilityStatus = "available" | "busy" | "offline";
+
+/** Agent capability registry entry. */
+export interface AgentCapability {
+  id: number;
+  uid: string;
+  agent: string;
+  machine: string | null;
+  capabilities: string[];
+  models: string[];
+  max_concurrent: number;
+  status: AgentCapabilityStatus;
+  last_seen_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentCapabilityInput {
+  agent: string;
+  machine?: string;
+  capabilities?: string[];
+  models?: string[];
+  max_concurrent?: number;
+  status?: AgentCapabilityStatus;
+  metadata?: Record<string, unknown>;
+}
+
+export type MessageKind = "info" | "request" | "response" | "handoff" | "alert";
+
+/** Agent-to-agent message. */
+export interface AgentMessage {
+  id: number;
+  uid: string;
+  from_agent: string;
+  to_agent: string | null;
+  project: string | null;
+  task_uid: string | null;
+  kind: MessageKind;
+  subject: string;
+  body: string;
+  payload: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface AgentMessageInput {
+  from_agent: string;
+  to_agent?: string;
+  project?: string;
+  task_uid?: string;
+  kind?: MessageKind;
+  subject: string;
+  body: string;
+  payload?: Record<string, unknown>;
+}
+
+/** Structured handoff package between agents. */
+export interface HandoffPackage {
+  project: string;
+  from_agent: string;
+  to_agent: string;
+  generated_at: string;
+  project_map: ProjectMap | null;
+  recent_sessions: SessionLog[];
+  active_tasks: Task[];
+  pending_tasks: Task[];
+  active_agents: AgentPresenceView[];
+  relevant_memories: ScoredMemory[];
+  blockers: string[];
+  notes: string;
+}
+
+// ============================================================================
+// Context Intelligence Types
+// ============================================================================
+
+export type TaskOutcome = "success" | "partial" | "failure";
+
+/** Task-level feedback: captures outcomes and lessons from completed tasks. */
+export interface TaskFeedback {
+  id: number;
+  uid: string;
+  task_uid: string | null;
+  project: string | null;
+  agent: string | null;
+  outcome: TaskOutcome;
+  what_worked: string | null;
+  what_failed: string | null;
+  lessons: string | null;
+  duration_min: number | null;
+  created_at: string;
+}
+
+export interface TaskFeedbackInput {
+  task_uid?: string;
+  project?: string;
+  agent?: string;
+  outcome: TaskOutcome;
+  what_worked?: string;
+  what_failed?: string;
+  lessons?: string;
+  duration_min?: number;
+}
+
+/** Memory hygiene report. */
+export interface HygieneReport {
+  duplicates: { memory_id: number; title: string; similar_to: number; distance: number }[];
+  stale: { memory_id: number; title: string; last_accessed: string | null; importance: number }[];
+  contradictions: { from_id: number; from_title: string; to_id: number; to_title: string }[];
+  orphan_relations: number;
+  total_memories: number;
+  generated_at: string;
+}
+
+/** Cross-project knowledge suggestion. */
+export interface KnowledgeTransferSuggestion {
+  memory_uid: string;
+  title: string;
+  source_project: string;
+  target_project: string;
+  relevance_score: number;
+  reason: string;
+}
+
+// ============================================================================
+// Extensibility Types
+// ============================================================================
+
+/** Webhook registration for outbound HTTP callbacks. */
+export interface Webhook {
+  id: number;
+  uid: string;
+  url: string;
+  events: string[];
+  secret: string | null;
+  active: boolean;
+  last_triggered_at: string | null;
+  last_status: number | null;
+  fail_count: number;
+  created_at: string;
+}
+
+export interface WebhookInput {
+  url: string;
+  events?: string[];
+  secret?: string;
+}
+
+export type JobKind = "embed" | "compact" | "hygiene" | "webhook" | "webhook_test" | "sync" | "reindex" | "distill" | "custom";
+export type JobStatus = "queued" | "running" | "done" | "failed";
+
+/** SQLite-backed job queue item. */
+export interface Job {
+  id: number;
+  uid: string;
+  kind: JobKind;
+  payload: Record<string, unknown>;
+  status: JobStatus;
+  attempts: number;
+  max_attempts: number;
+  next_run_at: string;
+  last_error: string | null;
+  result: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Hub event types for the event bus. */
+export type HubEventType =
+  | "memory_saved"
+  | "memory_updated"
+  | "memory_deleted"
+  | "task_created"
+  | "task_updated"
+  | "task_completed"
+  | "task_cancelled"
+  | "task_claimed"
+  | "session_logged"
+  | "agent_checkin"
+  | "agent_checkout"
+  | "agent_registered"
+  | "document_added"
+  | "document_updated"
+  | "project_updated"
+  | "message_sent"
+  | "webhook_triggered"
+  | "job_completed"
+  | "job_failed"
+  | "feedback_recorded";
+
+export interface HubEvent {
+  id?: number;
+  type: HubEventType;
+  payload: Record<string, unknown>;
+  created_at?: string;
+}
+
+/** Prometheus-compatible metrics snapshot. */
+export interface MetricsSnapshot {
+  uptime_sec: number;
+  requests_total: number;
+  errors_5xx: number;
+  errors_4xx: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  latency_p99_ms: number;
+  embedding_calls: number;
+  memory_count: number;
+  document_count: number;
+  task_count: number;
+  active_tasks: number;
+  agent_count: number;
+  jobs: { queued: number; running: number; done: number; failed: number };
+}

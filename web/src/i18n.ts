@@ -37,6 +37,8 @@ const dict = {
   "nav.machines": { tr: "Makineler", en: "Machines" },
   "nav.media": { tr: "Medya", en: "Media" },
   "nav.skills": { tr: "Skiller", en: "Skills" },
+  "nav.tasks": { tr: "Görevler", en: "Tasks" },
+  "nav.system": { tr: "Sistem", en: "System" },
   "nav.cloud": { tr: "Cloud", en: "Cloud" },
   "nav.settings": { tr: "Ayarlar", en: "Settings" },
   "nav.graph": { tr: "Graf", en: "Graph" },
@@ -231,6 +233,40 @@ const dict = {
   "agents.durMin": { tr: "dk", en: "m" },
   "agents.durHour": { tr: "sa", en: "h" },
   "agents.runningBadge": { tr: "agent çalışıyor", en: "agent(s) running" },
+
+  // --- agents: Agent Intelligence (filo sayfası) ---
+  "agents.fleetTitle": { tr: "Agent Filosu", en: "Agent Fleet" },
+  "agents.fleetSubtitle": { tr: "Kim aktif, ne üzerinde çalışıyor, hangi işler bekliyor — tek ekranda", en: "Who's active, what they're working on, what's pending — on one screen" },
+  "agents.statTotal": { tr: "Toplam", en: "Total" },
+  "agents.statAvailable": { tr: "Uygun", en: "Available" },
+  "agents.statBusy": { tr: "Meşgul", en: "Busy" },
+  "agents.statOffline": { tr: "Çevrimdışı", en: "Offline" },
+  "agents.statActiveNow": { tr: "Şu an çalışıyor", en: "Working now" },
+  "agents.rosterTitle": { tr: "Ajanlar", en: "Agents" },
+  "agents.rosterEmpty": { tr: "Kayıtlı agent yok", en: "No registered agents" },
+  "agents.rosterEmptyDesc": { tr: "Bir agent MCP üzerinden kaydolduğunda burada görünür.", en: "Agents appear here once they register themselves via MCP." },
+  "agents.cap.available": { tr: "uygun", en: "available" },
+  "agents.cap.busy": { tr: "meşgul", en: "busy" },
+  "agents.cap.offline": { tr: "çevrimdışı", en: "offline" },
+  "agents.lastSeen": { tr: "Son görülme", en: "Last seen" },
+  "agents.heartbeat": { tr: "Nabız gönder", en: "Send heartbeat" },
+  "agents.currentTask": { tr: "Şu an", en: "Currently" },
+  "agents.noTask": { tr: "Görevde değil", en: "Not working on anything" },
+  "agents.boardTitle": { tr: "Görev Panosu", en: "Task Board" },
+  "agents.colPending": { tr: "Bekleyen", en: "Pending" },
+  "agents.colActive": { tr: "Devam eden", en: "In progress" },
+  "agents.colDone": { tr: "Biten (son 10)", en: "Done (last 10)" },
+  "agents.boardEmpty": { tr: "Görev yok", en: "No tasks" },
+  "agents.wireTitle": { tr: "Mesaj Akışı", en: "Message Wire" },
+  "agents.wireEmpty": { tr: "Henüz agent'lar arası mesaj yok", en: "No agent-to-agent messages yet" },
+  "agents.newMessage": { tr: "Yeni mesaj", en: "New message" },
+  "agents.compose": { tr: "Mesaj gönder", en: "Send message" },
+  "agents.msgFrom": { tr: "Kimden", en: "From" },
+  "agents.msgTo": { tr: "Kime", en: "To" },
+  "agents.msgKind": { tr: "Tür", en: "Kind" },
+  "agents.msgSubject": { tr: "Konu", en: "Subject" },
+  "agents.msgBody": { tr: "Mesaj", en: "Message" },
+  "agents.broadcast": { tr: "yayın (herkes)", en: "broadcast (all)" },
 
   // --- skills ---
   "skills.title": { tr: "Skiller", en: "Skills" },
@@ -447,6 +483,21 @@ const dict = {
   "graph.detailKind": { tr: "Tür", en: "Type" },
   "graph.bodyLoading": { tr: "Gövde yükleniyor...", en: "Loading body..." },
   "graph.canvasLabel": { tr: "İlişki grafiği tuvali", en: "Relationship graph canvas" },
+
+  // --- tasks ---
+  "tasks.title": { tr: "Görev Kuyruğu", en: "Task Queue" },
+  "tasks.subtitle": { tr: "Agent'lar arası iş delegasyonu ve takibi", en: "Agent-to-agent work delegation and tracking" },
+  "tasks.create": { tr: "Yeni Görev", en: "New Task" },
+  "tasks.newTask": { tr: "Yeni Görev Oluştur", en: "Create New Task" },
+  "tasks.list": { tr: "Görevler", en: "Tasks" },
+  "tasks.empty": { tr: "Görev yok", en: "No tasks" },
+  "tasks.emptyDesc": { tr: "Agent'lar görev oluşturdukça burada görünecek.", en: "Tasks will appear here as agents create them." },
+  "tasks.detail": { tr: "Görev Detayı", en: "Task Detail" },
+  "tasks.detailEmpty": { tr: "Detay için bir görev seç", en: "Select a task to view details" },
+
+  // --- system ---
+  "system.title": { tr: "Sistem Yönetimi", en: "System Management" },
+  "system.subtitle": { tr: "Metrikler, olaylar, webhook'lar ve iş kuyruğu", en: "Metrics, events, webhooks, and job queue" },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type TKey = keyof typeof dict;

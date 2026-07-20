@@ -32,6 +32,10 @@ koordinasyonu. Raspberry Pi 5'te systemd servisi olarak çalışır; istemciler 
   KİLİT DEĞİL. Aşağıdaki "Agent koordinasyon protokolü"ne bak.
 - `evals/` — context_get golden suite; kanonik canlı bilgi durumuna (proje: mnema) karşı yazılır.
 - `deploy/` — Pi kurulum/güncelleme/yedek scriptleri + systemd unit; `deploy/cloud/` hosted compose.
+- Agent Intelligence Platform (`src/core/tasks.ts`, `capabilities.ts`, `messaging.ts`, `hygiene.ts`,
+  `compaction.ts`, `learning.ts`, `worker.ts`, `webhooks.ts`) — görev kuyruğu, agent yetenek kaydı, agent-agent
+  mesajlaşma, hafıza hijyeni, bilgi sıkıştırma, ders çıkarma, webhook'lar ve async job kuyruğu.
+  Detay ve tam MCP tool listesi: `docs/agent-platform.md`.
 
 ## Agent koordinasyon protokolü (presence)
 Bu hub'ı kullanan HER agent (Claude Code, Codex, opencode, cursor…) şu protokolü izler:
@@ -44,6 +48,12 @@ Bu hub'ı kullanan HER agent (Claude Code, Codex, opencode, cursor…) şu proto
 5. Bu bir mutual-exclusion kilidi DEĞİLDİR: aktif kayıt görsen de devam edebilirsin; crash eden
    agent kilit bırakmaz — TTL (`HUB_PRESENCE_TTL_MIN`, varsayılan 30 dk) sonrası kayıt `stale`
    işaretlenir ve "muhtemelen düşmüş" diye görünür. Stale kayıtları yok say.
+6. Görev almadan önce `task_queue(project)` ile bağımlılığı çözülmüş, önceliğe göre sıralı
+   bekleyen işleri kontrol et; uygun olanı `task_claim` ile al.
+7. İş bitince `task_complete` + `task_feedback` (outcome, ne işe yaradı/yaramadı, dersler) —
+   dersler otomatik `howto` hafızasına düşer ve `project_lessons` ile başka agent'lara ulaşır.
+8. Agent'lar arası mesajlar için `agent_inbox` / `agent_message_send` kullan (presence'tan
+   ayrı bir kanaldır); bir işi tamamen başka bir agent'a devredeceksen `agent_handoff`.
 
 ## Kurallar
 - Embedding yoksa (GEMINI_API_KEY boş) veya sqlite-vec yüklenemezse sistem **FTS-only moda düşer,

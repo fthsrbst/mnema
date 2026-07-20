@@ -1,5 +1,5 @@
 import { config } from "./config.js";
-import { hasVec } from "./db.js";
+import { getDb, hasVec } from "./db.js";
 import { embeddingsEnabled } from "./embeddings.js";
 import { recordMemoryAccess, resolveRelated, searchMemories } from "./memories.js";
 import { searchChunks } from "./documents.js";
@@ -7,13 +7,17 @@ import { getProject, resolveProjectFromPath } from "./projects.js";
 import { recentSessionLogs } from "./sessions.js";
 import { listMemoryRelations } from "./relations.js";
 import { agentActive, formatPresenceLines } from "./presence.js";
-import type { ScoredChunk, ScoredMemory } from "./types.js";
+import { taskQueue } from "./tasks.js";
+import { unreadCount } from "./messaging.js";
+import type { KnowledgeTransferSuggestion, ScoredChunk, ScoredMemory } from "./types.js";
 
 export interface RecallResult {
   memories: ScoredMemory[];
   chunks: ScoredChunk[];
   /** cwd'den veya parametreden çözülen aktif proje (varsa). */
   project?: string | null;
+  /** Cross-project suggestions from other projects that may apply. */
+  cross_project_suggestions?: KnowledgeTransferSuggestion[];
 }
 
 /**
@@ -81,6 +85,58 @@ export async function recall(query: string, project?: string, cwd?: string): Pro
   };
   recordMemoryAccess(selectedMemories.map((item) => item.id));
   return result;
+}
+
+/**
+ * Find transferable knowledge from other projects that might apply.
+ * Based on tag overlap, semantic similarity, and applies_to relations.
+ */
+export async function transferableKnowledge(project: string, limit = 5): Promise<KnowledgeTransferSuggestion[]> {
+  const db = getDb();
+  const suggestions: KnowledgeTransferSuggestion[] = [];
+
+  // Get tags used in the target project
+  const projectTags = db
+    .prepare(
+      `SELECT DISTINCT json_each.value AS tag FROM memories, json_each(memories.tags) WHERE project = ?`
+    )
+    .all(project) as { tag: string }[];
+  const tagSet = new Set(projectTags.map((t) => t.tag));
+
+  if (tagSet.size === 0) return [];
+
+  // Find high-importance memories from other projects with overlapping tags
+  const placeholders = [...tagSet].map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT m.id, m.uid, m.title, m.body, m.project, m.importance, m.type, m.tags
+       FROM memories m, json_each(m.tags) AS jt
+       WHERE m.project IS NOT NULL AND m.project != ?
+         AND m.importance >= 1.2
+         AND jt.value IN (${placeholders})
+       ORDER BY m.importance DESC
+       LIMIT ?`
+    )
+    .all(project, ...tagSet, limit * 2) as {
+    id: number; uid: string; title: string; body: string; project: string; importance: number; type: string; tags: string;
+  }[];
+
+  for (const row of rows) {
+    const rowTags: string[] = JSON.parse(row.tags || "[]");
+    const sharedTags = rowTags.filter((t) => tagSet.has(t));
+    if (sharedTags.length === 0) continue;
+    suggestions.push({
+      memory_uid: row.uid,
+      title: row.title,
+      source_project: row.project,
+      target_project: project,
+      reason: `Shared tags: ${sharedTags.join(", ")}`,
+      relevance_score: Math.min(1, row.importance / 2 + sharedTags.length * 0.1),
+    });
+    if (suggestions.length >= limit) break;
+  }
+
+  return suggestions;
 }
 
 /** Hook çıktısı: agent bağlamına enjekte edilecek kompakt markdown. Boşsa "". */
@@ -166,6 +222,19 @@ export function bridge(cwd?: string, projectName?: string): string {
     lines.push(
       `Map güncellemesi: ${proj.updated_at} — gerçek durumla çeliştiğini görürsen project_update ile düzelt (bayat map yanlış yönlendirir).`
     );
+  }
+  // Agent Intelligence Platform discoverability: bridge çağrısında belirli bir agent
+  // kimliği yok (yalnızca cwd/proje çözülür) — bu yüzden görev sayısı için agent-özel
+  // agentTasks() değil proje kuyruğu (taskQueue) kullanılır; mesaj sayısı için de
+  // presence.ts'in varsayılan agent kimliğiyle (agentCheckin'deki "claude-code" fallback)
+  // aynı jenerik kimlik kullanılır. En fazla 2 satır, sadece sayı > 0 iken.
+  const pendingTaskCount = taskQueue(proj.name).length;
+  if (pendingTaskCount > 0) {
+    lines.push(`📋 Kuyrukta ${pendingTaskCount} bekleyen görev var (task_list claimed_by=<agent>)`);
+  }
+  const unread = unreadCount("claude-code");
+  if (unread > 0) {
+    lines.push(`✉ ${unread} okunmamış mesajın var (agent_inbox)`);
   }
   lines.push("</hub-bridge>");
   return lines.join("\n");

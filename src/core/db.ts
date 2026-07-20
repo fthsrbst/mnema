@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS session_logs(
   project TEXT,
   summary TEXT NOT NULL,
   source TEXT,
+  compacted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
@@ -239,6 +240,147 @@ CREATE TABLE IF NOT EXISTS vector_outbox(
   PRIMARY KEY(entity, row_id)
 );
 CREATE INDEX IF NOT EXISTS idx_vector_outbox_due ON vector_outbox(next_attempt_at, updated_at);
+
+-- Task queue: agent-to-agent work delegation and tracking.
+-- Tasks can have dependencies (depends_on JSON array of task uids) and are
+-- claimed atomically by agents. Status flow: pending -> claimed -> in_progress -> done/cancelled.
+CREATE TABLE IF NOT EXISTS tasks(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  project TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','claimed','in_progress','blocked','done','cancelled')),
+  priority INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  claimed_by TEXT,
+  claimed_at TEXT,
+  depends_on TEXT NOT NULL DEFAULT '[]',
+  tags TEXT NOT NULL DEFAULT '[]',
+  result TEXT,
+  error TEXT,
+  due_at TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project, status, priority DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_claimed ON tasks(claimed_by, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated_at);
+
+-- Agent capability registry: tracks what each agent can do and its current status.
+-- Agents register their capabilities (code_review, testing, deploy, etc.) and
+-- can be found by capability for task routing.
+CREATE TABLE IF NOT EXISTS agent_capabilities(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  agent TEXT NOT NULL,
+  machine TEXT,
+  capabilities TEXT NOT NULL DEFAULT '[]',
+  models TEXT NOT NULL DEFAULT '[]',
+  max_concurrent INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','busy','offline')),
+  last_seen_at TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  UNIQUE(agent, machine)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_capabilities_status ON agent_capabilities(status, last_seen_at);
+
+-- Agent messages: structured communication between agents.
+-- Supports info, request, response, handoff, and alert message types.
+-- Messages can be linked to tasks for context.
+CREATE TABLE IF NOT EXISTS agent_messages(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  from_agent TEXT NOT NULL,
+  to_agent TEXT,
+  project TEXT,
+  task_uid TEXT,
+  kind TEXT NOT NULL DEFAULT 'info' CHECK(kind IN ('info','request','response','handoff','alert')),
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  read_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_messages_to ON agent_messages(to_agent, read_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_project ON agent_messages(project, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_task ON agent_messages(task_uid);
+
+-- Per-agent read state for broadcast messages (to_agent IS NULL). Direct messages
+-- use agent_messages.read_at directly (global — only one recipient anyway); broadcasts
+-- must not let one agent's read mark it read for everyone else.
+CREATE TABLE IF NOT EXISTS agent_message_reads(
+  message_uid TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  read_at TEXT NOT NULL,
+  PRIMARY KEY(message_uid, agent)
+);
+
+-- Task-level feedback: captures outcomes and lessons from completed tasks.
+-- Distinct from recall_feedback (which measures retrieval quality).
+CREATE TABLE IF NOT EXISTS task_feedback(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  task_uid TEXT,
+  project TEXT,
+  agent TEXT,
+  outcome TEXT NOT NULL CHECK(outcome IN ('success','partial','failure')),
+  what_worked TEXT,
+  what_failed TEXT,
+  lessons TEXT,
+  duration_min INTEGER,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_task_feedback_project ON task_feedback(project, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_feedback_task ON task_feedback(task_uid);
+
+-- Webhook registrations: outbound HTTP callbacks on hub events.
+-- Auto-disabled after repeated failures.
+CREATE TABLE IF NOT EXISTS webhooks(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  url TEXT NOT NULL,
+  events TEXT NOT NULL DEFAULT '["*"]',
+  secret TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  last_triggered_at TEXT,
+  last_status INTEGER,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+
+-- Job queue: SQLite-backed async worker for embed, compact, hygiene, webhook, sync, reindex.
+-- Single-threaded processing with exponential backoff on failure.
+CREATE TABLE IF NOT EXISTS jobs(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','done','failed')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  next_run_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  last_error TEXT,
+  result TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_due ON jobs(status, next_run_at);
+
+-- Hub event log: recent events for debugging and dashboard.
+-- Ring buffer style — old events are pruned periodically.
+CREATE TABLE IF NOT EXISTS hub_events(
+  id INTEGER PRIMARY KEY,
+  uid TEXT,
+  type TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_hub_events_type ON hub_events(type, created_at);
 `;
 
 /** Var olan DB'lere eşitleme kolonlarını ekler (uid, updated_at) ve backfill yapar. */
@@ -266,6 +408,10 @@ function migrate(database: Database.Database): void {
   backfillDocumentHashes(database);
   addColumn("session_logs", "uid", "uid TEXT");
   addColumn("session_logs", "updated_at", "updated_at TEXT");
+  addColumn("session_logs", "compacted_at", "compacted_at TEXT");
+  // hub_events.uid: emitHubEvent() ve getEventLogDb() bu kolonu varsayar; şema ilk sürümde
+  // eksikti (INSERT sessizce yutuluyor, SELECT ise "no such column" ile patlıyordu).
+  addColumn("hub_events", "uid", "uid TEXT");
   // Yerel LLM backend'leri: LM Studio'ya ek olarak Ollama (OpenAI-uyumlu /v1)
   addColumn("machines", "ollama_port", "ollama_port INTEGER");
   // Recall kalitesi: önem çarpanı + erişim takibi (bkz. memories.ts, search.ts)
