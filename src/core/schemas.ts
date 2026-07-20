@@ -60,6 +60,7 @@ export const memoryInputBaseSchema = z
     normalizer_generation: z.string().trim().min(1).max(200).optional(),
     importance: z.number().finite().min(0.5).max(2).optional(),
     related_ids: z.array(z.number().int().positive()).max(100).optional(),
+    origin_machine: z.string().trim().min(1).max(100).optional(),
   })
   .strict();
 export const memoryInputSchema = memoryInputBaseSchema.refine(
@@ -174,6 +175,7 @@ export const sessionInputSchema = z
     summary: z.string().trim().min(1).max(50_000),
     project: projectOptional,
     source: sourceSchema.optional(),
+    origin_machine: z.string().trim().min(1).max(100).optional(),
   })
   .strict();
 
@@ -335,6 +337,7 @@ export const syncPayloadSchema = z.object({
     updated_at: syncTimestamp,
     importance: z.number().finite().min(0.5).max(2).optional(),
     related: z.string().max(50_000).optional(),
+    origin_machine: z.string().max(100).nullable().optional(),
     embedding: syncVector,
   }).strict()).max(100_000),
   documents: z.array(z.object({
@@ -380,6 +383,7 @@ export const syncPayloadSchema = z.object({
     project: projectNameSchema.nullable(),
     summary: z.string().min(1).max(50_000),
     source: z.string().max(200).nullable(),
+    origin_machine: z.string().max(100).nullable().optional(),
     created_at: syncTimestamp,
     updated_at: syncTimestamp.optional(),
   }).strict()).max(100_000),

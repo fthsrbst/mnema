@@ -5,10 +5,10 @@
  * agent'lar crash edebilir, sert kilit deadlock üretir. Bayatlık heartbeat_at +
  * HUB_PRESENCE_TTL_MIN ile ele alınır (agentActive() stale işaretler, engellemez).
  */
-import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { getDb, NOW_MS } from "./db.js";
 import { config } from "./config.js";
+import { resolveMachineName } from "./machine.js";
 import { notifyWrite } from "./events.js";
 import { recordDeletion } from "./sync.js";
 import { assertProjectReference } from "./projects.js";
@@ -26,7 +26,7 @@ export function agentCheckin(input: unknown): AgentPresence {
   const parsed = agentCheckinSchema.parse(input);
   assertProjectReference(parsed.project, "agent_presence");
   const db = getDb();
-  const machine = parsed.machine?.trim() || os.hostname();
+  const machine = parsed.machine?.trim() || resolveMachineName();
   const agent = parsed.agent?.trim() || "claude-code";
 
   if (parsed.uid) {

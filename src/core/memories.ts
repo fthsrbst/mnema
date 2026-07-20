@@ -6,6 +6,7 @@ import { notifyWrite } from "./events.js";
 import { hybridSearch } from "./search.js";
 import { recordDeletion } from "./sync.js";
 import { assertProjectReference } from "./projects.js";
+import { resolveMachineName } from "./machine.js";
 import type { Memory, MemoryInput, RelatedRef, SavedMemory, ScoredMemory, SearchFilters, SimilarHit } from "./types.js";
 import { memoryConsolidateSchema, memoryInputSchema, memoryPatchSchema } from "./schemas.js";
 import {
@@ -109,10 +110,10 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
     .prepare(
       `INSERT INTO memories(
          uid, type, title, body, project, tags, source, language, canonical_summary,
-         normalizer_generation, importance, related, created_at, updated_at
+         normalizer_generation, importance, related, origin_machine, created_at, updated_at
        ) VALUES (
          @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
-         @normalizer_generation, @importance, @related, ${NOW_MS}, ${NOW_MS}
+         @normalizer_generation, @importance, @related, @origin_machine, ${NOW_MS}, ${NOW_MS}
        )`
     )
     .run({
@@ -128,6 +129,7 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
       normalizer_generation: input.normalizer_generation ?? null,
       importance: clampImportance(input.importance),
       related: JSON.stringify(relatedUids),
+      origin_machine: input.origin_machine ?? resolveMachineName(),
     });
   const id = Number(info.lastInsertRowid);
   replaceLegacyRelatedRelations(id, relatedUids);
