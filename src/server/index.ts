@@ -34,6 +34,7 @@ import {
   pruneEvents,
   pruneJobs,
   recordRequest,
+  backfillMissingEmbeddings,
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
@@ -420,10 +421,22 @@ app.listen(config.port, config.host, () => {
     });
   }
 
-  // Primary yoksa (tek-node kurulum) presence prune sync döngüsüne binmez —
-  // bağımsız düşük frekanslı bir zamanlayıcı yeterli (ucuz, günde birkaç kez de olsa sorun değil).
+// Primary yoksa (tek-node kurulum) presence prune sync döngüsüne binmez —
+  // bağımsız düşük frekanslı bir zamanlayıcı yeterli (ucuz, günde birkaçkez de olsa sorun değil).
   if (communityEnabled && config.primaryUrls.length === 0) {
     setInterval(() => pruneStalePresence(), 6 * 60 * 60 * 1_000);
+  }
+
+  // Embedding backfill, startup'ta bir kez: kayıt sırasında embedding başarısız olmuş
+  // memory/chunk'ları (Gemini hatası/aş kesintisi) tamamlar. Eksik yoksa no-op.
+  if (communityEnabled) {
+    void backfillMissingEmbeddings()
+      .then((r) => {
+        if (r.memories_embedded > 0 || r.chunks_embedded > 0) {
+          console.log(`[hub] başlangıç backfill: memories=${r.memories_embedded}, chunks=${r.chunks_embedded}`);
+        }
+      })
+      .catch((err) => console.error(`[hub] başlangıç backfill hatası: ${(err as Error).message}`));
   }
 
   if (communityEnabled) {
@@ -435,6 +448,13 @@ app.listen(config.port, config.host, () => {
     );
     registerJobHandler("distill", async (payload) => distillProject(payload.project as string));
     registerJobHandler("webhook_test", async () => ({ ok: true }));
+    // Embedding backfill job handler: enqueue edilen 'embed' job'ları worker.ts'teki
+    // sıra + exponential backoff çerçevesinde işlenir. Startup ve periyodik bakım
+    // döngüsü doğrudan npm run backfillMissingEmbeddings() çağırır (kuyruk birikimi
+    // olmadan), elle tetikleme de burada mümkün (hub job enqueue embed).
+    registerJobHandler("embed", async (payload) =>
+      backfillMissingEmbeddings((payload.limit as number | undefined) ?? 100)
+    );
     startWorker(config.workerIntervalMs);
 
     // Outbound webhook delivery: subscribes to the typed hub event bus.
@@ -453,6 +473,17 @@ app.listen(config.port, config.host, () => {
       } catch (err) {
         console.error(`[hub] agent intelligence prune hatası: ${(err as Error).message}`);
       }
+      // Embedding backfill: kayıt anında embed edilemeyen memory/chunk'ları (Gemini
+      // hatası/aş kesintisi) tamamlar. Eksik yoksa no-op; hata olursa bir sonraki
+      // tur tekrar dener. Worker (reindex job) ile aynı tabloları paylaşır — çakışma
+      // değil: ikisi de idempotent DELETE+INSERT (en son yazan kazanır).
+      void backfillMissingEmbeddings()
+        .then((r) => {
+          if (r.memories_embedded > 0 || r.chunks_embedded > 0) {
+            console.log(`[hub] backfill: memories=${r.memories_embedded}, chunks=${r.chunks_embedded}`);
+          }
+        })
+        .catch((err) => console.error(`[hub] backfill hatası: ${(err as Error).message}`));
     }, 6 * 60 * 60 * 1_000);
   }
 
