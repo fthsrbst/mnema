@@ -20,6 +20,20 @@ import {
   syncWithPrimary,
   vectorStore,
   vecError,
+  // Agent Intelligence Platform
+  startWorker,
+  registerJobHandler,
+  initWebhookDelivery,
+  runHygiene,
+  compactSessions,
+  distillProject,
+  pruneOldTasks,
+  pruneOldMessages,
+  pruneOfflineAgents,
+  pruneOldAgents,
+  pruneEvents,
+  pruneJobs,
+  recordRequest,
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
@@ -199,6 +213,17 @@ app.use((_req, res, next) => {
     res.setHeader("Retry-After", String(rate.retryAfterSec));
     return void res.status(429).json({ error: "rate_limited", retry_after_seconds: rate.retryAfterSec });
   }
+  next();
+});
+
+// İstek metrikleri: /health ve statik dosyalardan sonra, gerçek API/MCP trafiğinden önce.
+// res.on("finish") ile ölçüm, response tamamlanmadan sayılmaz (timeout/abort'ta hiç sayılmaz).
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+    recordRequest(req.method, req.path, res.statusCode, durationMs);
+  });
   next();
 });
 
@@ -399,6 +424,36 @@ app.listen(config.port, config.host, () => {
   // bağımsız düşük frekanslı bir zamanlayıcı yeterli (ucuz, günde birkaç kez de olsa sorun değil).
   if (communityEnabled && config.primaryUrls.length === 0) {
     setInterval(() => pruneStalePresence(), 6 * 60 * 60 * 1_000);
+  }
+
+  if (communityEnabled) {
+    // Agent Intelligence Platform: async job worker. Handlers stay thin — they just
+    // call the real domain functions; queuing/retry/backoff logic lives in worker.ts.
+    registerJobHandler("hygiene", async (payload) => runHygiene(payload.project as string | undefined));
+    registerJobHandler("compact", async (payload) =>
+      compactSessions(payload.project as string, payload.opts as { count?: number; archiveOld?: boolean } | undefined)
+    );
+    registerJobHandler("distill", async (payload) => distillProject(payload.project as string));
+    registerJobHandler("webhook_test", async () => ({ ok: true }));
+    startWorker(config.workerIntervalMs);
+
+    // Outbound webhook delivery: subscribes to the typed hub event bus.
+    initWebhookDelivery();
+
+    // Agent Intelligence Platform maintenance: same 6h cadence as the presence prune
+    // above — cheap, low-frequency housekeeping, no dedicated scheduler needed.
+    setInterval(() => {
+      try {
+        pruneOldTasks();
+        pruneOldMessages();
+        pruneOfflineAgents();
+        pruneOldAgents();
+        pruneEvents();
+        pruneJobs();
+      } catch (err) {
+        console.error(`[hub] agent intelligence prune hatası: ${(err as Error).message}`);
+      }
+    }, 6 * 60 * 60 * 1_000);
   }
 
   // Gece özeti: dakikada bir saat kontrolü ile hafif zamanlayıcı (node-cron yok — sıfır bağımlılık).

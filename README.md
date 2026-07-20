@@ -259,7 +259,7 @@ the hub exists and when to use it. Full client details:
 
 ## Tools
 
-Mnema exposes **46 MCP tools** on one endpoint (`$HUB_URL/mcp`, Streamable
+Mnema exposes **74 MCP tools** on one endpoint (`$HUB_URL/mcp`, Streamable
 HTTP). Every capability is also reachable over REST at `$HUB_URL/api` — same
 contract, same authority, same data. Tool names are stable and should be
 treated as the public API.
@@ -369,6 +369,74 @@ treated as the public API.
 | `vector_projection_rebuild` | Queues every authoritative memory and chunk vector for idempotent redelivery to the configured external backend. Does not delete SQLite data. |
 | `vector_projection_verify` | Compares authoritative `sqlite-vec` counts against the active external generation and requires a ready, empty outbox. |
 | `vector_projection_flush` | Attempts one bounded delivery batch now; failed rows stay durable and back off exponentially. |
+
+### Task queue (Agent Intelligence Platform)
+
+| Tool | What it does |
+|---|---|
+| `task_create` | Creates a new task for agent-to-agent work delegation, with dependencies, priority and tags. |
+| `task_claim` | Claims a specific task or the next available task from a project queue. |
+| `task_update` | Updates task status, priority, or other fields. |
+| `task_complete` | Marks a task done with an optional structured result. |
+| `task_list` | Lists tasks with optional filters by project, status, agent or tags. |
+| `task_queue` | Returns the next actionable tasks for a project: pending tasks with resolved dependencies, ordered by priority. |
+
+### Agent capabilities and handoff
+
+| Tool | What it does |
+|---|---|
+| `agent_register` | Registers or updates an agent's capabilities, models and concurrency limit in the registry. |
+| `agent_find` | Finds agents that have a specific capability, optionally filtered by project. |
+| `agent_list` | Lists all registered agents with their capabilities and status. |
+| `agent_handoff` | Builds a structured context-handoff package: project map, recent sessions, active tasks, presence and relevant memories. |
+
+### Agent-to-agent messaging
+
+| Tool | What it does |
+|---|---|
+| `agent_message_send` | Sends a message to another agent (or broadcasts to all) — kinds: `info`, `request`, `response`, `handoff`, `alert`. |
+| `agent_inbox` | Returns unread messages for an agent, optionally filtered by project or kind. |
+| `message_mark_read` | Marks a single message as read; per-agent for broadcasts. |
+| `message_mark_all_read` | Marks all direct messages and unread broadcasts as read for an agent. |
+| `message_unread_count` | Returns the unread message count for an agent. |
+
+### Memory hygiene
+
+| Tool | What it does |
+|---|---|
+| `hygiene_report` | Reports memory quality: duplicates, stale memories, contradictions and orphan relations. |
+| `hygiene_run` | Runs an automated hygiene pass: archives very stale, low-importance memories and cleans up orphan relations. |
+
+### Compaction and learning
+
+| Tool | What it does |
+|---|---|
+| `compact_project` | Triggers knowledge compaction for a project: summarizes sessions and decisions into concise reference documents. |
+| `task_feedback` | Records feedback for a completed task — outcome, what worked, what failed, and lessons learned (lessons are auto-saved as `howto` memories). |
+| `project_lessons` | Returns aggregated lessons learned from task feedback for a project. |
+| `knowledge_transfer` | Finds knowledge from other projects that might apply to the target project, based on tag overlap and importance. |
+
+### Webhooks
+
+| Tool | What it does |
+|---|---|
+| `webhook_register` | Registers an HTTP endpoint to receive hub events, with event filtering and HMAC signing. |
+| `webhook_list` | Lists all registered webhooks with their status. |
+| `webhook_remove` | Removes a registered webhook by UID. |
+
+### Job queue
+
+| Tool | What it does |
+|---|---|
+| `job_enqueue` | Adds an async job to the worker queue — kinds: `embed`, `compact`, `hygiene`, `webhook`, `sync`, `reindex`. |
+| `job_status` | Checks the status of a specific job, or lists recent jobs. |
+
+### Metrics and events
+
+| Tool | What it does |
+|---|---|
+| `metrics_overview` | Returns system metrics: uptime, request counts, latency percentiles, memory/task/agent stats. |
+| `event_log` | Returns recent hub events for debugging or monitoring. |
 
 ## Auto-recall hook
 

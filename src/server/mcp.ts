@@ -64,6 +64,41 @@ import {
   memoryRelationPatchBaseSchema,
   memoryRelationTypeSchema,
   sessionInputSchema,
+  // Agent Intelligence Platform
+  createTask,
+  claimTask,
+  updateTask,
+  completeTask,
+  cancelTask,
+  listTasks,
+  getTask,
+  taskQueue,
+  registerAgent,
+  findCapableAgents,
+  listAgents,
+  agentHeartbeat,
+  sendMessage,
+  inbox,
+  markRead,
+  markAllRead,
+  unreadCount,
+  createHandoff,
+  hygieneReport,
+  runHygiene,
+  compactSessions,
+  distillProject,
+  recordTaskFeedback,
+  projectLessons,
+  suggestForTask,
+  transferableKnowledge,
+  registerWebhook,
+  listWebhooks,
+  removeWebhook,
+  enqueueJob,
+  getJob,
+  listJobs,
+  getMetricsSnapshot,
+  getEventLogDb,
 } from "../core/index.js";
 
 const memoryType = memoryTypeSchema;
@@ -709,6 +744,439 @@ export function buildMcpServer(): McpServer {
       },
     },
     async (args) => json(await generateImage(args))
+  );
+
+  // === Agent Coordination Tools ===
+
+  server.registerTool(
+    "task_create",
+    {
+      title: "Create a task",
+      description:
+        "Create a new task for agent-to-agent work delegation. Tasks can have dependencies, priority, and tags. Use this to delegate work to other agents or track work items.",
+      inputSchema: {
+        title: z.string().min(1).max(300),
+        description: z.string().max(10000).optional(),
+        project: z.string().max(100).optional(),
+        priority: z.number().int().min(0).max(100).optional(),
+        created_by: z.string().max(100).optional(),
+        depends_on: z.array(z.string()).max(20).optional(),
+        tags: z.array(z.string()).max(10).optional(),
+        due_at: z.string().optional(),
+      },
+    },
+    async (args) => json(createTask(args))
+  );
+
+  server.registerTool(
+    "task_claim",
+    {
+      title: "Claim a task",
+      description:
+        "Claim a specific task or the next available task from a project queue. Only pending tasks with resolved dependencies can be claimed.",
+      inputSchema: {
+        uid: z.string().optional().describe("Specific task UID to claim; omit to claim next from project queue"),
+        agent: z.string().min(1).max(100),
+        project: z.string().max(100).optional(),
+      },
+    },
+    async ({ uid, agent, project }) => {
+      if (uid) return json(claimTask(uid, agent));
+      // Claim next from queue
+      const queue = taskQueue(project);
+      if (queue.length === 0) return json({ error: "No available tasks in queue" });
+      return json(claimTask(queue[0].uid, agent));
+    }
+  );
+
+  server.registerTool(
+    "task_update",
+    {
+      title: "Update a task",
+      description: "Update task status, priority, or other fields.",
+      inputSchema: {
+        uid: z.string(),
+        status: z.enum(["pending", "claimed", "in_progress", "blocked", "done", "cancelled"]).optional(),
+        priority: z.number().int().min(0).max(100).optional(),
+        result: z.string().max(50000).optional(),
+        error: z.string().max(5000).optional(),
+      },
+    },
+    async ({ uid, ...patch }) => {
+      const task = updateTask(uid, patch);
+      return task ? json(task) : json({ error: `Task not found: ${uid}` });
+    }
+  );
+
+  server.registerTool(
+    "task_complete",
+    {
+      title: "Complete a task",
+      description: "Mark a task as done with an optional structured result.",
+      inputSchema: {
+        uid: z.string(),
+        result: z.string().max(50000).optional(),
+      },
+    },
+    async ({ uid, result }) => {
+      const task = completeTask(uid, result);
+      return task ? json(task) : json({ error: `Task not found: ${uid}` });
+    }
+  );
+
+  server.registerTool(
+    "task_list",
+    {
+      title: "List tasks",
+      description: "List tasks with optional filters by project, status, agent, or tags.",
+      inputSchema: {
+        project: z.string().optional(),
+        status: z.enum(["pending", "claimed", "in_progress", "blocked", "done", "cancelled"]).optional(),
+        claimed_by: z.string().optional(),
+        created_by: z.string().optional(),
+        tag: z.string().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    async (args) => json(listTasks(args))
+  );
+
+  server.registerTool(
+    "task_queue",
+    {
+      title: "Get actionable task queue",
+      description:
+        "Get the next actionable tasks for a project: pending tasks with resolved dependencies, ordered by priority.",
+      inputSchema: {
+        project: z.string().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async ({ project, limit }) => json(taskQueue(project, limit))
+  );
+
+  server.registerTool(
+    "agent_register",
+    {
+      title: "Register agent capabilities",
+      description:
+        "Register or update an agent's capabilities in the registry. Use this to advertise what an agent can do (code_review, testing, deploy, frontend, etc.).",
+      inputSchema: {
+        agent: z.string().min(1).max(100),
+        machine: z.string().max(100).optional(),
+        capabilities: z.array(z.string()).max(50).optional(),
+        models: z.array(z.string()).max(20).optional(),
+        max_concurrent: z.number().int().min(1).max(10).optional(),
+        metadata: z.record(z.unknown()).optional(),
+      },
+    },
+    async (args) => json(registerAgent(args))
+  );
+
+  server.registerTool(
+    "agent_find",
+    {
+      title: "Find capable agents",
+      description: "Find agents that have a specific capability, optionally filtered by project.",
+      inputSchema: {
+        capability: z.string().min(1).max(100),
+        project: z.string().optional(),
+      },
+    },
+    async ({ capability, project }) => json(findCapableAgents(capability, project))
+  );
+
+  server.registerTool(
+    "agent_list",
+    {
+      title: "List registered agents",
+      description: "List all registered agents with their capabilities and status.",
+      inputSchema: {
+        status: z.enum(["available", "busy", "offline"]).optional(),
+      },
+    },
+    async ({ status }) => json(listAgents(status ? { status } : {}))
+  );
+
+  server.registerTool(
+    "agent_message_send",
+    {
+      title: "Send agent message",
+      description:
+        "Send a message to another agent (or broadcast). Kinds: info, request, response, handoff, alert.",
+      inputSchema: {
+        from_agent: z.string().min(1).max(100),
+        to_agent: z.string().max(100).optional(),
+        project: z.string().max(100).optional(),
+        task_uid: z.string().optional(),
+        kind: z.enum(["info", "request", "response", "handoff", "alert"]).optional(),
+        subject: z.string().min(1).max(300),
+        body: z.string().min(1).max(50000),
+        payload: z.record(z.unknown()).optional(),
+      },
+    },
+    async (args) => json(sendMessage(args))
+  );
+
+  server.registerTool(
+    "agent_inbox",
+    {
+      title: "Get agent inbox",
+      description: "Get unread messages for an agent, optionally filtered by project or kind.",
+      inputSchema: {
+        agent: z.string().min(1).max(100),
+        project: z.string().optional(),
+        kind: z.enum(["info", "request", "response", "handoff", "alert"]).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async (args) => json(inbox(args.agent, args))
+  );
+
+  server.registerTool(
+    "message_mark_read",
+    {
+      title: "Mark a message as read",
+      description:
+        "Mark a single message as read. For broadcasts (to_agent unset on send), pass agent so the read is per-agent — other agents still see it as unread.",
+      inputSchema: {
+        uid: z.string().min(1),
+        agent: z.string().min(1).max(100).optional(),
+      },
+    },
+    async ({ uid, agent }) => {
+      const result = markRead(uid, agent);
+      return result ? json(result) : json({ error: "not found" });
+    }
+  );
+
+  server.registerTool(
+    "message_mark_all_read",
+    {
+      title: "Mark all messages read for an agent",
+      description: "Mark all direct messages and unread broadcasts as read for the given agent.",
+      inputSchema: {
+        agent: z.string().min(1).max(100),
+      },
+    },
+    async ({ agent }) => json({ marked: markAllRead(agent) })
+  );
+
+  server.registerTool(
+    "message_unread_count",
+    {
+      title: "Unread message count for an agent",
+      description: "Get the unread message count for an agent (direct messages + broadcasts not yet read by this agent).",
+      inputSchema: {
+        agent: z.string().min(1).max(100),
+      },
+    },
+    async ({ agent }) => json({ unread: unreadCount(agent) })
+  );
+
+  server.registerTool(
+    "agent_handoff",
+    {
+      title: "Structured context handoff",
+      description:
+        "Create a structured handoff package for transferring project context between agents. Includes project map, recent sessions, active tasks, presence, and relevant memories.",
+      inputSchema: {
+        from_agent: z.string().min(1).max(100),
+        to_agent: z.string().min(1).max(100),
+        project: z.string().min(1).max(100),
+        notes: z.string().max(5000).optional(),
+      },
+    },
+    async ({ from_agent, to_agent, project, notes }) =>
+      json(await createHandoff(from_agent, to_agent, project, notes))
+  );
+
+  // === Context Intelligence Tools ===
+
+  server.registerTool(
+    "hygiene_report",
+    {
+      title: "Memory hygiene report",
+      description:
+        "Get a report on memory quality: duplicates, stale memories, contradictions, and orphan relations.",
+      inputSchema: {
+        project: z.string().optional(),
+      },
+    },
+    async ({ project }) => json(hygieneReport(project))
+  );
+
+  server.registerTool(
+    "hygiene_run",
+    {
+      title: "Run automated hygiene",
+      description:
+        "Execute an automated hygiene pass: archive very stale low-importance memories and clean up orphan relations.",
+      inputSchema: {
+        project: z.string().optional(),
+      },
+    },
+    async ({ project }) => json(runHygiene(project))
+  );
+
+  server.registerTool(
+    "compact_project",
+    {
+      title: "Compact project knowledge",
+      description:
+        "Trigger knowledge compaction for a project: summarize sessions and decisions into concise reference documents.",
+      inputSchema: {
+        project: z.string().min(1).max(100),
+        mode: z.enum(["sessions", "full"]).optional(),
+      },
+    },
+    async ({ project, mode }) => {
+      if (mode === "sessions") return json(await compactSessions(project));
+      return json(await distillProject(project));
+    }
+  );
+
+  server.registerTool(
+    "task_feedback",
+    {
+      title: "Record task feedback",
+      description:
+        "Record feedback for a completed task: outcome (success/partial/failure), what worked, what failed, and lessons learned. Lessons are auto-saved as howto memories.",
+      inputSchema: {
+        task_uid: z.string().optional(),
+        project: z.string().max(100).optional(),
+        agent: z.string().max(100).optional(),
+        outcome: z.enum(["success", "partial", "failure"]),
+        what_worked: z.string().max(5000).optional(),
+        what_failed: z.string().max(5000).optional(),
+        lessons: z.string().max(10000).optional(),
+        duration_min: z.number().int().optional(),
+      },
+    },
+    async (args) => json(recordTaskFeedback(args))
+  );
+
+  server.registerTool(
+    "project_lessons",
+    {
+      title: "Get project lessons",
+      description: "Get aggregated lessons learned from task feedback for a project.",
+      inputSchema: {
+        project: z.string().min(1).max(100),
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async ({ project, limit }) => json(projectLessons(project, limit))
+  );
+
+  server.registerTool(
+    "knowledge_transfer",
+    {
+      title: "Find transferable knowledge",
+      description:
+        "Find knowledge from other projects that might apply to the target project, based on tag overlap and importance.",
+      inputSchema: {
+        project: z.string().min(1).max(100),
+        limit: z.number().int().min(1).max(20).optional(),
+      },
+    },
+    async ({ project, limit }) => json(await transferableKnowledge(project, limit))
+  );
+
+  // === Extensibility Tools ===
+
+  server.registerTool(
+    "webhook_register",
+    {
+      title: "Register a webhook",
+      description:
+        "Register an HTTP endpoint to receive hub events. Supports event filtering and HMAC signing.",
+      inputSchema: {
+        url: z.string().url(),
+        events: z.array(z.string()).optional().describe("Event types to subscribe to, or ['*'] for all"),
+        secret: z.string().optional().describe("HMAC signing secret"),
+      },
+    },
+    async (args) => json(registerWebhook(args))
+  );
+
+  server.registerTool(
+    "webhook_list",
+    {
+      title: "List webhooks",
+      description: "List all registered webhooks with their status.",
+      inputSchema: {},
+    },
+    async () => json(listWebhooks())
+  );
+
+  server.registerTool(
+    "webhook_remove",
+    {
+      title: "Remove a webhook",
+      description: "Remove a registered webhook by UID.",
+      inputSchema: {
+        uid: z.string(),
+      },
+    },
+    async ({ uid }) => json({ removed: removeWebhook(uid) })
+  );
+
+  server.registerTool(
+    "job_enqueue",
+    {
+      title: "Enqueue a job",
+      description:
+        "Add an async job to the worker queue. Kinds: embed, compact, hygiene, webhook, sync, reindex.",
+      inputSchema: {
+        kind: z.enum(["embed", "compact", "hygiene", "webhook", "sync", "reindex"]),
+        payload: z.record(z.unknown()).optional(),
+      },
+    },
+    async ({ kind, payload }) => json(enqueueJob(kind, payload ?? {}))
+  );
+
+  server.registerTool(
+    "job_status",
+    {
+      title: "Get job status",
+      description: "Check the status of a specific job or list recent jobs.",
+      inputSchema: {
+        uid: z.string().optional(),
+        status: z.enum(["queued", "running", "done", "failed"]).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async ({ uid, status, limit }) => {
+      if (uid) {
+        const job = getJob(uid);
+        return job ? json(job) : json({ error: `Job not found: ${uid}` });
+      }
+      return json(listJobs({ status, limit }));
+    }
+  );
+
+  server.registerTool(
+    "metrics_overview",
+    {
+      title: "System metrics overview",
+      description: "Get system metrics: uptime, request counts, latency percentiles, memory/task/agent stats.",
+      inputSchema: {},
+    },
+    async () => json(getMetricsSnapshot())
+  );
+
+  server.registerTool(
+    "event_log",
+    {
+      title: "Recent hub events",
+      description: "Get recent hub events for debugging or monitoring.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(100).optional(),
+        type: z.string().optional(),
+      },
+    },
+    async ({ limit, type }) => json(getEventLogDb(limit, type as never))
   );
 
   return server;

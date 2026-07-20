@@ -134,6 +134,53 @@ export interface SyncPayload {
     created_at: string;
     updated_at: string;
   }[];
+  // Agent Intelligence Platform tables
+  tasks?: {
+    uid: string;
+    project: string | null;
+    title: string;
+    description: string | null;
+    status: string;
+    priority: number;
+    created_by: string | null;
+    claimed_by: string | null;
+    claimed_at: string | null;
+    depends_on: string;
+    tags: string;
+    result: string | null;
+    error: string | null;
+    due_at: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }[];
+  agent_capabilities?: {
+    uid: string;
+    agent: string;
+    machine: string | null;
+    capabilities: string;
+    models: string;
+    max_concurrent: number;
+    status: string;
+    last_seen_at: string | null;
+    metadata: string;
+    created_at: string;
+    updated_at: string;
+  }[];
+  agent_messages?: {
+    uid: string;
+    from_agent: string;
+    to_agent: string | null;
+    project: string | null;
+    task_uid: string | null;
+    kind: string;
+    subject: string;
+    body: string;
+    payload: string;
+    read_at: string | null;
+    created_at: string;
+  }[];
   deletions: { uid: string; tbl: string; deleted_at: string }[];
 }
 
@@ -206,6 +253,26 @@ export function collectChanges(since: string): SyncPayload {
          FROM agent_presence WHERE updated_at >= ?`
       )
       .all(since) as SyncPayload["agent_presence"],
+    // Agent Intelligence Platform tables
+    tasks: db
+      .prepare(
+        `SELECT uid, project, title, description, status, priority, created_by, claimed_by, claimed_at,
+                depends_on, tags, result, error, due_at, started_at, finished_at, created_at, updated_at
+         FROM tasks WHERE updated_at >= ?`
+      )
+      .all(since) as SyncPayload["tasks"],
+    agent_capabilities: db
+      .prepare(
+        `SELECT uid, agent, machine, capabilities, models, max_concurrent, status, last_seen_at, metadata, created_at, updated_at
+         FROM agent_capabilities WHERE updated_at >= ?`
+      )
+      .all(since) as SyncPayload["agent_capabilities"],
+    agent_messages: db
+      .prepare(
+        `SELECT uid, from_agent, to_agent, project, task_uid, kind, subject, body, payload, read_at, created_at
+         FROM agent_messages WHERE created_at >= ?`
+      )
+      .all(since) as SyncPayload["agent_messages"],
     deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at >= ?").all(since) as SyncPayload["deletions"],
   };
 }
@@ -530,6 +597,67 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       ).run(raw);
     }
     result.agent_presence++;
+  }
+
+  // Agent Intelligence Platform: tasks
+  for (const raw of payload.tasks ?? []) {
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'tasks' AND uid = ?").get(raw.uid) as
+      | { deleted_at: string }
+      | undefined;
+    if (tomb && tomb.deleted_at >= raw.updated_at) continue;
+    const local = db.prepare("SELECT * FROM tasks WHERE uid = ?").get(raw.uid) as
+      | { id: number; updated_at: string }
+      | undefined;
+    const fp = (r: { title: string; description: string | null; status: string; priority: number; claimed_by: string | null; result: string | null }) =>
+      contentFingerprint([r.title, r.description, r.status, r.priority, r.claimed_by, r.result]);
+    if (local) {
+      if (!remoteWins(local.updated_at, raw.updated_at, () => fp(local as never), () => fp(raw))) continue;
+      db.prepare(
+        `UPDATE tasks SET project=@project, title=@title, description=@description, status=@status, priority=@priority,
+         created_by=@created_by, claimed_by=@claimed_by, claimed_at=@claimed_at, depends_on=@depends_on, tags=@tags,
+         result=@result, error=@error, due_at=@due_at, started_at=@started_at, finished_at=@finished_at, updated_at=@updated_at
+         WHERE uid=@uid`
+      ).run(raw);
+    } else {
+      db.prepare(
+        `INSERT INTO tasks(uid, project, title, description, status, priority, created_by, claimed_by, claimed_at,
+          depends_on, tags, result, error, due_at, started_at, finished_at, created_at, updated_at)
+         VALUES (@uid, @project, @title, @description, @status, @priority, @created_by, @claimed_by, @claimed_at,
+          @depends_on, @tags, @result, @error, @due_at, @started_at, @finished_at, @created_at, @updated_at)`
+      ).run(raw);
+    }
+  }
+
+  // Agent Intelligence Platform: agent_capabilities
+  for (const raw of payload.agent_capabilities ?? []) {
+    const local = db.prepare("SELECT * FROM agent_capabilities WHERE uid = ?").get(raw.uid) as
+      | { id: number; updated_at: string }
+      | undefined;
+    const fp = (r: { agent: string; machine: string | null; capabilities: string; status: string }) =>
+      contentFingerprint([r.agent, r.machine, r.capabilities, r.status]);
+    if (local) {
+      if (!remoteWins(local.updated_at, raw.updated_at, () => fp(local as never), () => fp(raw))) continue;
+      db.prepare(
+        `UPDATE agent_capabilities SET agent=@agent, machine=@machine, capabilities=@capabilities, models=@models,
+         max_concurrent=@max_concurrent, status=@status, last_seen_at=@last_seen_at, metadata=@metadata, updated_at=@updated_at
+         WHERE uid=@uid`
+      ).run(raw);
+    } else {
+      db.prepare(
+        `INSERT INTO agent_capabilities(uid, agent, machine, capabilities, models, max_concurrent, status, last_seen_at, metadata, created_at, updated_at)
+         VALUES (@uid, @agent, @machine, @capabilities, @models, @max_concurrent, @status, @last_seen_at, @metadata, @created_at, @updated_at)`
+      ).run(raw);
+    }
+  }
+
+  // Agent Intelligence Platform: agent_messages (insert-only, no LWW needed)
+  for (const raw of payload.agent_messages ?? []) {
+    const exists = db.prepare("SELECT 1 FROM agent_messages WHERE uid = ?").get(raw.uid);
+    if (exists) continue;
+    db.prepare(
+      `INSERT INTO agent_messages(uid, from_agent, to_agent, project, task_uid, kind, subject, body, payload, read_at, created_at)
+       VALUES (@uid, @from_agent, @to_agent, @project, @task_uid, @kind, @subject, @body, @payload, @read_at, @created_at)`
+    ).run(raw);
   }
 
   for (const del of payload.deletions ?? []) {

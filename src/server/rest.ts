@@ -92,6 +92,44 @@ import {
   memoryRelationPatchSchema,
   memoryRelationTypeSchema,
   sessionInputSchema,
+  // Agent Intelligence Platform
+  createTask,
+  claimTask,
+  updateTask,
+  completeTask,
+  cancelTask,
+  listTasks,
+  getTask,
+  taskQueue,
+  registerAgent,
+  findCapableAgents,
+  listAgents,
+  agentHeartbeat,
+  sendMessage,
+  inbox,
+  sentMessages,
+  recentMessages,
+  markRead,
+  markAllRead,
+  createHandoff,
+  hygieneReport,
+  runHygiene,
+  compactSessions,
+  distillProject,
+  recordTaskFeedback,
+  projectLessons,
+  suggestForTask,
+  transferableKnowledge,
+  registerWebhook,
+  listWebhooks,
+  removeWebhook,
+  enqueueJob,
+  getJob,
+  listJobs,
+  jobStats,
+  getMetricsSnapshot,
+  prometheusMetrics,
+  getEventLogDb,
 } from "../core/index.js";
 
 function wrap(fn: (req: any, res: any) => Promise<void> | void) {
@@ -433,6 +471,165 @@ export function buildRestRouter(): Router {
         limit: limit ? Number(limit) : undefined,
       }),
     });
+  }));
+
+  // === Agent Coordination ===
+
+  // Tasks
+  r.post("/tasks", wrap((req, res) => res.json(createTask(req.body))));
+  r.get("/tasks", wrap((req, res) => {
+    const { project, status, claimed_by, created_by, tag, limit } = req.query;
+    res.json(listTasks({
+      project: project as string | undefined,
+      status: status as "pending" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled" | undefined,
+      claimed_by: claimed_by as string | undefined,
+      created_by: created_by as string | undefined,
+      tag: tag as string | undefined,
+      limit: limit ? Number(limit) : undefined,
+    }));
+  }));
+  r.get("/tasks/queue", wrap((req, res) => {
+    const { project, limit } = req.query;
+    res.json(taskQueue(project as string | undefined, limit ? Number(limit) : undefined));
+  }));
+  r.get("/tasks/:uid", wrap((req, res) => {
+    const task = getTask(req.params.uid);
+    task ? res.json(task) : res.status(404).json({ error: "not found" });
+  }));
+  r.patch("/tasks/:uid", wrap((req, res) => {
+    const task = updateTask(req.params.uid, req.body);
+    task ? res.json(task) : res.status(404).json({ error: "not found" });
+  }));
+  r.post("/tasks/:uid/claim", wrap((req, res) => {
+    const { agent } = req.body;
+    if (!agent) return res.status(400).json({ error: "agent required" });
+    const task = claimTask(req.params.uid, agent);
+    task ? res.json(task) : res.status(404).json({ error: "not found or not claimable" });
+  }));
+  r.post("/tasks/:uid/complete", wrap((req, res) => {
+    const task = completeTask(req.params.uid, req.body?.result);
+    task ? res.json(task) : res.status(404).json({ error: "not found" });
+  }));
+  r.post("/tasks/:uid/cancel", wrap((req, res) => {
+    const task = cancelTask(req.params.uid, req.body?.error);
+    task ? res.json(task) : res.status(404).json({ error: "not found" });
+  }));
+
+  // Agent capabilities
+  r.post("/agents/register", wrap((req, res) => res.json(registerAgent(req.body))));
+  r.get("/agents", wrap((req, res) => {
+    const { status } = req.query;
+    res.json(listAgents(status ? { status: status as "available" | "busy" | "offline" } : {}));
+  }));
+  r.get("/agents/find", wrap((req, res) => {
+    const { capability, project } = req.query;
+    if (!capability) return res.status(400).json({ error: "capability required" });
+    res.json(findCapableAgents(capability as string, project as string | undefined));
+  }));
+  r.post("/agents/:uid/heartbeat", wrap((req, res) => {
+    const status = req.body?.status as "available" | "busy" | "offline" | undefined;
+    const result = agentHeartbeat(req.params.uid, status);
+    result ? res.json(result) : res.status(404).json({ error: "not found" });
+  }));
+
+  // Agent messaging
+  r.post("/messages", wrap((req, res) => res.json(sendMessage(req.body))));
+  r.get("/messages/inbox", wrap((req, res) => {
+    const { agent, limit, include_read } = req.query;
+    if (!agent) return res.status(400).json({ error: "agent required" });
+    res.json(inbox(agent as string, {
+      limit: limit ? Number(limit) : undefined,
+      includeRead: include_read === "1" || include_read === "true",
+    }));
+  }));
+  r.get("/messages/sent", wrap((req, res) => {
+    const { agent, limit } = req.query;
+    if (!agent) return res.status(400).json({ error: "agent required" });
+    res.json(sentMessages(agent as string, { limit: limit ? Number(limit) : undefined }));
+  }));
+  r.get("/messages/recent", wrap((req, res) => {
+    const { limit } = req.query;
+    res.json(recentMessages(limit ? Number(limit) : undefined));
+  }));
+  r.post("/messages/:uid/read", wrap((req, res) => {
+    const agent = req.body?.agent as string | undefined;
+    const result = markRead(req.params.uid, agent);
+    result ? res.json(result) : res.status(404).json({ error: "not found" });
+  }));
+  r.post("/messages/read-all", wrap((req, res) => {
+    const { agent } = req.body;
+    if (!agent) return res.status(400).json({ error: "agent required" });
+    res.json({ marked: markAllRead(agent) });
+  }));
+
+  // Handoff
+  r.post("/handoff", wrap(async (req, res) => {
+    const { from_agent, to_agent, project, notes } = req.body;
+    if (!from_agent || !to_agent || !project) {
+      return res.status(400).json({ error: "from_agent, to_agent, project required" });
+    }
+    res.json(await createHandoff(from_agent, to_agent, project, notes ?? ""));
+  }));
+
+  // === Context Intelligence ===
+
+  r.get("/hygiene", wrap((req, res) => {
+    res.json(hygieneReport(req.query.project as string | undefined));
+  }));
+  r.post("/hygiene/run", wrap((req, res) => {
+    res.json(runHygiene(req.body?.project));
+  }));
+  r.post("/compact", wrap(async (req, res) => {
+    const { project, mode } = req.body;
+    if (!project) return res.status(400).json({ error: "project required" });
+    if (mode === "sessions") return res.json(await compactSessions(project));
+    res.json(await distillProject(project));
+  }));
+  r.post("/task-feedback", wrap((req, res) => res.json(recordTaskFeedback(req.body))));
+  r.get("/lessons/:project", wrap((req, res) => {
+    const { limit } = req.query;
+    res.json(projectLessons(req.params.project, limit ? Number(limit) : undefined));
+  }));
+  r.get("/knowledge-transfer/:project", wrap(async (req, res) => {
+    const { limit } = req.query;
+    res.json(await transferableKnowledge(req.params.project, limit ? Number(limit) : undefined));
+  }));
+
+  // === Extensibility ===
+
+  // Webhooks
+  r.post("/webhooks", wrap((req, res) => res.json(registerWebhook(req.body))));
+  r.get("/webhooks", wrap((_req, res) => res.json(listWebhooks())));
+  r.delete("/webhooks/:uid", wrap((req, res) => res.json({ removed: removeWebhook(req.params.uid) })));
+
+  // Jobs
+  r.post("/jobs", wrap((req, res) => {
+    const { kind, payload } = req.body;
+    if (!kind) return res.status(400).json({ error: "kind required" });
+    res.json(enqueueJob(kind, payload ?? {}));
+  }));
+  r.get("/jobs", wrap((req, res) => {
+    const { status, kind, limit } = req.query;
+    res.json(listJobs({
+      status: status as "queued" | "running" | "done" | "failed" | undefined,
+      kind: kind as "embed" | "compact" | "hygiene" | "webhook" | "sync" | "reindex" | undefined,
+      limit: limit ? Number(limit) : undefined,
+    }));
+  }));
+  r.get("/jobs/stats", wrap((_req, res) => res.json(jobStats())));
+  r.get("/jobs/:uid", wrap((req, res) => {
+    const job = getJob(req.params.uid);
+    job ? res.json(job) : res.status(404).json({ error: "not found" });
+  }));
+
+  // Metrics & events
+  r.get("/metrics", wrap((_req, res) => {
+    res.type("text/plain").send(prometheusMetrics());
+  }));
+  r.get("/stats/overview", wrap((_req, res) => res.json(getMetricsSnapshot())));
+  r.get("/events", wrap((req, res) => {
+    const { limit, type } = req.query;
+    res.json(getEventLogDb(limit ? Number(limit) : undefined, type as never));
   }));
 
   return r;

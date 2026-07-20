@@ -849,6 +849,200 @@ check(
     Boolean(getDb().prepare("SELECT 1 FROM deletions WHERE tbl = 'agent_presence' AND uid = ?").get(presenceCheckin.uid))
 );
 
+// === Agent Intelligence Platform smoke tests ===
+
+const {
+  createTask,
+  claimTask,
+  completeTask,
+  listTasks,
+  getTask,
+  taskQueue,
+  registerAgent,
+  findCapableAgents,
+  listAgents,
+  sendMessage,
+  inbox,
+  markRead,
+  markAllRead,
+  unreadCount,
+  hygieneReport,
+  registerWebhook,
+  listWebhooks,
+  enqueueJob,
+  getJob,
+  listJobs,
+  emitHubEvent,
+  getEventLog,
+  getEventLogDb,
+  compactSessions,
+} = await import("../src/core/index.js");
+
+// --- Tasks ---
+const task1 = createTask({
+  title: "Smoke test görev",
+  description: "Test amaçlı görev",
+  project: "ai-hub",
+  priority: 5,
+  tags: ["test"],
+  created_by: "smoke",
+});
+check("task_create", task1.uid.length > 0 && task1.status === "pending", `uid=${task1.uid}`);
+
+const task2 = createTask({
+  title: "Bağımlı görev",
+  project: "ai-hub",
+  depends_on: [task1.uid],
+  created_by: "smoke",
+});
+check("task_create with depends_on", task2.depends_on.includes(task1.uid));
+
+const claimed = claimTask(task1.uid, "smoke-agent");
+check("task_claim", claimed.status === "claimed" && claimed.claimed_by === "smoke-agent");
+
+const completed = completeTask(task1.uid, "Test tamamlandı");
+check("task_complete", completed.status === "done" && completed.result === "Test tamamlandı");
+
+const tasks = listTasks({ project: "ai-hub" });
+check("task_list", tasks.length >= 2);
+
+const queue = taskQueue("ai-hub");
+check("task_queue (bağımlılık çözülünce sıraya girer)", queue.some((t: { uid: string }) => t.uid === task2.uid));
+
+// --- Agent Capabilities ---
+const agent1 = registerAgent({
+  agent: "smoke-agent",
+  machine: "smoke-machine",
+  capabilities: ["testing", "code_review"],
+  models: ["test-model"],
+  max_concurrent: 2,
+});
+check("agent_register", agent1.uid.length > 0 && agent1.status === "available");
+
+const capable = findCapableAgents("testing");
+check("agent_find by capability", capable.some((a: { uid: string }) => a.uid === agent1.uid));
+
+const agents = listAgents({});
+check("agent_list", agents.length >= 1);
+
+// --- Messaging ---
+const msg1 = sendMessage({
+  from_agent: "smoke-agent",
+  to_agent: "other-agent",
+  project: "ai-hub",
+  kind: "info",
+  subject: "Test mesajı",
+  body: "Bu bir test mesajıdır",
+});
+check("message_send", msg1.uid.length > 0);
+
+const inboxMsgs = inbox("other-agent");
+check("agent_inbox", inboxMsgs.length >= 1 && inboxMsgs.some((m: { uid: string }) => m.uid === msg1.uid));
+
+const readResult = markRead(msg1.uid);
+check("message_read", readResult !== null);
+
+// --- Task 3.1: atomic claim (double-claim must lose the race, not silently succeed) ---
+const raceTask = createTask({ title: "Race görevi", project: "ai-hub", created_by: "smoke" });
+const firstClaim = claimTask(raceTask.uid, "agent-a");
+check("task_claim ilk talep başarılı", firstClaim.status === "claimed" && firstClaim.claimed_by === "agent-a");
+let secondClaimRejected = false;
+try {
+  claimTask(raceTask.uid, "agent-b");
+} catch {
+  secondClaimRejected = true;
+}
+check(
+  "task_claim: ikinci talep (aynı görev, farklı agent) reddedilir",
+  secondClaimRejected && getTask(raceTask.uid)?.claimed_by === "agent-a"
+);
+
+// --- Task 3.7: broadcast mesajlar için kişiye özel okuma izolasyonu ---
+const broadcast = sendMessage({
+  from_agent: "smoke-agent",
+  kind: "alert",
+  project: "ai-hub",
+  subject: "Broadcast smoke",
+  body: "Herkese açık duyuru",
+});
+check(
+  "broadcast mesaj başlangıçta her iki agent için de okunmamış",
+  unreadCount("reader-a") > 0 && unreadCount("reader-b") > 0 &&
+    inbox("reader-a").some((m: { uid: string }) => m.uid === broadcast.uid) &&
+    inbox("reader-b").some((m: { uid: string }) => m.uid === broadcast.uid)
+);
+const beforeB = unreadCount("reader-b");
+markRead(broadcast.uid, "reader-a");
+check(
+  "broadcast: bir agent'ın okuması diğerini etkilemez",
+  !inbox("reader-a").some((m: { uid: string }) => m.uid === broadcast.uid) &&
+    inbox("reader-b").some((m: { uid: string }) => m.uid === broadcast.uid) &&
+    unreadCount("reader-b") === beforeB
+);
+const markedForC = markAllRead("reader-c");
+check(
+  "markAllRead: broadcast'i o agent için okundu işaretler, diğerlerini etkilemez",
+  markedForC >= 1 &&
+    !inbox("reader-c").some((m: { uid: string }) => m.uid === broadcast.uid) &&
+    inbox("reader-b").some((m: { uid: string }) => m.uid === broadcast.uid)
+);
+
+// --- Task 3.2: compactSessions artık özetleri yok etmemeli (sadece compacted_at damgalar) ---
+upsertProject({ name: "compaction-smoke", status: "active", summary: "Compaction test projesi" });
+const compactionSummaries: string[] = [];
+for (let i = 0; i < 7; i++) {
+  const summary = `Compaction smoke oturumu #${i} özgün özet metni`;
+  compactionSummaries.push(summary);
+  addSessionLog(summary, "compaction-smoke", "smoke");
+}
+const compactionResult = await compactSessions("compaction-smoke", { count: 20 });
+const sessionsAfterCompaction = recentSessionLogs({ project: "compaction-smoke", limit: 20 });
+check(
+  "compactSessions: orijinal özetler korunur, yalnız compacted_at işaretlenir",
+  compactionResult.sessions_compacted === 7 &&
+    compactionSummaries.every((s) => sessionsAfterCompaction.some((row) => row.summary === s)) &&
+    sessionsAfterCompaction.some((row) => (row as unknown as { compacted_at?: string }).compacted_at != null),
+  `compacted=${compactionResult.sessions_compacted}`
+);
+
+// --- Hygiene ---
+const hygiene = hygieneReport();
+check("hygiene_report", Array.isArray(hygiene.duplicates) && Array.isArray(hygiene.stale) && typeof hygiene.total_memories === "number");
+
+// --- Webhooks ---
+const webhook = registerWebhook({
+  url: "https://example.com/webhook",
+  events: ["memory_saved"],
+});
+check("webhook_register", webhook.uid.length > 0 && webhook.active);
+
+const webhooks = listWebhooks();
+check("webhook_list", webhooks.some((w: { uid: string }) => w.uid === webhook.uid));
+
+// --- Jobs ---
+const job = enqueueJob("test-job", { test: true });
+check("job_enqueue", job.uid.length > 0 && job.status === "queued");
+
+const fetchedJob = getJob(job.uid);
+check("job_status", fetchedJob?.uid === job.uid);
+
+const jobs = listJobs({});
+check("job_list", jobs.length >= 1);
+
+// --- Event Bus ---
+emitHubEvent({ type: "memory_saved", payload: { memory_uid: "test-uid", project: "ai-hub" } });
+const events = getEventLog(10);
+check("event_bus emit + in-memory log", events.some((e: { type: string }) => e.type === "memory_saved"));
+
+// emitHubEvent DB'ye de yazmalı (restart sonrası görünürlük) — getEventLogDb ile doğrula
+const dbEventMarker = `smoke-db-event-${Date.now()}`;
+emitHubEvent({ type: "task_created", payload: { task_uid: dbEventMarker, project: "ai-hub" } });
+const dbEvents = getEventLogDb(20, "task_created");
+check(
+  "emitHubEvent -> getEventLogDb: kalıcı event log'a yazılır",
+  dbEvents.some((e: { payload?: { task_uid?: string } }) => e.payload?.task_uid === dbEventMarker)
+);
+
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });
 fs.rmSync(process.env.HUB_DB_PATH! + "-wal", { force: true });

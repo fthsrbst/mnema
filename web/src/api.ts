@@ -344,3 +344,224 @@ export interface PromptContent {
   name: string;
   content: string;
 }
+
+// --- Agent Intelligence Platform ---
+
+export interface Task {
+  id: number;
+  uid: string;
+  project: string | null;
+  title: string;
+  description: string | null;
+  status: "pending" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled";
+  priority: number;
+  created_by: string | null;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  depends_on: string[];
+  tags: string[];
+  result: string | null;
+  error: string | null;
+  due_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentCapability {
+  id: number;
+  uid: string;
+  agent: string;
+  machine: string | null;
+  capabilities: string[];
+  models: string[];
+  max_concurrent: number;
+  status: "available" | "busy" | "offline";
+  last_seen_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentMessage {
+  id: number;
+  uid: string;
+  from_agent: string;
+  to_agent: string | null;
+  project: string | null;
+  task_uid: string | null;
+  kind: "info" | "request" | "response" | "handoff" | "alert";
+  subject: string;
+  body: string;
+  payload: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface Webhook {
+  id: number;
+  uid: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  last_triggered_at: string | null;
+  last_status: number | null;
+  fail_count: number;
+  created_at: string;
+}
+
+export interface Job {
+  id: number;
+  uid: string;
+  kind: string;
+  status: "queued" | "running" | "done" | "failed";
+  attempts: number;
+  max_attempts: number;
+  next_run_at: string;
+  last_error: string | null;
+  result: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HubEvent {
+  id: number;
+  type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MetricsOverview {
+  uptime_sec: number;
+  requests_total: number;
+  errors_5xx: number;
+  errors_4xx: number;
+  embedding_calls: number;
+  memory_count: number;
+  task_count: number;
+  agent_count: number;
+  jobs: { queued: number; running: number; done: number; failed: number };
+}
+
+export interface HygieneReport {
+  duplicates: { count: number; items: { id: number; title: string }[] };
+  stale: { count: number; items: { memory_id: number; title: string; days_idle: number }[] };
+  contradictions: { count: number; items: { id: number; title: string }[] };
+  suggestions: string[];
+}
+
+// --- API functions for Agent Intelligence ---
+
+export function fetchTasks(project?: string, status?: string, claimedBy?: string): Promise<Task[]> {
+  const params = new URLSearchParams();
+  if (project) params.set("project", project);
+  if (status) params.set("status", status);
+  if (claimedBy) params.set("claimed_by", claimedBy);
+  const qs = params.toString();
+  return api("GET", `/api/tasks${qs ? `?${qs}` : ""}`);
+}
+
+export function createTask(input: { title: string; description?: string; project?: string; priority?: number; tags?: string[]; created_by?: string }): Promise<Task> {
+  return api("POST", "/api/tasks", input);
+}
+
+export function claimTask(uid: string, agent: string): Promise<Task> {
+  return api("POST", `/api/tasks/${uid}/claim`, { agent });
+}
+
+export function completeTask(uid: string, result?: string): Promise<Task> {
+  return api("POST", `/api/tasks/${uid}/complete`, { result });
+}
+
+export function cancelTask(uid: string, error?: string): Promise<Task> {
+  return api("POST", `/api/tasks/${uid}/cancel`, { error });
+}
+
+export function fetchRegisteredAgents(): Promise<AgentCapability[]> {
+  return api("GET", "/api/agents");
+}
+
+export function registerAgent(input: {
+  agent: string;
+  machine?: string;
+  capabilities?: string[];
+  models?: string[];
+  max_concurrent?: number;
+  status?: "available" | "busy" | "offline";
+  metadata?: Record<string, unknown>;
+}): Promise<AgentCapability> {
+  return api("POST", "/api/agents/register", input);
+}
+
+export function agentHeartbeat(uid: string, status?: "available" | "busy" | "offline"): Promise<AgentCapability> {
+  return api("POST", `/api/agents/${uid}/heartbeat`, status ? { status } : {});
+}
+
+export function findCapableAgents(capability: string): Promise<AgentCapability[]> {
+  return api("GET", `/api/agents/find?capability=${encodeURIComponent(capability)}`);
+}
+
+export function fetchAgentMessages(agent: string, includeRead = true): Promise<AgentMessage[]> {
+  return api("GET", `/api/messages/inbox?agent=${encodeURIComponent(agent)}&include_read=${includeRead ? "1" : "0"}`);
+}
+
+export function fetchSentMessages(agent: string): Promise<AgentMessage[]> {
+  return api("GET", `/api/messages/sent?agent=${encodeURIComponent(agent)}`);
+}
+
+export function fetchRecentMessages(limit = 50): Promise<AgentMessage[]> {
+  return api("GET", `/api/messages/recent?limit=${limit}`);
+}
+
+export function sendAgentMessage(input: {
+  from_agent: string;
+  to_agent?: string;
+  project?: string;
+  kind?: "info" | "request" | "response" | "handoff" | "alert";
+  subject: string;
+  body: string;
+}): Promise<AgentMessage> {
+  return api("POST", "/api/messages", input);
+}
+
+export function markMessageRead(uid: string): Promise<AgentMessage> {
+  return api("POST", `/api/messages/${uid}/read`);
+}
+
+export function fetchWebhooks(): Promise<Webhook[]> {
+  return api("GET", "/api/webhooks");
+}
+
+export function registerWebhook(input: { url: string; events?: string[]; secret?: string }): Promise<Webhook> {
+  return api("POST", "/api/webhooks", input);
+}
+
+export function removeWebhook(uid: string): Promise<{ deleted: boolean }> {
+  return api("DELETE", `/api/webhooks/${uid}`);
+}
+
+export function fetchJobs(status?: string): Promise<Job[]> {
+  const qs = status ? `?status=${status}` : "";
+  return api("GET", `/api/jobs${qs}`);
+}
+
+export function fetchJobStats(): Promise<{ queued: number; running: number; done: number; failed: number }> {
+  return api("GET", "/api/jobs/stats");
+}
+
+export function fetchMetricsOverview(): Promise<MetricsOverview> {
+  return api("GET", "/api/stats/overview");
+}
+
+export function fetchEvents(limit = 50): Promise<HubEvent[]> {
+  return api("GET", `/api/events?limit=${limit}`);
+}
+
+export function fetchHygieneReport(): Promise<HygieneReport> {
+  return api("GET", "/api/hygiene");
+}
+
+export function runHygiene(): Promise<{ archived: number; consolidated: number }> {
+  return api("POST", "/api/hygiene/run");
+}
