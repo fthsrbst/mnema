@@ -81,26 +81,52 @@ function parseArr(json: string | null | undefined): string[] {
  * Bir memory'nin graf derecesi: related (çift yön) + etiketler + proje bağı.
  * related tek yönlü SAKLANIR (bildiren kayıtta uid listesi) ama graf yönsüzdür —
  * gelen bağlar json_each ile taranır.
+ * `relationCount` verilirse (toplu önceden hesaplanmışsa) ekstra sorgu atlanır —
+ * graphNeighbors sayfa başına tek toplu sorguyla besler (bkz. batchMemoryRelationCounts).
  */
-function memoryDegree(row: MemoryRow): number {
-  const db = getDb();
-  const relations = (
-    db
-      .prepare("SELECT COUNT(*) AS n FROM memory_relations WHERE from_uid = ? OR to_uid = ?")
-      .get(row.uid, row.uid) as { n: number }
-  ).n;
+function memoryDegree(row: MemoryRow, relationCount?: number): number {
+  const relations =
+    relationCount ??
+    (
+      getDb()
+        .prepare("SELECT COUNT(*) AS n FROM memory_relations WHERE from_uid = ? OR to_uid = ?")
+        .get(row.uid, row.uid) as { n: number }
+    ).n;
   return relations + parseArr(row.tags).length + (row.project ? 1 : 0);
 }
 
-function memoryNode(row: MemoryRow): GraphNode {
+function memoryNode(row: MemoryRow, relationCount?: number): GraphNode {
   return {
     id: nodeId("memory", row.id),
     kind: "memory",
     label: row.title,
     sublabel: `${row.type} · ${day(row.updated_at)}`,
     project: row.project,
-    degree: memoryDegree(row),
+    degree: memoryDegree(row, relationCount),
   };
+}
+
+/**
+ * Bir sayfa komşusundaki tüm memory düğümlerinin ilişki sayısını TEK sorguda
+ * döner (id -> relation count). graphNeighbors'ın "memory" komşu N+1'ini önler:
+ * öncesinde her komşu için graphNode() -> memoryDegree() ayrı bir COUNT çalıştırıyordu
+ * (limit=30 -> 30 ekstra sorgu).
+ */
+function batchMemoryRelationCounts(ids: number[]): Map<number, number> {
+  if (ids.length === 0) return new Map();
+  const db = getDb();
+  const unique = [...new Set(ids)];
+  const placeholders = unique.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT m.id AS id, COUNT(mr.uid) AS n
+       FROM memories m
+       LEFT JOIN memory_relations mr ON mr.from_uid = m.uid OR mr.to_uid = m.uid
+       WHERE m.id IN (${placeholders})
+       GROUP BY m.id`
+    )
+    .all(...unique) as { id: number; n: number }[];
+  return new Map(rows.map((r) => [r.id, r.n]));
 }
 
 function projectNode(name: string): GraphNode {
@@ -162,8 +188,12 @@ export function graphSeed(tagLimit = 24): GraphPayload {
   return { nodes: [...projects, ...tagNodes], edges, more: 0 };
 }
 
-/** Tek düğümü kimliğinden çözer (UI derin-link/yenileme için). */
-export function graphNode(kind: GraphNodeKind, key: string): GraphNode | null {
+/**
+ * Tek düğümü kimliğinden çözer (UI derin-link/yenileme için).
+ * `relationCount`: yalnızca kind="memory" için — toplu önceden hesaplanmış ilişki
+ * sayısı verilirse memoryDegree ekstra COUNT sorgusu atlar.
+ */
+export function graphNode(kind: GraphNodeKind, key: string, relationCount?: number): GraphNode | null {
   const db = getDb();
   switch (kind) {
     case "project":
@@ -172,7 +202,7 @@ export function graphNode(kind: GraphNodeKind, key: string): GraphNode | null {
       return tagNode(key);
     case "memory": {
       const row = db.prepare("SELECT * FROM memories WHERE id = ?").get(Number(key)) as MemoryRow | undefined;
-      return row ? memoryNode(row) : null;
+      return row ? memoryNode(row, relationCount) : null;
     }
     case "document": {
       const row = db.prepare("SELECT id, title, project, created_at FROM documents WHERE id = ?").get(Number(key)) as
@@ -313,9 +343,14 @@ export function graphNeighbors(kind: GraphNodeKind, key: string, offset = 0, lim
   });
 
   const page = unique.slice(offset, offset + limit);
+  // Sayfadaki memory komşularının ilişki sayısı tek toplu sorguyla önceden çekilir
+  // (N+1 önleme) — graphNode aşağıda bunu her memory düğümü için tekrar sorgulamaz.
+  const memoryRelationCounts = batchMemoryRelationCounts(
+    page.filter((n) => n.kind === "memory").map((n) => Number(n.key))
+  );
   const nodeSeen = new Set<string>();
   for (const n of page) {
-    const node = graphNode(n.kind, n.key);
+    const node = graphNode(n.kind, n.key, n.kind === "memory" ? memoryRelationCounts.get(Number(n.key)) : undefined);
     if (!node) continue;
     if (!nodeSeen.has(node.id)) {
       nodes.push(node);
