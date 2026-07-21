@@ -54,6 +54,13 @@ export interface SyncMemory {
   importance?: number; // eski peer göndermezse 1.0 varsayılır
   related?: string; // JSON uid listesi; eski peer göndermezse '[]'
   origin_machine?: string | null; // cihaz etiketi; eski peer göndermezse yerel değer korunur
+  // ADR-006: hafıza yaşam döngüsü. Eski peer bu alanları hiç göndermez — origin_machine
+  // ile aynı desen: UPDATE'te COALESCE ile yerel değer korunur, INSERT'te is_current=1 varsayılır.
+  valid_from?: string | null;
+  valid_to?: string | null;
+  is_current?: number;
+  supersedes_uid?: string | null;
+  invalidated_reason?: string | null;
   embedding?: string; // base64 float32
 }
 
@@ -278,6 +285,11 @@ function collectPayload(mode: CollectMode): SyncPayload {
     importance: m.importance ?? 1.0,
     related: m.related ?? "[]",
     origin_machine: m.origin_machine ?? null,
+    valid_from: m.valid_from ?? null,
+    valid_to: m.valid_to ?? null,
+    is_current: m.is_current ?? 1,
+    supersedes_uid: m.supersedes_uid ?? null,
+    invalidated_reason: m.invalidated_reason ?? null,
     // last_accessed/access_count kasıtlı olarak taşınmaz — cihaz-yerel istatistik
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
@@ -354,9 +366,14 @@ function collectPayload(mode: CollectMode): SyncPayload {
   };
 }
 
-function insertMemoryVec(rowid: number, project: string | null, embeddingB64: string | undefined): void {
+function insertMemoryVec(
+  rowid: number,
+  project: string | null,
+  isCurrent: number | null | undefined,
+  embeddingB64: string | undefined
+): void {
   if (!vectorStore.available() || !embeddingB64) return;
-  vectorStore.putMemory(rowid, project, Buffer.from(embeddingB64, "base64"));
+  vectorStore.putMemory(rowid, project, isCurrent ?? 1, Buffer.from(embeddingB64, "base64"));
 }
 
 function insertChunkVec(
@@ -413,12 +430,21 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       normalizer_generation: raw.normalizer_generation ?? null,
       // origin_machine alanı eski peer'dan gelmeyebilir → INSERT'te null, UPDATE'te yerel korunur
       origin_machine: raw.origin_machine ?? null,
+      // ADR-006: eski peer valid_from/valid_to/supersedes_uid/invalidated_reason hiç göndermez
+      // → null'a eşlenir, UPDATE'te COALESCE ile yerel değer korunur (origin_machine deseni).
+      // is_current NOT NULL olduğundan ayrıca ele alınır: eksikse null (yerel korunsun diye),
+      // INSERT'te COALESCE(@is_current, 1) ile makul varsayılana düşer.
+      valid_from: raw.valid_from ?? null,
+      valid_to: raw.valid_to ?? null,
+      is_current: raw.is_current === undefined ? null : raw.is_current,
+      supersedes_uid: raw.supersedes_uid ?? null,
+      invalidated_reason: raw.invalidated_reason ?? null,
     };
     // Bu uid bizde daha yeni silinmişse alma
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memories' AND uid = ?").get(m.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= m.updated_at) continue;
     const local = db.prepare("SELECT * FROM memories WHERE uid = ?").get(m.uid) as
-      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language: string | null; canonical_summary: string | null; normalizer_generation: string | null; importance: number; related: string | null }
+      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language: string | null; canonical_summary: string | null; normalizer_generation: string | null; importance: number; related: string | null; is_current: number }
       | undefined;
     if (local) {
       const memFp = (r: { type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language?: string | null; canonical_summary?: string | null; normalizer_generation?: string | null; importance?: number; related?: string | null }) =>
@@ -433,21 +459,31 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
          source=@source, language=@language, canonical_summary=@canonical_summary,
          normalizer_generation=@normalizer_generation, importance=@importance,
          related=@related, origin_machine=COALESCE(@origin_machine, origin_machine),
+         valid_from=COALESCE(@valid_from, valid_from), valid_to=COALESCE(@valid_to, valid_to),
+         is_current=COALESCE(@is_current, is_current),
+         supersedes_uid=COALESCE(@supersedes_uid, supersedes_uid),
+         invalidated_reason=COALESCE(@invalidated_reason, invalidated_reason),
          updated_at=@updated_at WHERE uid=@uid`
       ).run(m);
-      if (acceptVectors) insertMemoryVec(local.id, m.project, m.embedding);
+      const resolvedIsCurrent = m.is_current ?? local.is_current;
+      if (acceptVectors) insertMemoryVec(local.id, m.project, resolvedIsCurrent, m.embedding);
       else if (m.embedding) result.vectors_skipped!++;
     } else {
       const info = db.prepare(
         `INSERT INTO memories(
            uid, type, title, body, project, tags, source, language, canonical_summary,
-           normalizer_generation, importance, related, origin_machine, created_at, updated_at
+           normalizer_generation, importance, related, origin_machine,
+           valid_from, valid_to, is_current, supersedes_uid, invalidated_reason,
+           created_at, updated_at
          ) VALUES (
            @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
-           @normalizer_generation, @importance, @related, @origin_machine, @created_at, @updated_at
+           @normalizer_generation, @importance, @related, @origin_machine,
+           @valid_from, @valid_to, COALESCE(@is_current, 1), @supersedes_uid, @invalidated_reason,
+           @created_at, @updated_at
          )`
       ).run(m);
-      if (acceptVectors) insertMemoryVec(Number(info.lastInsertRowid), m.project, m.embedding);
+      const resolvedIsCurrent = m.is_current ?? 1;
+      if (acceptVectors) insertMemoryVec(Number(info.lastInsertRowid), m.project, resolvedIsCurrent, m.embedding);
       else if (m.embedding) result.vectors_skipped!++;
     }
     result.memories++;
