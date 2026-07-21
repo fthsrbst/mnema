@@ -47,4 +47,11 @@ export * from "./worker.js";
 export * from "./metrics.js";
 export * from "./logger.js";
 export { resolveMachineName } from "./machine.js";
-export { backfillMissingEmbeddings, type BackfillResult } from "./backfill.js";
+export {
+  backfillMissingEmbeddings,
+  planBackfillCandidates,
+  EMBED_BACKFILL_SEQ_KEY,
+  EMBED_BACKFILL_FULL_SCAN_KEY,
+  type BackfillResult,
+  type BackfillCandidates,
+} from "./backfill.js";
