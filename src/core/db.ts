@@ -382,7 +382,127 @@ CREATE TABLE IF NOT EXISTS hub_events(
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_hub_events_type ON hub_events(type, created_at);
+
+-- Sync delivery watermark: central monotonic change log fed by triggers (ADR-005).
+-- AUTOINCREMENT zorunlu — düz INTEGER PRIMARY KEY silinen en yüksek rowid'yi geri kullanır,
+-- prune sonrası seq monotonluğu bozulur ve geç watermark'lı peer kaçırdığı satırı tekrar kaçırır.
+CREATE TABLE IF NOT EXISTS change_log(
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  tbl        TEXT NOT NULL,
+  row_key    TEXT NOT NULL,
+  -- 1 = bu satiri applyChanges yazdi, yani degisiklik primary'den geldi. Push tarafinda
+  -- haric tutulur; yoksa uzaktan gelen her kayit bir sonraki turda kaynagina geri gider
+  -- (echo) ve change_log her turda siser. Pull tarafinda haric TUTULMAZ: primary'nin
+  -- PC'den aldigi kaydi Mac'e iletebilmesi gerekir.
+  from_sync  INTEGER NOT NULL DEFAULT 0,
+  changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_change_log_key ON change_log(tbl, row_key);
 `;
+
+/**
+ * Bir tablo için change_log trigger'ları kurar. ADR-005: toplu/tekrarlı yazım patikalarını
+ * bypass edememesi için trigger tabanlı teslimat. `{ update: false }` insert-only
+ * tablolar için AFTER UPDATE trigger'ını kurmaz (örn. agent_messages — apply yolunda
+ * `if (exists) continue` ile es geçilir, read_at cihaz-yereldir).
+ */
+function installChangeTrigger(
+  database: Database.Database,
+  tbl: string,
+  rowKeyExpr: string,
+  opts: { update?: boolean } = {}
+): void {
+  const update = opts.update ?? true;
+  database.exec(`
+    CREATE TRIGGER IF NOT EXISTS ${tbl}_chg_ai AFTER INSERT ON ${tbl} BEGIN
+      INSERT INTO change_log(tbl, row_key) VALUES ('${tbl}', ${rowKeyExpr});
+    END;
+  `);
+  if (update) {
+    database.exec(`
+      CREATE TRIGGER IF NOT EXISTS ${tbl}_chg_au AFTER UPDATE ON ${tbl} BEGIN
+        INSERT INTO change_log(tbl, row_key) VALUES ('${tbl}', ${rowKeyExpr});
+      END;
+    `);
+  }
+}
+
+/**
+ * Senkronize edilen tüm tablolar için change_log trigger'larını kurar. migrate()'in EN SON
+ * adımıdır — önce çalışacak veri migration'ları (özellikle migrateDeletionPrimaryKey içindeki
+ * `INSERT OR REPLACE INTO deletions`) trigger'lardan önce gelmeli; yoksa her tarihsel
+ * tombstone change_log'a düşer ve tüm peer'lara yeniden yayınlanır (ADR-005).
+ */
+/**
+ * Senkronize edilen tabloların change_log tanımı — TEK KAYNAK.
+ *
+ * `rowKey` ile `triggerRowKey` AYNI değeri üretmek zorundadır: trigger yeni yazımları,
+ * `rowKey` ise seed'i ve seq-modu sorgularını besler. Ayrışırlarsa seq modu satırı
+ * bulamaz ve kayıt sessizce teslim edilmez — bu yüzden ikisi yan yana durur.
+ * Değerler derleme-zamanı sabitidir; SQL'e gömülmeleri güvenlidir (kullanıcı girdisi değil).
+ */
+export const SYNC_TABLES: {
+  tbl: string;
+  /** change_log.row_key'i üreten ifade (tablonun kendi bağlamında). */
+  rowKey: string;
+  /** Aynı ifadenin trigger gövdesindeki (new.*) hali. */
+  triggerRowKey: string;
+  /** false ise AFTER UPDATE trigger'ı kurulmaz (insert-only tablolar). */
+  update?: boolean;
+}[] = [
+  { tbl: "memories", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "documents", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "memory_relations", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "projects", rowKey: "name", triggerRowKey: "new.name" },
+  { tbl: "session_logs", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "machines", rowKey: "name", triggerRowKey: "new.name" },
+  { tbl: "assets", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "agent_presence", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "tasks", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "agent_capabilities", rowKey: "uid", triggerRowKey: "new.uid" },
+  // agent_messages insert-only (ADR-005): read_at cihaz-yereldir, update trigger yok.
+  { tbl: "agent_messages", rowKey: "uid", triggerRowKey: "new.uid", update: false },
+  // deletions PK birleşik (tbl, uid) — row_key tek başına uid olursa iki tablodaki
+  // aynı uid çakışır, bu yüzden "tbl:uid" bileşik anahtar kullanılır.
+  {
+    tbl: "deletions",
+    rowKey: "tbl || ':' || uid",
+    triggerRowKey: "new.tbl || ':' || new.uid",
+  },
+];
+
+function installChangeTriggers(database: Database.Database): void {
+  for (const t of SYNC_TABLES) {
+    installChangeTrigger(database, t.tbl, t.triggerRowKey, { update: t.update });
+  }
+}
+
+/**
+ * Var olan satırlar için change_log'u BİR KEZ doldurur.
+ *
+ * Trigger'lar yalnız yeni yazımlarda tetiklenir; yükseltme anında tablolarda duran
+ * kayıtların hiç change_log izi olmaz ve `since_seq=0` boş döner. Seed bunu kapatır ve
+ * yan etkisi kasıtlıdır: bir kereye mahsus tam yeniden yayın, cihazlar arasında birikmiş
+ * ıraksamayı LWW altında (idempotent) kapatır — ADR-005'teki "ilk turda tam süpürme"nin
+ * sunucu tarafındaki karşılığı. Idempotency deseni migrateLegacyRelations ile aynıdır.
+ */
+function seedChangeLog(database: Database.Database): void {
+  const marker = database.prepare("SELECT value FROM system_metadata WHERE key = 'change_log_seeded'").get() as
+    | { value: string }
+    | undefined;
+  if (marker?.value === "1") return;
+  database.transaction(() => {
+    for (const t of SYNC_TABLES) {
+      database.prepare(`INSERT INTO change_log(tbl, row_key) SELECT '${t.tbl}', ${t.rowKey} FROM ${t.tbl}`).run();
+    }
+    database
+      .prepare(
+        `INSERT INTO system_metadata(key, value, updated_at) VALUES ('change_log_seeded', '1', ${NOW_MS})
+         ON CONFLICT(key) DO UPDATE SET value='1', updated_at=${NOW_MS}`
+      )
+      .run();
+  })();
+}
 
 /** Var olan DB'lere eşitleme kolonlarını ekler (uid, updated_at) ve backfill yapar. */
 function migrate(database: Database.Database): void {
@@ -474,8 +594,22 @@ function migrate(database: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uri_unique ON documents(uri) WHERE uri IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_documents_project_current ON documents(project, enabled, is_current);
   `);
+  // ADR-005: teslimat watermark'i seq tabanli. Kolonlar nullable — NULL "henuz seq
+  // modunda degil" demektir ve zaman-modu fallback'i bu sayede bozulmadan durur.
+  addColumn("change_log", "from_sync", "from_sync INTEGER NOT NULL DEFAULT 0");
+  addColumn("sync_state", "last_pull_seq", "last_pull_seq INTEGER");
+  addColumn("sync_state", "last_push_seq", "last_push_seq INTEGER");
   migrateSyncStatePeers(database);
   migrateDeletionPrimaryKey(database);
+  // En son: change_log trigger'ları. Önceki veri migration'ları (özellikle
+  // migrateDeletionPrimaryKey tarihsel tombstone'ları yeniden yazar) trigger'lardan
+  // önce çalışmalı; yoksa her tarihsel tombstone change_log'a düşer ve tüm peer'lara
+  // rebroadcast olur (ADR-005).
+  installChangeTriggers(database);
+  // Trigger'lardan SONRA: var olan satırlar için tek seferlik change_log seed'i.
+  // Sıra önemli değil (seed doğrudan change_log'a yazar, kaynak tablolara dokunmaz)
+  // ama kavramsal olarak "trigger'lar kuruldu, geçmiş de dolduruldu" okunur.
+  seedChangeLog(database);
 }
 
 function migrateLegacyRelations(database: Database.Database): void {

@@ -22,6 +22,10 @@ const {
   consolidateMemories,
   configuredEmbeddingGeneration,
   collectChanges,
+  collectChangesBySeq,
+  syncWithPrimary,
+  pruneChangeLog,
+  syncDigest,
   deleteAsset,
   deleteMemory,
   deleteMemoryRelation,
@@ -73,6 +77,9 @@ let failed = 0;
 function check(name: string, cond: boolean, detail?: string) {
   console.log(`${cond ? "OK  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
   if (!cond) failed++;
+}
+function lowerHex32(): string {
+  return Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
 }
 
 const mem = await saveMemory({
@@ -1114,6 +1121,305 @@ check(
   "emitHubEvent -> getEventLogDb: kalıcı event log'a yazılır",
   dbEvents.some((e: { payload?: { task_uid?: string } }) => e.payload?.task_uid === dbEventMarker)
 );
+
+// --- ADR-005 step 1: change_log trigger altyapısı ---
+//
+// collectChanges/applyChanges Bu adımda dokunulmadı; doğrudan DB'ye yazarak trigger
+// davranışını doğruluyoruz.
+{
+  const db = getDb();
+  const now = "strftime('%Y-%m-%d %H:%M:%f','now')";
+  const sampleUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'change_log insert', 'body', 'ai-hub', '[]', 'smoke-changelog', ${now}, ${now})`
+  ).run(sampleUid);
+  const afterInsert = db
+    .prepare("SELECT seq FROM change_log WHERE tbl = 'memories' AND row_key = ? ORDER BY seq")
+    .all(sampleUid) as { seq: number }[];
+  check(
+    "change_log: memories INSERT → satır oluşur",
+    afterInsert.length === 1,
+    `rows=${afterInsert.length}, uid=${sampleUid}`
+  );
+
+  db.prepare(`UPDATE memories SET body = 'updated body', updated_at = ${now} WHERE uid = ?`).run(sampleUid);
+  const afterUpdate = db
+    .prepare("SELECT seq FROM change_log WHERE tbl = 'memories' AND row_key = ? ORDER BY seq")
+    .all(sampleUid) as { seq: number }[];
+  check(
+    "change_log: memories UPDATE → ikinci satır, seq birinciden büyük",
+    afterUpdate.length === 2 && afterUpdate[1].seq > afterUpdate[0].seq,
+    `seqs=[${afterUpdate.map((r) => r.seq).join(",")}]`
+  );
+
+  const msgUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO agent_messages(uid, from_agent, to_agent, project, kind, subject, body, payload, created_at)
+     VALUES (?, 'smoke', 'smoke', 'ai-hub', 'info', 'change_log msg', 'body', '{}', ${now})`
+  ).run(msgUid);
+  const msgAfterInsert = db
+    .prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl = 'agent_messages' AND row_key = ?")
+    .get(msgUid) as { n: number };
+  db.prepare(`UPDATE agent_messages SET body = 'updated body' WHERE uid = ?`).run(msgUid);
+  const msgAfterUpdate = db
+    .prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl = 'agent_messages' AND row_key = ?")
+    .get(msgUid) as { n: number };
+  check(
+    "change_log: agent_messages insert-only (UPDATE trigger yok)",
+    msgAfterInsert.n === 1 && msgAfterUpdate.n === 1,
+    `after_insert=${msgAfterInsert.n}, after_update=${msgAfterUpdate.n}`
+  );
+
+  const delUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO deletions(uid, tbl, deleted_at) VALUES (?, 'memories', ${now}), (?, 'documents', ${now})`
+  ).run(delUid, delUid);
+  const delRows = db
+    .prepare("SELECT row_key FROM change_log WHERE tbl = 'deletions' AND row_key LIKE ?")
+    .all(`%:${delUid}`) as { row_key: string }[];
+  check(
+    "change_log: deletions birleşik row_key (tbl:uid) çakışmaz",
+    delRows.length === 2 && delRows.some((r) => r.row_key === `memories:${delUid}`) && delRows.some((r) => r.row_key === `documents:${delUid}`),
+    `rows=[${delRows.map((r) => r.row_key).join(",")}]`
+  );
+}
+
+// --- ADR-005 step 2: seed + seq-modu collectChanges ---
+{
+  // closeDb() sonrası eski handle gecersiz olur — her kullanimda getDb() ile taze handle al.
+  const maxSeq = () => (getDb().prepare("SELECT COALESCE(MAX(seq),0) AS m FROM change_log").get() as { m: number }).m;
+
+  // 1) Seed idempotent: marker + change_log temizlenip DB yeniden açılınca mevcut satırlar
+  //    yeniden seed edilir; ikinci açılışta sayı ARTMAZ (marker devrede).
+  getDb().prepare("DELETE FROM change_log").run();
+  getDb().prepare("DELETE FROM system_metadata WHERE key = 'change_log_seeded'").run();
+  closeDb();
+  const afterSeed = (getDb().prepare("SELECT COUNT(*) AS n FROM change_log").get() as { n: number }).n;
+  closeDb();
+  const afterSecond = (getDb().prepare("SELECT COUNT(*) AS n FROM change_log").get() as { n: number }).n;
+  check(
+    "change_log seed: mevcut satırlar dolduruldu ve ikinci açılışta tekrarlanmadı",
+    afterSeed > 0 && afterSecond === afterSeed,
+    `ilk=${afterSeed}, ikinci=${afterSecond}`
+  );
+
+  // 2) Denklik: seed sonrası seq-modu tam süpürme ile zaman-modu tam süpürme aynı kümeyi vermeli.
+  const byTime = collectChanges("1970-01-01 00:00:00");
+  const bySeq = collectChangesBySeq(0);
+  const ids = (p: typeof byTime) => ({
+    m: [...new Set(p.memories.map((x) => x.uid))].sort().join(","),
+    d: [...new Set(p.documents.map((x) => x.uid))].sort().join(","),
+    s: [...new Set(p.sessions.map((x) => x.uid))].sort().join(","),
+  });
+  const a = ids(byTime);
+  const b = ids(bySeq);
+  check(
+    "seq modu: collectChangesBySeq(0) zaman-modu tam süpürmeyle aynı kümeyi döndürür",
+    a.m === b.m && a.d === b.d && a.s === b.s,
+    `mem ${byTime.memories.length}/${bySeq.memories.length}, doc ${byTime.documents.length}/${bySeq.documents.length}, ses ${byTime.sessions.length}/${bySeq.sessions.length}`
+  );
+
+  // 3) Artımlılık: watermark'tan sonra değişen TEK kayıt gelmeli.
+  const before = maxSeq();
+  const incUid = lowerHex32();
+  getDb().prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'seq artimli', 'body', 'ai-hub', '[]', 'smoke-seq', strftime('%Y-%m-%d %H:%M:%f','now'), strftime('%Y-%m-%d %H:%M:%f','now'))`
+  ).run(incUid);
+  const incremental = collectChangesBySeq(before);
+  check(
+    "seq modu: yalnız watermark sonrası değişen kayıt döner",
+    incremental.memories.length === 1 && incremental.memories[0].uid === incUid,
+    `dönen=${incremental.memories.length}`
+  );
+
+  // 4) ASIL BUG REGRESYONU: updated_at'i GEÇMİŞTE olan bir kayıt applyChanges ile gelir.
+  //    Eski (zaman-modu) yol onu kaçırır; seq modu trigger'ın bastığı taze seq sayesinde yakalar.
+  const wallBefore = (getDb().prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS n").get() as { n: string }).n;
+  const seqBefore = maxSeq();
+  const lateUid = lowerHex32();
+  applyChanges({
+    ...emptyPayload,
+    memories: [
+      {
+        uid: lateUid,
+        type: "fact",
+        title: "gec ulasan kayit",
+        body: "ucuncu cihaz gec senkronize oldu",
+        project: "ai-hub",
+        tags: "[]",
+        source: "smoke-late",
+        created_at: "2020-01-01 00:00:00.000",
+        updated_at: "2020-01-01 00:00:00.000",
+      },
+    ],
+  });
+  const seenBySeq = collectChangesBySeq(seqBefore).memories.some((m) => m.uid === lateUid);
+  const seenByTime = collectChanges(wallBefore).memories.some((m) => m.uid === lateUid);
+  check(
+    "geç gelen kayıt: seq modu YAKALAR, eski zaman-modu KAÇIRIR (ADR-005 asıl bug)",
+    seenBySeq && !seenByTime,
+    `seq=${seenBySeq}, zaman=${seenByTime}`
+  );
+}
+
+
+// --- ADR-005 step 3: syncOnce seq modu, fallback, bootstrap, echo ---
+{
+  const db = getDb();
+  const realFetch = globalThis.fetch;
+  const seen: { urls: string[]; pushes: any[] } = { urls: [], pushes: [] };
+
+  /** Sahte primary: pull'da verilen payload'i doner, push'u kaydeder. */
+  const stubPrimary = (payload: Record<string, unknown>) => {
+    globalThis.fetch = (async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/api/sync/changes")) {
+        seen.urls.push(u);
+        return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      seen.pushes.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response(JSON.stringify({ memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, assets: 0, agent_presence: 0, deletions: 0 }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+  };
+  const emptyRemote = (extra: Record<string, unknown> = {}) => ({
+    now: "2030-01-01 00:00:00.000",
+    memories: [], documents: [], relations: [], projects: [], sessions: [],
+    machines: [], assets: [], agent_presence: [], deletions: [], ...extra,
+  });
+  const syncState = () =>
+    db.prepare("SELECT last_pull, last_push, last_pull_seq, last_push_seq FROM sync_state WHERE peer='primary'").get() as
+      | { last_pull: string; last_push: string; last_pull_seq: number | null; last_push_seq: number | null }
+      | undefined;
+
+  try {
+    // 1) Bootstrap: last_pull_seq NULL iken istek since_seq=0 tasimali.
+    db.prepare("DELETE FROM sync_state WHERE peer='primary'").run();
+    seen.urls.length = 0;
+    stubPrimary(emptyRemote({ max_seq: 4242 }));
+    await syncWithPrimary(["http://stub"], "");
+    check(
+      "sync seq: bootstrap turunda since_seq=0 istenir",
+      seen.urls.length === 1 && seen.urls[0].includes("since_seq=0"),
+      seen.urls[0] ?? "(istek yok)"
+    );
+
+    // 2) max_seq donduyse seq moduna gecilir ve sonraki tur onu kullanir.
+    check(
+      "sync seq: max_seq donunce last_pull_seq benimsenir",
+      syncState()?.last_pull_seq === 4242,
+      `last_pull_seq=${syncState()?.last_pull_seq}`
+    );
+    seen.urls.length = 0;
+    stubPrimary(emptyRemote({ max_seq: 4243 }));
+    await syncWithPrimary(["http://stub"], "");
+    check(
+      "sync seq: sonraki tur onceki max_seq ile ister",
+      seen.urls[0]?.includes("since_seq=4242") === true,
+      seen.urls[0] ?? "(istek yok)"
+    );
+
+    // 3) Fallback: eski primary max_seq gondermez -> last_pull_seq YAZILMAZ.
+    db.prepare("UPDATE sync_state SET last_pull_seq=NULL WHERE peer='primary'").run();
+    stubPrimary(emptyRemote());
+    await syncWithPrimary(["http://stub"], "");
+    check(
+      "sync seq: max_seq yoksa zaman moduna sadik kalinir (last_pull_seq NULL)",
+      syncState()?.last_pull_seq === null,
+      `last_pull_seq=${syncState()?.last_pull_seq}`
+    );
+
+    // 4) ECHO: primary'den gelen kayit, sonraki turun push setinde OLMAMALI.
+    const echoUid = lowerHex32();
+    db.prepare("DELETE FROM sync_state WHERE peer='primary'").run();
+    stubPrimary(emptyRemote({
+      max_seq: 999999,
+      memories: [{
+        uid: echoUid, type: "fact", title: "uzaktan gelen", body: "echo testi",
+        project: "ai-hub", tags: "[]", source: "stub",
+        created_at: "2030-01-01 00:00:00.000", updated_at: "2030-01-01 00:00:00.000",
+      }],
+    }));
+    await syncWithPrimary(["http://stub"], ""); // bu turda kayit apply edilir
+    seen.pushes.length = 0;
+    stubPrimary(emptyRemote({ max_seq: 999999 }));
+    await syncWithPrimary(["http://stub"], ""); // sonraki tur: geri push edilmemeli
+    const echoed = seen.pushes.some((p) => (p.memories ?? []).some((m: any) => m.uid === echoUid));
+    check(
+      "sync seq: uzaktan gelen kayit kaynagina geri push EDILMEZ (echo yok)",
+      !echoed,
+      `push turu=${seen.pushes.length}, echo=${echoed}`
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+
+// --- ADR-005 step 4: prune + digest ---
+{
+  const db = getDb();
+
+  // 1) Budama satir basina yalniz en buyuk seq'i birakir.
+  const pruneUid = lowerHex32();
+  const nowSql = "strftime('%Y-%m-%d %H:%M:%f','now')";
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'prune testi', 'v1', 'ai-hub', '[]', 'smoke-prune', ${nowSql}, ${nowSql})`
+  ).run(pruneUid);
+  db.prepare(`UPDATE memories SET body='v2', updated_at=${nowSql} WHERE uid=?`).run(pruneUid);
+  db.prepare(`UPDATE memories SET body='v3', updated_at=${nowSql} WHERE uid=?`).run(pruneUid);
+  const beforeRows = (db.prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl='memories' AND row_key=?").get(pruneUid) as { n: number }).n;
+  pruneChangeLog();
+  const afterRows = (db.prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl='memories' AND row_key=?").get(pruneUid) as { n: number }).n;
+  check(
+    "prune: satır başına yalnız en büyük seq kalır",
+    beforeRows >= 3 && afterRows === 1,
+    `once=${beforeRows}, sonra=${afterRows}`
+  );
+
+  // 2) Budama sonrasi eski watermark'li peer kaydi HALA alabilmeli (budamanin guvenlik kaniti).
+  const stillDelivered = collectChangesBySeq(0).memories.some((m) => m.uid === pruneUid);
+  check(
+    "prune: budama sonrası eski watermark'lı peer kaydı yine alır",
+    stillDelivered,
+    `teslim=${stillDelivered}`
+  );
+
+  // 3) Digest ayni veri icin kararli, veri degisince degisir.
+  const d1 = syncDigest();
+  const d2 = syncDigest();
+  const stable = d1.tables.memories.uid_hash === d2.tables.memories.uid_hash && d1.tables.memories.count === d2.tables.memories.count;
+  const extraUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'digest testi', 'b', 'ai-hub', '[]', 'smoke-digest', ${nowSql}, ${nowSql})`
+  ).run(extraUid);
+  const d3 = syncDigest();
+  check(
+    "digest: aynı veride kararlı, kayıt eklenince değişir",
+    stable && d3.tables.memories.uid_hash !== d1.tables.memories.uid_hash && d3.tables.memories.count === d1.tables.memories.count + 1,
+    `kararli=${stable}, sayim ${d1.tables.memories.count}->${d3.tables.memories.count}`
+  );
+
+  // 4) Digest yalniz sayimi degil KUMEYI de karsilastirir: sayim ayni ama uid farkli olursa yakalar.
+  db.prepare("DELETE FROM memories WHERE uid=?").run(extraUid);
+  const swapUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'digest testi', 'b', 'ai-hub', '[]', 'smoke-digest', ${nowSql}, ${nowSql})`
+  ).run(swapUid);
+  const d4 = syncDigest();
+  check(
+    "digest: sayım aynı ama uid kümesi farklıysa yakalar",
+    d4.tables.memories.count === d3.tables.memories.count && d4.tables.memories.uid_hash !== d3.tables.memories.uid_hash,
+    `sayim=${d4.tables.memories.count}, hash farkli=${d4.tables.memories.uid_hash !== d3.tables.memories.uid_hash}`
+  );
+}
+
 
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });

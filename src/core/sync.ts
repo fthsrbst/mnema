@@ -15,6 +15,7 @@ import {
   configuredEmbeddingGeneration,
   getDb,
   NOW_MS,
+  SYNC_TABLES,
 } from "./db.js";
 import { config } from "./config.js";
 import { syncPayloadSchema } from "./schemas.js";
@@ -99,6 +100,8 @@ interface StoredSyncDocument extends Omit<SyncDocument, "chunks"> {
 
 export interface SyncPayload {
   now: string;
+  /** Bu payload'un uretildigi andaki change_log en buyuk seq'i. Eski peer'lar gondermez. */
+  max_seq?: number;
   /** Generation hash for every transported vector. Missing only on legacy peers. */
   embedding_generation?: string;
   memories: SyncMemory[];
@@ -193,14 +196,80 @@ function getVecBuffer(table: string, rowid: number): Buffer | null {
   return vectorStore.get(table === "memories_vec" ? "memory" : "chunk", rowid);
 }
 
+/**
+ * Toplama modu. `time` eski (olay-zamanlı) yoldur ve yalnız geriye uyumluluk/tam süpürme
+ * için durur; `seq` change_log tabanlı teslimat yoludur (ADR-005).
+ */
+type CollectMode =
+  | { kind: "time"; since: string }
+  | { kind: "seq"; sinceSeq: number; maxSeq: number; excludeFromSync: boolean };
+
+/** SQLite değişken limiti 999; anahtar listesi bunun altında parçalanarak sorgulanır. */
+const KEY_CHUNK = 400;
+
+function keyExprFor(tbl: string): string {
+  const entry = SYNC_TABLES.find((t) => t.tbl === tbl);
+  // Sync'e tablo eklenip SYNC_TABLES'a eklenmezse sessizce eksik teslimat olurdu; gürültülü patla.
+  if (!entry) throw new Error(`sync: ${tbl} icin change_log tanimi yok (SYNC_TABLES)`);
+  return entry.rowKey;
+}
+
+/**
+ * Bir tablonun bu turda taşınacak ham satırlarını döner. İki mod SADECE burada,
+ * WHERE koşulunda ayrışır; satır→payload dönüşümü collectPayload içinde tektir.
+ */
+function rowsFor<T>(tbl: string, cols: string, timeCol: string, mode: CollectMode): T[] {
+  const db = getDb();
+  if (mode.kind === "time") {
+    return db.prepare(`SELECT ${cols} FROM ${tbl} WHERE ${timeCol} >= ?`).all(mode.since) as T[];
+  }
+  const keys = (
+    db
+      .prepare(
+        `SELECT DISTINCT row_key FROM change_log
+          WHERE tbl = ? AND seq > ? AND seq <= ?${mode.excludeFromSync ? " AND from_sync = 0" : ""}`
+      )
+      .all(tbl, mode.sinceSeq, mode.maxSeq) as { row_key: string }[]
+  ).map((r) => r.row_key);
+  if (keys.length === 0) return [];
+  const keyExpr = keyExprFor(tbl);
+  const out: T[] = [];
+  for (let i = 0; i < keys.length; i += KEY_CHUNK) {
+    const slice = keys.slice(i, i + KEY_CHUNK);
+    const holes = slice.map(() => "?").join(",");
+    out.push(...(db.prepare(`SELECT ${cols} FROM ${tbl} WHERE ${keyExpr} IN (${holes})`).all(...slice) as T[]));
+  }
+  return out;
+}
+
 /** `since`'ten (ISO, UTC "YYYY-MM-DD HH:MM:SS") beri değişen her şeyi topla. */
 export function collectChanges(since: string): SyncPayload {
+  return collectPayload({ kind: "time", since });
+}
+
+/**
+ * change_log seq'ine göre topla — geç ulaşan kayıtları kaçırmayan yol (ADR-005).
+ *
+ * maxSeq ÖNCE okunur ve aralık `seq > sinceSeq AND seq <= maxSeq` ile sınırlanır: toplama
+ * sürerken gelen yazımlar bu tura değil sonrakine kalır (at-least-once; kaybetmek yerine
+ * tekrarlamak doğru yön, apply zaten LWW altında idempotent).
+ */
+export function collectChangesBySeq(sinceSeq: number, opts?: { excludeFromSync?: boolean }): SyncPayload {
+  const maxSeq = (getDb().prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM change_log").get() as { m: number }).m;
+  return collectPayload({ kind: "seq", sinceSeq, maxSeq, excludeFromSync: opts?.excludeFromSync === true });
+}
+
+function collectPayload(mode: CollectMode): SyncPayload {
   const db = getDb();
   const now = (db.prepare(`SELECT ${NOW_MS} AS n`).get() as { n: string }).n;
+  // time modunda da güncel max_seq bildirilir: tam süpürme yapan istemci bu değeri
+  // benimseyip seq moduna geçebilsin diye (bootstrap yolu, ADR-005).
+  const maxSeq =
+    mode.kind === "seq"
+      ? mode.maxSeq
+      : (db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM change_log").get() as { m: number }).m;
 
-  const memories = (db
-    .prepare("SELECT * FROM memories WHERE updated_at >= ?")
-    .all(since) as (SyncMemory & { id: number })[]).map((m) => ({
+  const memories = rowsFor<SyncMemory & { id: number }>("memories", "*", "updated_at", mode).map((m) => ({
     uid: m.uid, type: m.type, title: m.title, body: m.body, project: m.project,
     tags: m.tags, source: m.source, created_at: m.created_at, updated_at: m.updated_at,
     language: m.language ?? null,
@@ -213,9 +282,7 @@ export function collectChanges(since: string): SyncPayload {
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
 
-  const docRows = db
-    .prepare("SELECT * FROM documents WHERE updated_at >= ?")
-    .all(since) as (Omit<SyncDocument, "chunks"> & { id: number })[];
+  const docRows = rowsFor<Omit<SyncDocument, "chunks"> & { id: number }>("documents", "*", "updated_at", mode);
   const chunkStmt = db.prepare("SELECT id, seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq");
   const documents = docRows.map((d) => ({
     uid: d.uid, title: d.title, source: d.source, uri: d.uri, project: d.project,
@@ -231,51 +298,59 @@ export function collectChanges(since: string): SyncPayload {
 
   return {
     now,
+    max_seq: maxSeq,
     embedding_generation: configuredEmbeddingGeneration(),
     memories,
     documents,
-    relations: db
-      .prepare(
-        `SELECT uid, from_uid, to_uid, relation_type, confidence, valid_from,
-                valid_to, source, metadata, created_at, updated_at
-         FROM memory_relations WHERE updated_at >= ?`
-      )
-      .all(since) as NonNullable<SyncPayload["relations"]>,
-    projects: db.prepare("SELECT name, data, updated_at FROM projects WHERE updated_at >= ?").all(since) as SyncPayload["projects"],
-    sessions: db
-      .prepare("SELECT uid, project, summary, source, origin_machine, created_at, updated_at FROM session_logs WHERE updated_at >= ?")
-      .all(since) as SyncPayload["sessions"],
-    machines: db.prepare("SELECT name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
-    assets: db
-      .prepare("SELECT uid, kind, name, content, created_at, updated_at FROM assets WHERE updated_at >= ?")
-      .all(since) as SyncPayload["assets"],
-    agent_presence: db
-      .prepare(
-        `SELECT uid, machine, agent, project, branch, task, status, started_at, heartbeat_at, finished_at, created_at, updated_at
-         FROM agent_presence WHERE updated_at >= ?`
-      )
-      .all(since) as SyncPayload["agent_presence"],
+    relations: rowsFor(
+      "memory_relations",
+      `uid, from_uid, to_uid, relation_type, confidence, valid_from,
+       valid_to, source, metadata, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as NonNullable<SyncPayload["relations"]>,
+    projects: rowsFor("projects", "name, data, updated_at", "updated_at", mode) as SyncPayload["projects"],
+    sessions: rowsFor(
+      "session_logs",
+      "uid, project, summary, source, origin_machine, created_at, updated_at",
+      "updated_at",
+      mode
+    ) as SyncPayload["sessions"],
+    machines: rowsFor(
+      "machines",
+      "name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at",
+      "updated_at",
+      mode
+    ) as SyncPayload["machines"],
+    assets: rowsFor("assets", "uid, kind, name, content, created_at, updated_at", "updated_at", mode) as SyncPayload["assets"],
+    agent_presence: rowsFor(
+      "agent_presence",
+      `uid, machine, agent, project, branch, task, status, started_at, heartbeat_at, finished_at, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as SyncPayload["agent_presence"],
     // Agent Intelligence Platform tables
-    tasks: db
-      .prepare(
-        `SELECT uid, project, title, description, status, priority, created_by, claimed_by, claimed_at,
-                depends_on, tags, result, error, due_at, started_at, finished_at, created_at, updated_at
-         FROM tasks WHERE updated_at >= ?`
-      )
-      .all(since) as SyncPayload["tasks"],
-    agent_capabilities: db
-      .prepare(
-        `SELECT uid, agent, machine, capabilities, models, max_concurrent, status, last_seen_at, metadata, created_at, updated_at
-         FROM agent_capabilities WHERE updated_at >= ?`
-      )
-      .all(since) as SyncPayload["agent_capabilities"],
-    agent_messages: db
-      .prepare(
-        `SELECT uid, from_agent, to_agent, project, task_uid, kind, subject, body, payload, read_at, created_at
-         FROM agent_messages WHERE created_at >= ?`
-      )
-      .all(since) as SyncPayload["agent_messages"],
-    deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at >= ?").all(since) as SyncPayload["deletions"],
+    tasks: rowsFor(
+      "tasks",
+      `uid, project, title, description, status, priority, created_by, claimed_by, claimed_at,
+       depends_on, tags, result, error, due_at, started_at, finished_at, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as SyncPayload["tasks"],
+    agent_capabilities: rowsFor(
+      "agent_capabilities",
+      `uid, agent, machine, capabilities, models, max_concurrent, status, last_seen_at, metadata, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as SyncPayload["agent_capabilities"],
+    // agent_messages insert-only: eski yolda filtre created_at, seq yolunda fark etmez.
+    agent_messages: rowsFor(
+      "agent_messages",
+      `uid, from_agent, to_agent, project, task_uid, kind, subject, body, payload, read_at, created_at`,
+      "created_at",
+      mode
+    ) as SyncPayload["agent_messages"],
+    deletions: rowsFor("deletions", "uid, tbl, deleted_at", "deleted_at", mode) as SyncPayload["deletions"],
   };
 }
 
@@ -728,10 +803,81 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
 }
 
 /** Apply one sync payload atomically: a malformed row cannot leave a half-applied peer state. */
+/**
+ * change_log satir basina yalnizca en buyuk seq'i tutar.
+ *
+ * Guvenli: bir peer bir satirin yalnizca EN SON halini ister, ara adimlarini degil.
+ * since_seq'i ne olursa olsun kalan en buyuk seq o satiri teslim eder. AUTOINCREMENT
+ * sayesinde budama sonrasi yeni seq'ler yine artan devam eder — duz INTEGER PRIMARY KEY
+ * olsaydi silinen en buyuk rowid geri kullanilir ve monotonluk bozulurdu.
+ */
+export function pruneChangeLog(): number {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `DELETE FROM change_log
+        WHERE seq NOT IN (SELECT MAX(seq) FROM change_log GROUP BY tbl, row_key)`
+    )
+    .run();
+  return info.changes;
+}
+
+/** Budama esigi: her turda calistirmak yerine tablo bu boyutu asinca temizlenir. */
+const CHANGE_LOG_PRUNE_THRESHOLD = 50_000;
+
+function pruneChangeLogIfLarge(): number {
+  const db = getDb();
+  const n = (db.prepare("SELECT COUNT(*) AS n FROM change_log").get() as { n: number }).n;
+  return n > CHANGE_LOG_PRUNE_THRESHOLD ? pruneChangeLog() : 0;
+}
+
+export interface SyncDigestTable {
+  count: number;
+  /** Siralanmis satir anahtarlarinin sha256'si — eksik/fazla satiri yakalar. */
+  uid_hash: string;
+}
+
+export interface SyncDigest {
+  max_seq: number;
+  tables: Record<string, SyncDigestTable>;
+}
+
+/**
+ * Cihazlar arasi tutarlilik kaniti.
+ *
+ * "last_pull guncel" HICBIR ZAMAN sync'in calistiginin kaniti degildi — 2026-07-21'de 8
+ * memory ve 14 session tam da bu yanilgi altinda kaybolmustu. Sayimlarin ve anahtar
+ * kumelerinin karsilastirilmasi iraksamayi gorunur kilar.
+ */
+export function syncDigest(): SyncDigest {
+  const db = getDb();
+  const tables: Record<string, SyncDigestTable> = {};
+  for (const t of SYNC_TABLES) {
+    const rows = db.prepare(`SELECT ${t.rowKey} AS k FROM ${t.tbl} ORDER BY 1`).all() as { k: string }[];
+    tables[t.tbl] = {
+      count: rows.length,
+      uid_hash: createHash("sha256").update(rows.map((r) => r.k).join("")).digest("hex"),
+    };
+  }
+  return {
+    max_seq: (db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM change_log").get() as { m: number }).m,
+    tables,
+  };
+}
+
 export function applyChanges(payload: SyncPayload): ApplyResult {
   payload = syncPayloadSchema.parse(payload) as SyncPayload;
   const db = getDb();
-  return db.transaction(() => applyChangesUnsafe(payload))();
+  return db.transaction(() => {
+    // Trigger'lar JS tarafindaki "bu yazim sync'ten geliyor" bilgisini goremez, bu yuzden
+    // apply'in urettigi change_log satirlari islem sonunda toplu olarak isaretlenir.
+    // better-sqlite3 senkron oldugu ve bu blok tek transaction icinde kostugu icin araya
+    // yerel bir yazim giremez — aralik tam olarak apply'in urettigi satirlardir.
+    const before = (db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM change_log").get() as { m: number }).m;
+    const result = applyChangesUnsafe(payload);
+    db.prepare("UPDATE change_log SET from_sync = 1 WHERE seq > ?").run(before);
+    return result;
+  })();
 }
 
 export function recordDeletion(tbl: string, uid: string): void {
@@ -748,19 +894,36 @@ export function recordDeletion(tbl: string, uid: string): void {
 // Tek mantıksal peer: adres (Tailscale/LAN) değişse de since ilerlemeye devam eder.
 const PRIMARY_PEER = "primary";
 
-function getSyncState(): { last_pull: string; last_push: string } {
-  const row = getDb().prepare("SELECT last_pull, last_push FROM sync_state WHERE peer = ?").get(PRIMARY_PEER) as
-    | { last_pull: string | null; last_push: string | null }
-    | undefined;
-  return { last_pull: row?.last_pull ?? "1970-01-01 00:00:00", last_push: row?.last_push ?? "1970-01-01 00:00:00" };
+interface SyncState {
+  last_pull: string;
+  last_push: string;
+  /** null = bu peer icin henuz seq moduna gecilmedi (ADR-005). */
+  last_pull_seq: number | null;
+  last_push_seq: number | null;
 }
 
-function setSyncState(patch: Partial<{ last_pull: string; last_push: string }>): void {
+function getSyncState(): SyncState {
+  const row = getDb()
+    .prepare("SELECT last_pull, last_push, last_pull_seq, last_push_seq FROM sync_state WHERE peer = ?")
+    .get(PRIMARY_PEER) as
+    | { last_pull: string | null; last_push: string | null; last_pull_seq: number | null; last_push_seq: number | null }
+    | undefined;
+  return {
+    last_pull: row?.last_pull ?? "1970-01-01 00:00:00",
+    last_push: row?.last_push ?? "1970-01-01 00:00:00",
+    last_pull_seq: row?.last_pull_seq ?? null,
+    last_push_seq: row?.last_push_seq ?? null,
+  };
+}
+
+function setSyncState(patch: Partial<SyncState>): void {
   const cur = getSyncState();
   getDb()
     .prepare(
-      `INSERT INTO sync_state(peer, last_pull, last_push) VALUES (@peer, @last_pull, @last_push)
-       ON CONFLICT(peer) DO UPDATE SET last_pull=@last_pull, last_push=@last_push`
+      `INSERT INTO sync_state(peer, last_pull, last_push, last_pull_seq, last_push_seq)
+       VALUES (@peer, @last_pull, @last_push, @last_pull_seq, @last_push_seq)
+       ON CONFLICT(peer) DO UPDATE SET last_pull=@last_pull, last_push=@last_push,
+         last_pull_seq=@last_pull_seq, last_push_seq=@last_push_seq`
     )
     .run({ peer: PRIMARY_PEER, ...cur, ...patch });
 }
@@ -771,24 +934,44 @@ export interface SyncRunResult {
   pulled?: ApplyResult;
   pushed?: ApplyResult;
   error?: string;
+  /** Digest karsilastirmasi uyusmadiysa tablo bazinda fark ozeti (ADR-005). */
+  divergence?: string[];
+  /** Bu turda budanan change_log satiri sayisi (esik asildiysa). */
+  pruned?: number;
 }
 
-/** Tek adresle tek tur eşitleme: pull → apply, collect → push. */
+/** Tek adresle tek tur eşitleme: collect → pull/apply → push → digest kontrolü. */
 async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResult> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   const state = getSyncState();
   try {
-    const pullRes = await fetch(`${primaryUrl}/api/sync/changes?since=${encodeURIComponent(state.last_pull)}`, {
-      headers,
-      signal: AbortSignal.timeout(30000),
-    });
+    // Yerel degisiklikler apply'DAN ONCE toplanir (ADR-005). applyChanges uzaktan gelen
+    // satirlara trigger araciligiyla taze yerel seq basar; apply'dan sonra toplasaydik o
+    // satirlari her turda kaynagina geri push ederdik (echo) ve change_log siserdi.
+    const local =
+      state.last_push_seq !== null
+        ? collectChangesBySeq(state.last_push_seq, { excludeFromSync: true })
+        : collectChanges(state.last_push);
+
+    // Iki parametre birden gonderilir: yeni primary since_seq'i tercih eder, eski primary
+    // onu yok sayip since ile artimli cevap verir — boylece eski primary'ye karsi her turda
+    // tam supurme yapma israfi olmaz. last_pull_seq NULL iken since_seq=0 istenir; sunucu
+    // tarafindaki seed sayesinde bu, birikmis iraksamayi kapatan tek seferlik tam teslimattir.
+    const sinceSeq = state.last_pull_seq ?? 0;
+    const pullUrl = `${primaryUrl}/api/sync/changes?since=${encodeURIComponent(state.last_pull)}&since_seq=${sinceSeq}`;
+    const pullRes = await fetch(pullUrl, { headers, signal: AbortSignal.timeout(30000) });
     if (!pullRes.ok) throw new Error(`pull ${pullRes.status}`);
     const remote = (await pullRes.json()) as SyncPayload;
     const pulled = applyChanges(remote);
-    setSyncState({ last_pull: remote.now });
 
-    const local = collectChanges(state.last_push);
+    // Watermark apply'dan SONRA yazilir: crash olursa eski watermark kalir, satirlar yeniden
+    // cekilir, apply LWW altinda idempotenttir. Bu sirayi bozma.
+    // max_seq yoksa primary eskidir -> zaman moduna sadik kal, last_pull_seq'i YAZMA.
+    const pullPatch: Partial<SyncState> = { last_pull: remote.now };
+    if (typeof remote.max_seq === "number") pullPatch.last_pull_seq = remote.max_seq;
+    setSyncState(pullPatch);
+
     let pushed: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, assets: 0, agent_presence: 0, deletions: 0 };
     const hasLocal = Object.entries(local).some(([k, v]) => k !== "now" && Array.isArray(v) && v.length > 0);
     if (hasLocal) {
@@ -801,8 +984,38 @@ async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResul
       if (!pushRes.ok) throw new Error(`push ${pushRes.status}`);
       pushed = (await pushRes.json()) as ApplyResult;
     }
-    setSyncState({ last_push: local.now });
-    return { ok: true, url: primaryUrl, pulled, pushed };
+    // Push watermark'i KENDI seq'imizdir, karsi tarafin yetenegine bagli degil — bu yuzden
+    // push tarafi ilk turdan sonra her zaman seq moduna gecer. Zaman damgasi watermark'lari
+    // paralel guncellenmeye devam eder ki fallback gerekirse cok eski bir noktadan devasa bir
+    // re-pull olmasin.
+    const pushPatch: Partial<SyncState> = { last_push: local.now };
+    if (typeof local.max_seq === "number") pushPatch.last_push_seq = local.max_seq;
+    setSyncState(pushPatch);
+
+    // Tutarlilik kontrolu: sayim/anahtar kumesi uyusmazsa sessizce iraksiyoruz demektir.
+    // Basarisiz olmasi sync'i bozmaz — bu bir uyari kanali, kapi degil.
+    let divergence: string[] | undefined;
+    try {
+      const digestRes = await fetch(`${primaryUrl}/api/sync/digest`, { headers, signal: AbortSignal.timeout(15000) });
+      if (digestRes.ok) {
+        const remoteDigest = (await digestRes.json()) as SyncDigest;
+        const localDigest = syncDigest();
+        const diffs: string[] = [];
+        for (const [tbl, r] of Object.entries(remoteDigest.tables ?? {})) {
+          const l = localDigest.tables[tbl];
+          if (!l) continue;
+          if (l.count !== r.count || l.uid_hash !== r.uid_hash) {
+            diffs.push(`${tbl}: yerel ${l.count} / uzak ${r.count}`);
+          }
+        }
+        if (diffs.length > 0) divergence = diffs;
+      }
+    } catch {
+      /* digest yoksa (eski primary) veya erisilemezse sessiz gec */
+    }
+
+    const pruned = pruneChangeLogIfLarge();
+    return { ok: true, url: primaryUrl, pulled, pushed, divergence, pruned: pruned || undefined };
   } catch (err) {
     return { ok: false, url: primaryUrl, error: (err as Error).message };
   }
