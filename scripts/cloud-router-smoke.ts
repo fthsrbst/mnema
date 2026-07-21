@@ -42,6 +42,7 @@ const config: CloudRuntimeConfig = {
   trustProxyHops: 0,
   rateLimitPerMinute: 300,
   webhookRateLimitPerMinute: 120,
+  testSubscriptionsEnabled: false,
   paddle: {
     apiKey: "paddle-api-key",
     webhookSecret: "paddle-webhook-secret",
@@ -223,6 +224,13 @@ app.use("/webhook", express.raw({ type: "application/json" }), buildCloudWebhook
 app.use(express.json());
 app.use("/api", buildCloudAccountRouter(config, fakeFetch));
 app.use("/free-api", buildCloudAccountRouter({ ...config, paddle: null }, fakeFetch));
+app.use("/test-api", buildCloudAccountRouter({
+  ...config,
+  appUrl: "http://127.0.0.1:8044",
+  httpsOnly: false,
+  paddle: null,
+  testSubscriptionsEnabled: true,
+}, fakeFetch));
 const server = app.listen(0, "127.0.0.1");
 await new Promise<void>((resolve) => server.once("listening", resolve));
 const address = server.address();
@@ -418,6 +426,13 @@ check(
   disabledCheckout.status === 503 && disabledCheckoutJson.error === "billing_not_configured"
 );
 
+const disabledTestSubscription = await fetch(`${base}/free-api/billing/test-subscription`, {
+  method: "POST",
+  headers: { ...authHeaders, "x-mnema-organization-id": organizationId },
+  body: JSON.stringify({ plan: "starter", interval: "annual" }),
+});
+check("Free preview hides staging subscription bypass unless explicitly enabled", disabledTestSubscription.status === 404);
+
 const checkout = await fetch(`${base}/api/billing/checkout`, {
   method: "POST",
   headers: { ...authHeaders, "x-mnema-organization-id": organizationId },
@@ -510,6 +525,31 @@ const lifecycle = await purgeDueOrganizations(config, lifecycleFetch, new Date()
 check(
   "lifecycle worker purges only due tenants with canceled billing",
   lifecycle.purged === 1 && lifecycle.waitingForBilling === 1 && lifecyclePurgeCount === 1
+);
+
+subscriptionSaved = false;
+const testSubscription = await fetch(`${base}/test-api/billing/test-subscription`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${aal1Token}`,
+    "Content-Type": "application/json",
+    "x-mnema-organization-id": organizationId,
+  },
+  body: JSON.stringify({ plan: "pro", interval: "annual" }),
+});
+const testSubscriptionJson = (await testSubscription.json()) as {
+  plan?: string;
+  testSubscription?: boolean;
+  testBillingEnabled?: boolean;
+  entitlements?: { projects?: number };
+};
+check(
+  "loopback staging pass applies paid entitlements without Paddle or MFA",
+  testSubscription.status === 201 &&
+    testSubscriptionJson.plan === "pro" &&
+    testSubscriptionJson.testSubscription === true &&
+    testSubscriptionJson.testBillingEnabled === true &&
+    testSubscriptionJson.entitlements?.projects === 50
 );
 
 await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));

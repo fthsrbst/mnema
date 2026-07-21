@@ -12,6 +12,7 @@ export interface CloudRuntimeConfig {
   webhookRateLimitPerMinute: number;
   rateLimitRedisUrl?: string;
   communityApiEnabled?: boolean;
+  testSubscriptionsEnabled: boolean;
   paddle: {
     apiKey: string;
     webhookSecret: string;
@@ -56,6 +57,7 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
     "CLOUD_RATE_LIMIT_REDIS_URL",
     "CLOUD_ENABLE_COMMUNITY_API",
     "CLOUD_BILLING_ENABLED",
+    "CLOUD_ALLOW_TEST_SUBSCRIPTIONS",
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
     "SUPABASE_ANON_KEY",
@@ -85,8 +87,18 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
   const paddleKeys = cloudKeys.filter((key) => key.startsWith("PADDLE_"));
   const hasPaddleConfiguration = paddleKeys.some((key) => env[key]?.trim());
   const billingEnabled = boolean(env, "CLOUD_BILLING_ENABLED", hasPaddleConfiguration);
+  const testSubscriptionsEnabled = boolean(env, "CLOUD_ALLOW_TEST_SUBSCRIPTIONS", false);
   if (!billingEnabled && hasPaddleConfiguration) {
     throw new Error("Paddle values require CLOUD_BILLING_ENABLED=true (or the flag to be omitted)");
+  }
+  if (testSubscriptionsEnabled) {
+    const hostname = new URL(appUrl).hostname;
+    const loopback = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
+    const bindHost = env.HUB_HOST?.trim() || "127.0.0.1";
+    const loopbackBind = bindHost === "127.0.0.1" || bindHost === "localhost" || bindHost === "::1";
+    if (env.NODE_ENV === "production" || httpsOnly || !loopback || !loopbackBind || billingEnabled) {
+      throw new Error("CLOUD_ALLOW_TEST_SUBSCRIPTIONS is restricted to loopback-bound HTTP previews without Paddle");
+    }
   }
   const paddle = billingEnabled
     ? (() => {
@@ -130,6 +142,7 @@ export function loadCloudRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Cl
     webhookRateLimitPerMinute: integer(env, "CLOUD_WEBHOOK_RATE_LIMIT_PER_MINUTE", 120, 10, 100_000),
     rateLimitRedisUrl: rateLimitRedisUrl ? redisUrlSchema.parse(rateLimitRedisUrl) : undefined,
     communityApiEnabled: boolean(env, "CLOUD_ENABLE_COMMUNITY_API", false),
+    testSubscriptionsEnabled,
     paddle,
   };
 }

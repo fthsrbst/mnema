@@ -63,6 +63,51 @@ const freePreviewConfig = loadCloudRuntimeConfig({
 });
 check("Cloud Free can run without Paddle while billing stays disabled", freePreviewConfig?.paddle === null);
 
+const testSubscriptionPreview = loadCloudRuntimeConfig({
+  CLOUD_APP_URL: "http://127.0.0.1:8044",
+  CLOUD_BILLING_ENABLED: "false",
+  CLOUD_ALLOW_TEST_SUBSCRIPTIONS: "true",
+  SUPABASE_URL: "https://project.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "sb_publishable_public",
+  SUPABASE_SECRET_KEY: "sb_secret_private",
+});
+check(
+  "loopback Free preview can explicitly enable staging subscriptions",
+  testSubscriptionPreview?.testSubscriptionsEnabled === true && testSubscriptionPreview.paddle === null
+);
+
+let publicTestSubscriptionsRejected = false;
+try {
+  loadCloudRuntimeConfig({
+    CLOUD_APP_URL: "https://preview.mnema.example",
+    CLOUD_HTTPS_ONLY: "true",
+    CLOUD_BILLING_ENABLED: "false",
+    CLOUD_ALLOW_TEST_SUBSCRIPTIONS: "true",
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_public",
+    SUPABASE_SECRET_KEY: "sb_secret_private",
+  });
+} catch {
+  publicTestSubscriptionsRejected = true;
+}
+check("public HTTPS Cloud rejects staging subscription bypass", publicTestSubscriptionsRejected);
+
+let publicBindTestSubscriptionsRejected = false;
+try {
+  loadCloudRuntimeConfig({
+    CLOUD_APP_URL: "http://127.0.0.1:8044",
+    HUB_HOST: "0.0.0.0",
+    CLOUD_BILLING_ENABLED: "false",
+    CLOUD_ALLOW_TEST_SUBSCRIPTIONS: "true",
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_public",
+    SUPABASE_SECRET_KEY: "sb_secret_private",
+  });
+} catch {
+  publicBindTestSubscriptionsRejected = true;
+}
+check("non-loopback server bind rejects staging subscription bypass", publicBindTestSubscriptionsRejected);
+
 let disabledBillingWithPaddleRejected = false;
 try {
   loadCloudRuntimeConfig({

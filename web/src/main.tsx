@@ -5,6 +5,7 @@ import "./design/components.css";
 import "./design/layout.css";
 import "./design/graph.css";
 import "./design/agents.css";
+import "./design/cloud.css";
 import App from "./App.tsx";
 
 createRoot(document.getElementById("root")!).render(
