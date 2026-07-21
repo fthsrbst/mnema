@@ -559,6 +559,12 @@ function migrate(database: Database.Database): void {
   addColumn("memories", "is_current", "is_current INTEGER NOT NULL DEFAULT 1");
   addColumn("memories", "supersedes_uid", "supersedes_uid TEXT");
   addColumn("memories", "invalidated_reason", "invalidated_reason TEXT");
+  // ADR-006 faz 2: doğrulama yaşı. Volatil iddialar (ortam durumu, bir servisin ayakta olması
+  // gibi) review_after ile bir kontrol ufku alabilir. review_after geçmişte kalırsa
+  // formatRecall (recall.ts) GÖRÜNÜR bir uyarı ekler — kaydı GİZLEMEZ: sistem bir şeyin
+  // yanlış olduğunu bilemez ama kimsenin kontrol etmediğini bilir, bunu söyleyebilir.
+  addColumn("memories", "verified_at", "verified_at TEXT");
+  addColumn("memories", "review_after", "review_after TEXT");
   // Retrieval feedback was memory-only in the first release. Keep memory_id for
   // compatibility, but use target_kind/target_id for memory, chunk, document,
   // or whole-context feedback and retain the delivered ranking evidence.

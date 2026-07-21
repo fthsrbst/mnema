@@ -8,7 +8,13 @@ import { recordDeletion } from "./sync.js";
 import { assertProjectReference } from "./projects.js";
 import { resolveMachineName } from "./machine.js";
 import type { Memory, MemoryInput, RelatedRef, SavedMemory, ScoredMemory, SearchFilters, SimilarHit } from "./types.js";
-import { memoryConsolidateSchema, memoryInputSchema, memoryPatchSchema } from "./schemas.js";
+import {
+  memoryConsolidateSchema,
+  memoryInputSchema,
+  memoryInvalidateSchema,
+  memoryPatchSchema,
+  memoryRevalidateSchema,
+} from "./schemas.js";
 import {
   deleteMemoryRelation,
   deleteRelationsForMemoryUid,
@@ -110,10 +116,12 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
     .prepare(
       `INSERT INTO memories(
          uid, type, title, body, project, tags, source, language, canonical_summary,
-         normalizer_generation, importance, related, origin_machine, created_at, updated_at
+         normalizer_generation, importance, related, origin_machine, verified_at, review_after,
+         created_at, updated_at
        ) VALUES (
          @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
-         @normalizer_generation, @importance, @related, @origin_machine, ${NOW_MS}, ${NOW_MS}
+         @normalizer_generation, @importance, @related, @origin_machine, @verified_at, @review_after,
+         ${NOW_MS}, ${NOW_MS}
        )`
     )
     .run({
@@ -130,13 +138,26 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
       importance: clampImportance(input.importance),
       related: JSON.stringify(relatedUids),
       origin_machine: input.origin_machine ?? resolveMachineName(),
+      verified_at: input.verified_at ?? null,
+      review_after: input.review_after ?? null,
     });
   const id = Number(info.lastInsertRowid);
   replaceLegacyRelatedRelations(id, relatedUids);
   const similar = await upsertVector(id, input.title, input.body, input.canonical_summary);
   notifyWrite();
   const mem = getMemory(id)!;
-  return similar && similar.length > 0 ? { ...mem, similar } : mem;
+  if (similar && similar.length > 0) {
+    return {
+      ...mem,
+      similar,
+      similar_hint:
+        "Benzer kayıt(lar) var. Bu yeni kayıt onlardan birini GEÇERSİZ KILIYORSA " +
+        "memory_invalidate(id, reason, evidence, replaced_by_id=" + String(mem.id) + ") çağır — " +
+        "yoksa çelişkili iki kayıt yan yana durur ve okuyan agent hangisinin geçerli olduğunu bilemez. " +
+        "Emin değilsen dokunma: kanıtsız geçersiz kılma bayat kayıttan daha kötüdür.",
+    };
+  }
+  return mem;
 }
 
 export function getMemory(id: number): Memory | null {
@@ -180,6 +201,9 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
     importance: patch.importance === undefined ? existing.importance : clampImportance(patch.importance),
     // related_ids verilirse TAM listeyi değiştirir (ekleme değil) — memory_update sözleşmesiyle tutarlı
     related: patch.related_ids === undefined ? JSON.stringify(existing.related) : JSON.stringify(idsToUids(patch.related_ids, id)),
+    // ADR-006 faz 2: null verilirse temizlenir (nullableTimestamp — memoryPatchSchema).
+    verified_at: patch.verified_at === undefined ? existing.verified_at : patch.verified_at,
+    review_after: patch.review_after === undefined ? existing.review_after : patch.review_after,
     id,
   };
   getDb()
@@ -187,7 +211,8 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
       `UPDATE memories SET type=@type, title=@title, body=@body, project=@project,
        tags=@tags, language=@language, canonical_summary=@canonical_summary,
        normalizer_generation=@normalizer_generation, importance=@importance,
-       related=@related, updated_at=${NOW_MS} WHERE id=@id`
+       related=@related, verified_at=@verified_at, review_after=@review_after,
+       updated_at=${NOW_MS} WHERE id=@id`
     )
     .run(merged);
   if (patch.related_ids !== undefined) replaceLegacyRelatedRelations(id, JSON.parse(merged.related) as string[]);
@@ -314,6 +339,103 @@ export function deleteMemory(id: number): boolean {
   if (deleted && row?.uid) recordDeletion("memories", row.uid);
   if (deleted) notifyWrite();
   return deleted;
+}
+
+function resolveMemoryIdFromRef(ref: { id?: number; uid?: string }): number | null {
+  if (ref.id !== undefined) return ref.id;
+  if (ref.uid !== undefined) {
+    const row = getDb().prepare("SELECT id FROM memories WHERE uid = ?").get(ref.uid) as { id: number } | undefined;
+    return row?.id ?? null;
+  }
+  return null;
+}
+
+export interface InvalidateMemoryInput {
+  id?: number;
+  uid?: string;
+  /** Kısa gerekçe. */
+  reason: string;
+  /** Bu iddiayı yanlışlayan komut çıktısı/gözlem — ZORUNLU. */
+  evidence: string;
+  /** Bu kaydın yerine geçen yeni kaydın yerel id'si (opsiyonel). */
+  replaced_by_id?: number;
+}
+
+/**
+ * ADR-006 faz 2: hafızayı is_current=0 işaretler. SATIRI ASLA SİLMEZ — tersi memory_revalidate
+ * ile mümkündür. evidence ZORUNLU (schema): "careless invalidation is the symmetric danger"
+ * (ADR — bir agent doğru bir hafızayı yanlış bir testle bayat ilan etmek üzereydi). Vektör
+ * tablosundaki is_current metadata'sı da güncellenir (vector-store.ts) — yoksa KNN filtresi
+ * eski değeri görmeye devam eder. replaced_by_id verilirse: YENİ kaydın supersedes_uid'i
+ * ESKİ kaydın uid'ine bağlanır (documents.ts'teki "yeni.supersedes_uid = eski.uid" yönüyle
+ * aynı) ve memory_relations'a from=yeni, to=eski yönünde 'supersedes' kenarı eklenir.
+ */
+export async function invalidateMemory(input: InvalidateMemoryInput): Promise<Memory | null> {
+  const parsed = memoryInvalidateSchema.parse(input);
+  const id = resolveMemoryIdFromRef(parsed);
+  if (id === null) return null;
+  const existing = getMemory(id);
+  if (!existing) return null;
+  // Yerine gecen kaydin varligi HERHANGI bir mutasyondan ONCE dogrulanir: sonra
+  // dogrulanirsa kayit gecersizlestirilmis ama supersedes bagi kurulmamis olarak
+  // yarim durumda kalirdi.
+  const replacement =
+    parsed.replaced_by_id !== undefined ? getMemory(parsed.replaced_by_id) : null;
+  if (parsed.replaced_by_id !== undefined && !replacement) {
+    throw new Error(`replacement memory #${parsed.replaced_by_id} not found`);
+  }
+  const db = getDb();
+  const reasonText = `${parsed.reason} — kanıt: ${parsed.evidence}`;
+  db.prepare(
+    `UPDATE memories SET is_current = 0, valid_to = ${NOW_MS}, invalidated_reason = ?, updated_at = ${NOW_MS} WHERE id = ?`
+  ).run(reasonText, id);
+  if (vectorStore.available()) {
+    const embedding = vectorStore.get("memory", id);
+    if (embedding) vectorStore.putMemory(id, existing.project, false, embedding);
+  }
+  if (parsed.replaced_by_id !== undefined) {
+    db.prepare(`UPDATE memories SET supersedes_uid = ?, updated_at = ${NOW_MS} WHERE id = ?`).run(
+      existing.uid,
+      parsed.replaced_by_id
+    );
+    saveMemoryRelation({
+      from_id: parsed.replaced_by_id,
+      to_id: id,
+      relation_type: "supersedes",
+      source: "memory_invalidate",
+    });
+  }
+  notifyWrite();
+  return getMemory(id);
+}
+
+export interface RevalidateMemoryInput {
+  id?: number;
+  uid?: string;
+}
+
+/**
+ * ADR-006 faz 2: memory_invalidate'in panzehiri. Yanlışlıkla invalidate edilmiş DOĞRU bir
+ * hafızayı geri getirir: is_current=1, valid_to/invalidated_reason temizlenir. supersedes_uid
+ * ve memory_relations kenarı BİLEREK dokunulmaz — geçmiş ilişki kaydı kalır, yalnız geçerlilik
+ * geri döner. Vektör metadata'sı da is_current=1'e güncellenir.
+ */
+export async function revalidateMemory(input: RevalidateMemoryInput): Promise<Memory | null> {
+  const parsed = memoryRevalidateSchema.parse(input);
+  const id = resolveMemoryIdFromRef(parsed);
+  if (id === null) return null;
+  const existing = getMemory(id);
+  if (!existing) return null;
+  const db = getDb();
+  db.prepare(
+    `UPDATE memories SET is_current = 1, valid_to = NULL, invalidated_reason = NULL, updated_at = ${NOW_MS} WHERE id = ?`
+  ).run(id);
+  if (vectorStore.available()) {
+    const embedding = vectorStore.get("memory", id);
+    if (embedding) vectorStore.putMemory(id, existing.project, true, embedding);
+  }
+  notifyWrite();
+  return getMemory(id);
 }
 
 /** SQLite "YYYY-MM-DD HH:MM:SS" (UTC, offsetsiz) → epoch ms. */

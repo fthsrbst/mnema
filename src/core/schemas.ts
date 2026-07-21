@@ -61,6 +61,9 @@ export const memoryInputBaseSchema = z
     importance: z.number().finite().min(0.5).max(2).optional(),
     related_ids: z.array(z.number().int().positive()).max(100).optional(),
     origin_machine: z.string().trim().min(1).max(100).optional(),
+    // ADR-006 faz 2: doğrulama yaşı (volatil iddialar için) — bkz. docs/adr/006.
+    verified_at: z.string().trim().min(1).max(64).optional(),
+    review_after: z.string().trim().min(1).max(64).optional(),
   })
   .strict();
 export const memoryInputSchema = memoryInputBaseSchema.refine(
@@ -82,6 +85,9 @@ export const memoryPatchBaseSchema = z
     normalizer_generation: z.string().trim().min(1).max(200).nullable().optional(),
     importance: z.number().finite().min(0.5).max(2).optional(),
     related_ids: z.array(z.number().int().positive()).max(100).optional(),
+    // ADR-006 faz 2: null gönderilerek temizlenebilir (nullableTimestamp).
+    verified_at: nullableTimestamp.optional(),
+    review_after: nullableTimestamp.optional(),
   })
   .strict();
 export const memoryPatchSchema = memoryPatchBaseSchema
@@ -112,6 +118,43 @@ export const memoryConsolidateSchema = memoryConsolidateBaseSchema
     message: "normalizer_generation is required with canonical_summary",
     path: ["normalizer_generation"],
   });
+
+// ADR-006 faz 2: memory_invalidate / memory_revalidate. id veya uid ile hedeflenir (en az biri
+// zorunlu — .refine .shape üretmediğinden MCP inputSchema Base (refine'sız) sürümü kullanır;
+// tam doğrulama (id/uid şartı) çekirdek fonksiyonun içinde Schema'yla çalışır — memoryInputSchema
+// ile aynı ikili desen (bkz. yukarıdaki memoryInputBaseSchema/memoryInputSchema).
+export const memoryInvalidateBaseSchema = z
+  .object({
+    id: z.number().int().positive().optional(),
+    uid: z.string().trim().min(1).max(200).optional(),
+    /** Kısa gerekçe — zorunlu. */
+    reason: z.string().trim().min(1).max(2000),
+    /** Bu iddiayı yanlışlayan komut çıktısı/gözlem — ZORUNLU (ADR-006: kanıtsız invalidation yasak). */
+    evidence: z.string().trim().min(1).max(4000),
+    /** Bu kaydın yerine geçen yeni kaydın yerel id'si (opsiyonel). */
+    replaced_by_id: z.number().int().positive().optional(),
+  })
+  .strict();
+export const memoryInvalidateSchema = memoryInvalidateBaseSchema
+  .refine((value) => value.id !== undefined || value.uid !== undefined, {
+    message: "id or uid is required",
+    path: ["id"],
+  })
+  .refine((value) => value.replaced_by_id === undefined || value.replaced_by_id !== value.id, {
+    message: "replaced_by_id must not equal id",
+    path: ["replaced_by_id"],
+  });
+
+export const memoryRevalidateBaseSchema = z
+  .object({
+    id: z.number().int().positive().optional(),
+    uid: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
+export const memoryRevalidateSchema = memoryRevalidateBaseSchema.refine(
+  (value) => value.id !== undefined || value.uid !== undefined,
+  { message: "id or uid is required", path: ["id"] }
+);
 
 export const documentInputSchema = z
   .object({
@@ -346,6 +389,8 @@ export const syncPayloadSchema = z.object({
     is_current: z.number().int().min(0).max(1).optional(),
     supersedes_uid: syncUid.nullable().optional(),
     invalidated_reason: z.string().max(2000).nullable().optional(),
+    verified_at: z.string().max(64).nullable().optional(),
+    review_after: z.string().max(64).nullable().optional(),
     embedding: syncVector,
   }).strict()).max(100_000),
   documents: z.array(z.object({
