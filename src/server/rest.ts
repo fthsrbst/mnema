@@ -187,12 +187,14 @@ export function buildRestRouter(): Router {
   // --- memory ---
   r.post("/memory", wrap(async (req, res) => res.json(await saveMemory(req.body))));
   r.get("/memory/search", wrap(async (req, res) => {
-    const { q, type, project, tag, limit } = req.query;
+    const { q, type, project, tag, limit, include_superseded } = req.query;
     res.json(await searchMemories(String(q ?? ""), {
       type: type as MemoryType | undefined,
       project: project as string | undefined,
       tag: tag as string | undefined,
       limit: limit ? Number(limit) : undefined,
+      // ADR-006: varsayilan yalniz gecerli kayitlar; gecmis sorgulari icin acik bayrak.
+      include_superseded: include_superseded === "true" || include_superseded === "1",
     }));
   }));
   r.get("/memory", wrap((req, res) => {

@@ -268,12 +268,19 @@ export function buildMcpServer(): McpServer {
     {
       title: "Hafızada ara",
       description:
-        "Ortak hafızada hibrit arama (anahtar kelime + anlamsal). Bir işe başlamadan önce ilgili karar/tercih/how-to var mı diye bak.",
+        "Ortak hafızada hibrit arama (anahtar kelime + anlamsal). Bir işe başlamadan önce ilgili karar/tercih/how-to var mı diye bak. Varsayılan olarak yalnız GEÇERLİ kayıtlar döner; geçersiz kılınmış (superseded) kayıtları da görmek için include_superseded=true.",
       inputSchema: {
         query: z.string(),
         type: memoryType.optional(),
         project: z.string().optional(),
+        tag: z.string().optional(),
         limit: z.number().int().min(1).max(25).optional(),
+        /**
+         * Varsayılan olarak yalnız geçerli kayıtlar döner (ADR-006). Bu bayrak
+         * memory_invalidate ile geçersiz kılınmış kayıtları da getirir — "eskiden ne
+         * biliyorduk / bu neden değişti" türü geçmiş sorguları için.
+         */
+        include_superseded: z.boolean().optional(),
       },
     },
     async ({ query, ...filters }) => json(await searchMemories(query, filters))
