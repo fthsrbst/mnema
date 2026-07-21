@@ -259,6 +259,7 @@ CREATE TABLE IF NOT EXISTS tasks(
   tags TEXT NOT NULL DEFAULT '[]',
   result TEXT,
   error TEXT,
+  verification TEXT,
   due_at TEXT,
   started_at TEXT,
   finished_at TEXT,
@@ -435,6 +436,12 @@ function migrate(database: Database.Database): void {
   addColumn("recall_feedback", "rank", "rank INTEGER");
   addColumn("recall_feedback", "channels", "channels TEXT NOT NULL DEFAULT '[]'");
   addColumn("recall_feedback", "delivery_id", "delivery_id TEXT");
+  // Task quality gate: agent complete çağırırken verification kanıtı
+  // (JSON {kind,command,exit_code?,summary}; kind: tests|build|manual|none)
+  // gönderebilir. Kolon null = kanıt verilmedi (advisory uyarı); "none" =
+  // bilinçli tercih (uyarı YOK). Sert kilit DEĞİL — presence felsefesiyle
+  // tutarlı (bkz. completeTask, docs/agent-platform.md).
+  addColumn("tasks", "verification", "verification TEXT");
   database.exec(`
     UPDATE recall_feedback
        SET target_kind = 'memory', target_id = memory_id

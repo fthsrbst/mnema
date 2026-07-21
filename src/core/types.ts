@@ -258,6 +258,22 @@ export interface AgentPresenceView extends AgentPresence {
 
 export type TaskStatus = "pending" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled";
 
+/**
+ * Quality-gate verification proof attached at task completion time.
+ * Stored as JSON in the `tasks.verification` column. `kind:"none"` is an
+ * explicit conscious-choice signal (no warning emitted); a null column means
+ * "no verification recorded" — `task_complete` surfaces a soft `uyari` in
+ * that case (advisory, consistent with presence philosophy; never a hard lock).
+ */
+export type TaskVerificationKind = "tests" | "build" | "manual" | "none";
+
+export interface TaskVerification {
+  kind: TaskVerificationKind;
+  command?: string;
+  exit_code?: number;
+  summary?: string;
+}
+
 /** Task queue item: agent-to-agent work delegation and tracking. */
 export interface Task {
   id: number;
@@ -274,6 +290,7 @@ export interface Task {
   tags: string[];
   result: string | null;
   error: string | null;
+  verification: TaskVerification | null;
   due_at: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -299,7 +316,16 @@ export interface TaskPatch {
   result?: string;
   error?: string;
   tags?: string[];
+  verification?: TaskVerification | null;
 }
+
+/**
+ * `task_complete` yanıtı: görevin task satırına ek olarak bir `uyari` alanı
+ * eklenir. `uyari` yalnızca verification kanıtı verilmemişse (kolon null
+ * kaldıysa ve `kind:"none"` açıkça seçilmemişse) dolar — sert kilit değil,
+ * agent'ı bilgilendirme amaçlı advisory alan.
+ */
+export type TaskCompleteResult = Task & { uyari?: string };
 
 export interface TaskFilter {
   project?: string;

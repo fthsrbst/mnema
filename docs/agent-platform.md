@@ -23,9 +23,18 @@ Tipik bir uçtan uca akış:
    devredilecekse `agent_handoff` proje map'i, son oturumlar, aktif görevler,
    presence ve ilgili hafızaları tek pakette taşır.
 4. **`task_complete` + `task_feedback`** — görev biterken `task_complete` ile
-   sonuç (`result`) yazılır; ardından `task_feedback` ile sonuç (`success` /
-   `partial` / `failure`), ne işe yaradı, ne başarısız oldu ve dersler
-   (`lessons`) kaydedilir.
+   sonuç (`result`) ve **doğrulama kanıtı** (`verification`) yazılır; ardından
+   `task_feedback` ile sonuç (`success` / `partial` / `failure`), ne işe
+   yaradı, ne başarısız oldu ve dersler (`lessons`) kaydedilir.
+   - `verification` objesi: `{kind, command?, exit_code?, summary}`; `kind`
+     `"tests"` | `"build"` | `"manual"` | `"none"`. Kolon nullable — boş bırakılırsa
+     görev yine `done` olur AMA yanıtta belirgin bir `uyari` alanı döner
+     (advisory, *sert kilit DEĞİL* — presence felsefesiyle tutarlı). `kind:"none"`
+     bilinçli seçilirse uyarı verilmez. Kanıt eksikse `task_update` ile
+     sonradan eklenebilir.
+   - DORA 2025 + Faros AI verisi: AI agent'lar ~%98 daha fazla PR üretiyor ama
+     teslim hızı iyileşmiyor; bu kapı "yaptım" demenin kolay yoldan geçişini
+     zorlaştırmadan kanıt toplamayı nudge eder.
 5. **Dersler kalıcı hafızaya düşer** — `task_feedback`'teki `lessons` alanı
    otomatik olarak `howto` tipinde bir hafıza kaydına dönüşür; `project_lessons`
    bir proje için birikmiş dersleri, `knowledge_transfer` ise başka projelerden
@@ -50,7 +59,7 @@ media, integrity/audit/vector) için bkz. `README.md` → "Tools".
 | `task_create` | Agent'lar arası iş delegasyonu için yeni görev oluşturur; bağımlılık, öncelik ve etiket destekler. |
 | `task_claim` | Belirli bir görevi veya proje kuyruğundaki bir sonraki uygun görevi alır. |
 | `task_update` | Görev durumunu, önceliğini veya diğer alanlarını günceller. |
-| `task_complete` | Görevi sonuç metniyle birlikte `done` işaretler. |
+| `task_complete` | Görevi sonuç metni ve opsiyonel `verification` kanıtıyla `done` işaretler. Kanıt verilmezse görev yine done olur ama yanıtta `uyari` döner (advisory, sert kilit değil); `kind:"none"` açıkça verilirse uyarı verilmez. |
 | `task_list` | Proje, durum, agent veya etikete göre filtrelenmiş görev listesi döner. |
 | `task_queue` | Bağımlılığı çözülmüş, önceliğe göre sıralı bir sonraki uygulanabilir görevleri döner. |
 
@@ -115,7 +124,7 @@ media, integrity/audit/vector) için bkz. `README.md` → "Tools".
 
 `src/core/db.ts` içinde tanımlı (bkz. `CREATE TABLE IF NOT EXISTS`):
 
-- `tasks` — görev kuyruğu (durum, öncelik, `depends_on`, `claimed_by`, sonuç/hata).
+- `tasks` — görev kuyruğu (durum, öncelik, `depends_on`, `claimed_by`, sonuç/hata, `verification` JSON kanıtı).
 - `agent_capabilities` — agent kaydı: yetenekler, modeller, `max_concurrent`, durum (`available`/`busy`/`offline`), `last_seen_at`.
 - `agent_messages` — agent-agent mesajları (insert-only; LWW gerektirmez).
 - `agent_message_reads` — yayın mesajlarında agent bazlı okunma takibi.

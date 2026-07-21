@@ -507,7 +507,7 @@ export function buildRestRouter(): Router {
     task ? res.json(task) : res.status(404).json({ error: "not found or not claimable" });
   }));
   r.post("/tasks/:uid/complete", wrap((req, res) => {
-    const task = completeTask(req.params.uid, req.body?.result);
+    const task = completeTask(req.params.uid, req.body?.result, req.body?.verification);
     task ? res.json(task) : res.status(404).json({ error: "not found" });
   }));
   r.post("/tasks/:uid/cancel", wrap((req, res) => {
