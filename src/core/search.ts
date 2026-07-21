@@ -32,7 +32,7 @@ export interface SearchScope {
   memoryTag?: string;
   /** Include project-less global rows together with the requested project. */
   includeGlobal?: boolean;
-  /** Document searches default to current, enabled documents only. */
+  /** Memory and document searches default to current rows only (is_current=1); pass false to include superseded/archived ones (ADR-006). */
   currentOnly?: boolean;
   documentKind?: string;
 }
@@ -69,14 +69,14 @@ export function ftsSearch(
     let sql = `SELECT ${ftsTable}.rowid FROM ${ftsTable}`;
     const conditions = [`${ftsTable} MATCH ?`];
     const params: unknown[] = [fts];
-    if (ftsTable === "memories_fts" && scope.project) {
+    if (ftsTable === "memories_fts") {
+      // ADR-006: is_current filtresi de dahil olmak üzere her koşul aynı JOIN'i paylaşır,
+      // bu yüzden proje/tür/etiket verilmese bile join her zaman eklenir.
       sql += " JOIN memories m ON m.id = memories_fts.rowid";
-      if (scope.includeGlobal) {
-        conditions.push("(m.project = ? OR m.project IS NULL)");
-      } else {
-        conditions.push("m.project = ?");
+      if (scope.project) {
+        conditions.push(scope.includeGlobal ? "(m.project = ? OR m.project IS NULL)" : "m.project = ?");
+        params.push(scope.project);
       }
-      params.push(scope.project);
       if (scope.memoryType) {
         conditions.push("m.type = ?");
         params.push(scope.memoryType);
@@ -85,16 +85,7 @@ export function ftsSearch(
         conditions.push("EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value = ?)");
         params.push(scope.memoryTag);
       }
-    } else if (ftsTable === "memories_fts" && (scope.memoryType || scope.memoryTag)) {
-      sql += " JOIN memories m ON m.id = memories_fts.rowid";
-      if (scope.memoryType) {
-        conditions.push("m.type = ?");
-        params.push(scope.memoryType);
-      }
-      if (scope.memoryTag) {
-        conditions.push("EXISTS (SELECT 1 FROM json_each(m.tags) WHERE json_each.value = ?)");
-        params.push(scope.memoryTag);
-      }
+      if (scope.currentOnly !== false) conditions.push("m.is_current = 1");
     } else if (ftsTable === "chunks_fts") {
       sql += " JOIN chunks c ON c.id = chunks_fts.rowid JOIN documents d ON d.id = c.document_id";
       conditions.push("d.enabled = 1");

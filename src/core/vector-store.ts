@@ -54,7 +54,7 @@ export interface VectorStore {
   available(): boolean;
   ready(): boolean;
   search(entity: VectorEntity, embedding: Buffer, limit: number, filter?: VectorSearchFilter): Promise<VectorHit[]>;
-  putMemory(id: number, project: string | null | undefined, embedding: Buffer): void;
+  putMemory(id: number, project: string | null | undefined, isCurrent: boolean | number, embedding: Buffer): void;
   putChunk(
     id: number,
     project: string | null | undefined,
@@ -112,6 +112,12 @@ class SqliteVectorStore implements VectorStore {
         params.push(filter.documentKind);
       }
     }
+    // ADR-006: memories_vec de is_current metadata kolonu taşır — chunk'lardaki gibi
+    // filtre KNN'in İÇİNDE uygulanır (top-k'dan sonra değil).
+    if (entity === "memory" && filter.currentOnly !== false) {
+      conditions.push("is_current = ?");
+      params.push(1n);
+    }
     conditions.push("embedding MATCH ?", "k = ?");
     params.push(embedding, limit);
     const rows = getDb()
@@ -120,8 +126,8 @@ class SqliteVectorStore implements VectorStore {
     return rows.map((row) => ({ id: row.rowid, distance: row.distance }));
   }
 
-  putMemory(id: number, project: string | null | undefined, embedding: Buffer): void {
-    putMemoryVector(id, project, embedding);
+  putMemory(id: number, project: string | null | undefined, isCurrent: boolean | number, embedding: Buffer): void {
+    putMemoryVector(id, project, isCurrent, embedding);
   }
 
   putChunk(
@@ -287,7 +293,7 @@ function redactQdrantKey(value: string): string {
   return config.qdrantApiKey ? value.replaceAll(config.qdrantApiKey, "[redacted]") : value;
 }
 
-function memoryPayload(id: number, project: string | null | undefined): Record<string, unknown> {
+function memoryPayload(id: number, project: string | null | undefined, isCurrent: boolean | number): Record<string, unknown> {
   const row = getDb().prepare("SELECT type, tags FROM memories WHERE id = ?").get(id) as
     | { type: string; tags: string }
     | undefined;
@@ -295,6 +301,8 @@ function memoryPayload(id: number, project: string | null | undefined): Record<s
     project: vectorProject(project),
     type: row?.type ?? "fact",
     tags: safeTags(row?.tags ?? "[]"),
+    // ADR-006: chunk projeksiyonundaki `current` alanının hafıza karşılığı.
+    current: Boolean(isCurrent),
     generation: activeGeneration(),
   };
 }
@@ -405,7 +413,7 @@ async function ensureCollection(entity: VectorEntity): Promise<void> {
   }
 
   const indexes: Array<[string, "keyword" | "bool" | "integer"]> = entity === "memory"
-    ? [["project", "keyword"], ["type", "keyword"], ["tags", "keyword"], ["generation", "keyword"]]
+    ? [["project", "keyword"], ["type", "keyword"], ["tags", "keyword"], ["current", "bool"], ["generation", "keyword"]]
     : [["project", "keyword"], ["enabled", "bool"], ["current", "bool"], ["kind", "keyword"], ["valid_from_ms", "integer"], ["valid_to_ms", "integer"], ["generation", "keyword"]];
   for (const [field_name, field_schema] of indexes) {
     await qdrantRequest(`/collections/${name}/index?wait=true`, {
@@ -431,6 +439,8 @@ function qdrantFilter(entity: VectorEntity, filter: VectorSearchFilter): Record<
   if (entity === "memory") {
     if (filter.memoryType) must.push({ key: "type", match: { value: filter.memoryType } });
     if (filter.memoryTag) must.push({ key: "tags", match: { value: filter.memoryTag } });
+    // ADR-006: chunk'lardaki `current` filtresinin hafıza karşılığı.
+    if (filter.currentOnly !== false) must.push({ key: "current", match: { value: true } });
   } else {
     must.push({ key: "enabled", match: { value: filter.enabled !== false } });
     if (filter.currentOnly !== false) must.push({ key: "current", match: { value: true } });
@@ -502,10 +512,10 @@ class QdrantProjectionVectorStore implements VectorStore {
     }
   }
 
-  putMemory(id: number, project: string | null | undefined, embedding: Buffer): void {
+  putMemory(id: number, project: string | null | undefined, isCurrent: boolean | number, embedding: Buffer): void {
     getDb().transaction(() => {
-      localStore.putMemory(id, project, embedding);
-      queueUpsert("memory", id, memoryPayload(id, project), embedding);
+      localStore.putMemory(id, project, isCurrent, embedding);
+      queueUpsert("memory", id, memoryPayload(id, project, isCurrent), embedding);
     })();
   }
 
@@ -654,8 +664,8 @@ export function queueFullVectorProjection(): { memories: number; chunks: number 
   const db = getDb();
   setProjectionMetadata(activeGeneration(), false);
   const memories = db
-    .prepare("SELECT m.id, m.project, v.embedding FROM memories m JOIN memories_vec v ON v.rowid = m.id")
-    .all() as { id: number; project: string | null; embedding: Buffer }[];
+    .prepare("SELECT m.id, m.project, m.is_current, v.embedding FROM memories m JOIN memories_vec v ON v.rowid = m.id")
+    .all() as { id: number; project: string | null; is_current: number; embedding: Buffer }[];
   const chunks = db
     .prepare(
       `SELECT c.id, d.project, d.enabled, d.is_current, d.kind, v.embedding
@@ -663,7 +673,7 @@ export function queueFullVectorProjection(): { memories: number; chunks: number 
     )
     .all() as { id: number; project: string | null; enabled: number; is_current: number; kind: string; embedding: Buffer }[];
   db.transaction(() => {
-    for (const row of memories) queueUpsert("memory", row.id, memoryPayload(row.id, row.project), row.embedding);
+    for (const row of memories) queueUpsert("memory", row.id, memoryPayload(row.id, row.project, row.is_current), row.embedding);
     for (const row of chunks) {
       queueUpsert("chunk", row.id, chunkPayload(row.id, row.project, row.enabled, row.is_current, row.kind), row.embedding);
     }
