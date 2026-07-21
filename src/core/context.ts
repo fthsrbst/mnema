@@ -457,11 +457,63 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
   // Tek toplu sorgu (N+1 önleme): teslim edilen tüm memory'lerin ilişkileri bir
   // seferde çekilir, yalnızca iki ucu da teslim edilmiş olanlar tutulur (JS filtresi).
   const deliveredUids = memories.map((memory) => memory.uid);
-  for (const relation of listMemoryRelationsForUids(deliveredUids, { active_at: generatedAt, limit: 500 })) {
+  const allRelations = listMemoryRelationsForUids(deliveredUids, { active_at: generatedAt, limit: 500 });
+  for (const relation of allRelations) {
     // Keep the bundle compact: a relation must connect two delivered memories.
     // One-hop expansion is left to memory_relation_list to avoid semantic drift.
     if (selectedMemoryIds.has(relation.from_id) && selectedMemoryIds.has(relation.to_id)) {
       relationMap.set(relation.id, relation);
+    }
+  }
+
+  /**
+   * 1-hop graf genisletmesi (ADR-006 ile birlikte).
+   *
+   * Onceden bir kenar ancak IKI ucu da bagimsiz olarak getirilmisse pakete giriyordu;
+   * bu yuzden graf hicbir zaman YENI bilgi getirmiyor, yalnizca zaten bulunmus seyleri
+   * susluyordu. En kotu sonucu: eskimis bir kayit tek basina teslim edilebiliyor ve onu
+   * gecersizlestiren/celisen kayit gorunmuyordu.
+   *
+   * Yalnizca GECERLILIK anlami tasiyan kenarlar genisletilir (supersedes, contradicts).
+   * `related` gibi zayif tipler genisletilmez — anlamsal kayma yaratir ve butceyi yer.
+   * Genisletilen kayitlar listenin SONUNA eklenir: enforceBudget sondan pop ettigi icin
+   * bütçe daralinca ilk kirpilan onlar olur, bagimsiz bulunmus kanit korunur.
+   */
+  const EXPANDING_RELATIONS = new Set<MemoryRelationType>(["supersedes", "contradicts"]);
+  const MAX_GRAPH_EXPANSION = 3;
+  const anchorByMemoryId = new Map(memories.map((memory) => [memory.id, memory]));
+  const expansionByMemoryId = new Map<number, { relation: ReturnType<typeof listMemoryRelationsForUids>[number]; anchorId: number }>();
+  for (const relation of allRelations) {
+    if (!EXPANDING_RELATIONS.has(relation.relation_type)) continue;
+    const fromDelivered = selectedMemoryIds.has(relation.from_id);
+    const toDelivered = selectedMemoryIds.has(relation.to_id);
+    // Tam olarak bir ucu teslim edilmisse karsi uc eksik demektir.
+    if (fromDelivered === toDelivered) continue;
+    const missingId = fromDelivered ? relation.to_id : relation.from_id;
+    const anchorId = fromDelivered ? relation.from_id : relation.to_id;
+    if (expansionByMemoryId.has(missingId) || expansionByMemoryId.size >= MAX_GRAPH_EXPANSION) continue;
+    expansionByMemoryId.set(missingId, { relation, anchorId });
+  }
+  const expandedEvidence: ContextMemoryEvidence[] = [];
+  if (expansionByMemoryId.size > 0) {
+    // Toplu getirme (N+1 yok).
+    const expandedMemories = getMemoriesByIds([...expansionByMemoryId.keys()]);
+    let rank = memories.length;
+    for (const memory of expandedMemories) {
+      const link = expansionByMemoryId.get(memory.id);
+      if (!link) continue;
+      const anchor = anchorByMemoryId.get(link.anchorId);
+      rank += 1;
+      expandedEvidence.push(
+        compactMemory({ ...memory, score: 0, channels: [], channel_ranks: {} } as ScoredMemory, rank, {
+          relation_type: link.relation.relation_type,
+          via_relation_id: link.relation.id,
+          anchor_uid: anchor?.uid ?? "",
+          anchor_title: excerpt(anchor?.title ?? "", 160),
+        })
+      );
+      // Bagi da pakete koy ki okuyan agent iliskiyi gorebilsin.
+      relationMap.set(link.relation.id, link.relation);
     }
   }
 
@@ -483,7 +535,7 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
       latest_session: compactSession(latestSession),
     },
     evidence: {
-      memories: memories.map((item, index) => compactMemory(item, index + 1)),
+      memories: [...memories.map((item, index) => compactMemory(item, index + 1)), ...expandedEvidence],
       chunks: diverseChunks.map((item, index) => compactChunk(item, index + 1)),
       relations: [...relationMap.values()].slice(0, 8).map((relation) => ({
         id: relation.id,
