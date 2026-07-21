@@ -18,6 +18,7 @@ import {
   applyChanges,
   collectChanges,
   collectChangesBySeq,
+  syncDigest,
   config,
   syncWithPrimary,
   deleteMachine,
@@ -433,6 +434,7 @@ export function buildRestRouter(): Router {
     }
     res.json(collectChanges(String(req.query.since ?? "1970-01-01 00:00:00")));
   }));
+  r.get("/sync/digest", wrap((_req, res) => res.json(syncDigest())));
   r.post("/sync/apply", wrap((req, res) => res.json(applyChanges(req.body))));
   r.post("/sync/run", wrap(async (_req, res) => {
     if (config.primaryUrls.length === 0) return res.json({ ok: false, error: "HUB_PRIMARY_URL tanımlı değil" });

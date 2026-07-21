@@ -803,6 +803,68 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
 }
 
 /** Apply one sync payload atomically: a malformed row cannot leave a half-applied peer state. */
+/**
+ * change_log satir basina yalnizca en buyuk seq'i tutar.
+ *
+ * Guvenli: bir peer bir satirin yalnizca EN SON halini ister, ara adimlarini degil.
+ * since_seq'i ne olursa olsun kalan en buyuk seq o satiri teslim eder. AUTOINCREMENT
+ * sayesinde budama sonrasi yeni seq'ler yine artan devam eder — duz INTEGER PRIMARY KEY
+ * olsaydi silinen en buyuk rowid geri kullanilir ve monotonluk bozulurdu.
+ */
+export function pruneChangeLog(): number {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `DELETE FROM change_log
+        WHERE seq NOT IN (SELECT MAX(seq) FROM change_log GROUP BY tbl, row_key)`
+    )
+    .run();
+  return info.changes;
+}
+
+/** Budama esigi: her turda calistirmak yerine tablo bu boyutu asinca temizlenir. */
+const CHANGE_LOG_PRUNE_THRESHOLD = 50_000;
+
+function pruneChangeLogIfLarge(): number {
+  const db = getDb();
+  const n = (db.prepare("SELECT COUNT(*) AS n FROM change_log").get() as { n: number }).n;
+  return n > CHANGE_LOG_PRUNE_THRESHOLD ? pruneChangeLog() : 0;
+}
+
+export interface SyncDigestTable {
+  count: number;
+  /** Siralanmis satir anahtarlarinin sha256'si — eksik/fazla satiri yakalar. */
+  uid_hash: string;
+}
+
+export interface SyncDigest {
+  max_seq: number;
+  tables: Record<string, SyncDigestTable>;
+}
+
+/**
+ * Cihazlar arasi tutarlilik kaniti.
+ *
+ * "last_pull guncel" HICBIR ZAMAN sync'in calistiginin kaniti degildi — 2026-07-21'de 8
+ * memory ve 14 session tam da bu yanilgi altinda kaybolmustu. Sayimlarin ve anahtar
+ * kumelerinin karsilastirilmasi iraksamayi gorunur kilar.
+ */
+export function syncDigest(): SyncDigest {
+  const db = getDb();
+  const tables: Record<string, SyncDigestTable> = {};
+  for (const t of SYNC_TABLES) {
+    const rows = db.prepare(`SELECT ${t.rowKey} AS k FROM ${t.tbl} ORDER BY 1`).all() as { k: string }[];
+    tables[t.tbl] = {
+      count: rows.length,
+      uid_hash: createHash("sha256").update(rows.map((r) => r.k).join("")).digest("hex"),
+    };
+  }
+  return {
+    max_seq: (db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM change_log").get() as { m: number }).m,
+    tables,
+  };
+}
+
 export function applyChanges(payload: SyncPayload): ApplyResult {
   payload = syncPayloadSchema.parse(payload) as SyncPayload;
   const db = getDb();
@@ -872,9 +934,13 @@ export interface SyncRunResult {
   pulled?: ApplyResult;
   pushed?: ApplyResult;
   error?: string;
+  /** Digest karsilastirmasi uyusmadiysa tablo bazinda fark ozeti (ADR-005). */
+  divergence?: string[];
+  /** Bu turda budanan change_log satiri sayisi (esik asildiysa). */
+  pruned?: number;
 }
 
-/** Tek adresle tek tur eşitleme: pull → apply, collect → push. */
+/** Tek adresle tek tur eşitleme: collect → pull/apply → push → digest kontrolü. */
 async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResult> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -925,7 +991,31 @@ async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResul
     const pushPatch: Partial<SyncState> = { last_push: local.now };
     if (typeof local.max_seq === "number") pushPatch.last_push_seq = local.max_seq;
     setSyncState(pushPatch);
-    return { ok: true, url: primaryUrl, pulled, pushed };
+
+    // Tutarlilik kontrolu: sayim/anahtar kumesi uyusmazsa sessizce iraksiyoruz demektir.
+    // Basarisiz olmasi sync'i bozmaz — bu bir uyari kanali, kapi degil.
+    let divergence: string[] | undefined;
+    try {
+      const digestRes = await fetch(`${primaryUrl}/api/sync/digest`, { headers, signal: AbortSignal.timeout(15000) });
+      if (digestRes.ok) {
+        const remoteDigest = (await digestRes.json()) as SyncDigest;
+        const localDigest = syncDigest();
+        const diffs: string[] = [];
+        for (const [tbl, r] of Object.entries(remoteDigest.tables ?? {})) {
+          const l = localDigest.tables[tbl];
+          if (!l) continue;
+          if (l.count !== r.count || l.uid_hash !== r.uid_hash) {
+            diffs.push(`${tbl}: yerel ${l.count} / uzak ${r.count}`);
+          }
+        }
+        if (diffs.length > 0) divergence = diffs;
+      }
+    } catch {
+      /* digest yoksa (eski primary) veya erisilemezse sessiz gec */
+    }
+
+    const pruned = pruneChangeLogIfLarge();
+    return { ok: true, url: primaryUrl, pulled, pushed, divergence, pruned: pruned || undefined };
   } catch (err) {
     return { ok: false, url: primaryUrl, error: (err as Error).message };
   }

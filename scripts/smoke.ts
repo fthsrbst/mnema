@@ -24,6 +24,8 @@ const {
   collectChanges,
   collectChangesBySeq,
   syncWithPrimary,
+  pruneChangeLog,
+  syncDigest,
   deleteAsset,
   deleteMemory,
   deleteMemoryRelation,
@@ -1354,6 +1356,68 @@ check(
   } finally {
     globalThis.fetch = realFetch;
   }
+}
+
+
+// --- ADR-005 step 4: prune + digest ---
+{
+  const db = getDb();
+
+  // 1) Budama satir basina yalniz en buyuk seq'i birakir.
+  const pruneUid = lowerHex32();
+  const nowSql = "strftime('%Y-%m-%d %H:%M:%f','now')";
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'prune testi', 'v1', 'ai-hub', '[]', 'smoke-prune', ${nowSql}, ${nowSql})`
+  ).run(pruneUid);
+  db.prepare(`UPDATE memories SET body='v2', updated_at=${nowSql} WHERE uid=?`).run(pruneUid);
+  db.prepare(`UPDATE memories SET body='v3', updated_at=${nowSql} WHERE uid=?`).run(pruneUid);
+  const beforeRows = (db.prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl='memories' AND row_key=?").get(pruneUid) as { n: number }).n;
+  pruneChangeLog();
+  const afterRows = (db.prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl='memories' AND row_key=?").get(pruneUid) as { n: number }).n;
+  check(
+    "prune: satır başına yalnız en büyük seq kalır",
+    beforeRows >= 3 && afterRows === 1,
+    `once=${beforeRows}, sonra=${afterRows}`
+  );
+
+  // 2) Budama sonrasi eski watermark'li peer kaydi HALA alabilmeli (budamanin guvenlik kaniti).
+  const stillDelivered = collectChangesBySeq(0).memories.some((m) => m.uid === pruneUid);
+  check(
+    "prune: budama sonrası eski watermark'lı peer kaydı yine alır",
+    stillDelivered,
+    `teslim=${stillDelivered}`
+  );
+
+  // 3) Digest ayni veri icin kararli, veri degisince degisir.
+  const d1 = syncDigest();
+  const d2 = syncDigest();
+  const stable = d1.tables.memories.uid_hash === d2.tables.memories.uid_hash && d1.tables.memories.count === d2.tables.memories.count;
+  const extraUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'digest testi', 'b', 'ai-hub', '[]', 'smoke-digest', ${nowSql}, ${nowSql})`
+  ).run(extraUid);
+  const d3 = syncDigest();
+  check(
+    "digest: aynı veride kararlı, kayıt eklenince değişir",
+    stable && d3.tables.memories.uid_hash !== d1.tables.memories.uid_hash && d3.tables.memories.count === d1.tables.memories.count + 1,
+    `kararli=${stable}, sayim ${d1.tables.memories.count}->${d3.tables.memories.count}`
+  );
+
+  // 4) Digest yalniz sayimi degil KUMEYI de karsilastirir: sayim ayni ama uid farkli olursa yakalar.
+  db.prepare("DELETE FROM memories WHERE uid=?").run(extraUid);
+  const swapUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'digest testi', 'b', 'ai-hub', '[]', 'smoke-digest', ${nowSql}, ${nowSql})`
+  ).run(swapUid);
+  const d4 = syncDigest();
+  check(
+    "digest: sayım aynı ama uid kümesi farklıysa yakalar",
+    d4.tables.memories.count === d3.tables.memories.count && d4.tables.memories.uid_hash !== d3.tables.memories.uid_hash,
+    `sayim=${d4.tables.memories.count}, hash farkli=${d4.tables.memories.uid_hash !== d3.tables.memories.uid_hash}`
+  );
 }
 
 
