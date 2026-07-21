@@ -390,6 +390,11 @@ CREATE TABLE IF NOT EXISTS change_log(
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,
   tbl        TEXT NOT NULL,
   row_key    TEXT NOT NULL,
+  -- 1 = bu satiri applyChanges yazdi, yani degisiklik primary'den geldi. Push tarafinda
+  -- haric tutulur; yoksa uzaktan gelen her kayit bir sonraki turda kaynagina geri gider
+  -- (echo) ve change_log her turda siser. Pull tarafinda haric TUTULMAZ: primary'nin
+  -- PC'den aldigi kaydi Mac'e iletebilmesi gerekir.
+  from_sync  INTEGER NOT NULL DEFAULT 0,
   changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_change_log_key ON change_log(tbl, row_key);
@@ -589,6 +594,11 @@ function migrate(database: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uri_unique ON documents(uri) WHERE uri IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_documents_project_current ON documents(project, enabled, is_current);
   `);
+  // ADR-005: teslimat watermark'i seq tabanli. Kolonlar nullable — NULL "henuz seq
+  // modunda degil" demektir ve zaman-modu fallback'i bu sayede bozulmadan durur.
+  addColumn("change_log", "from_sync", "from_sync INTEGER NOT NULL DEFAULT 0");
+  addColumn("sync_state", "last_pull_seq", "last_pull_seq INTEGER");
+  addColumn("sync_state", "last_push_seq", "last_push_seq INTEGER");
   migrateSyncStatePeers(database);
   migrateDeletionPrimaryKey(database);
   // En son: change_log trigger'ları. Önceki veri migration'ları (özellikle

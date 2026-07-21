@@ -17,6 +17,7 @@ import {
   extractFileText,
   applyChanges,
   collectChanges,
+  collectChangesBySeq,
   config,
   syncWithPrimary,
   deleteMachine,
@@ -422,6 +423,14 @@ export function buildRestRouter(): Router {
 
   // --- sync (cihazlar arası eşitleme) ---
   r.get("/sync/changes", wrap((req, res) => {
+    // ADR-005: since_seq varsa seq modu kazanir. Istemciler iki parametreyi birden
+    // gonderir; eski sunucular since_seq'i yok sayip zaman moduyla cevap verir.
+    const sinceSeq = req.query.since_seq;
+    if (sinceSeq !== undefined) {
+      const n = Number(sinceSeq);
+      if (!Number.isInteger(n) || n < 0) throw new Error("since_seq must be a non-negative integer");
+      return res.json(collectChangesBySeq(n));
+    }
     res.json(collectChanges(String(req.query.since ?? "1970-01-01 00:00:00")));
   }));
   r.post("/sync/apply", wrap((req, res) => res.json(applyChanges(req.body))));

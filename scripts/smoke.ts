@@ -23,6 +23,7 @@ const {
   configuredEmbeddingGeneration,
   collectChanges,
   collectChangesBySeq,
+  syncWithPrimary,
   deleteAsset,
   deleteMemory,
   deleteMemoryRelation,
@@ -1259,6 +1260,100 @@ check(
     seenBySeq && !seenByTime,
     `seq=${seenBySeq}, zaman=${seenByTime}`
   );
+}
+
+
+// --- ADR-005 step 3: syncOnce seq modu, fallback, bootstrap, echo ---
+{
+  const db = getDb();
+  const realFetch = globalThis.fetch;
+  const seen: { urls: string[]; pushes: any[] } = { urls: [], pushes: [] };
+
+  /** Sahte primary: pull'da verilen payload'i doner, push'u kaydeder. */
+  const stubPrimary = (payload: Record<string, unknown>) => {
+    globalThis.fetch = (async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes("/api/sync/changes")) {
+        seen.urls.push(u);
+        return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      seen.pushes.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response(JSON.stringify({ memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, assets: 0, agent_presence: 0, deletions: 0 }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+  };
+  const emptyRemote = (extra: Record<string, unknown> = {}) => ({
+    now: "2030-01-01 00:00:00.000",
+    memories: [], documents: [], relations: [], projects: [], sessions: [],
+    machines: [], assets: [], agent_presence: [], deletions: [], ...extra,
+  });
+  const syncState = () =>
+    db.prepare("SELECT last_pull, last_push, last_pull_seq, last_push_seq FROM sync_state WHERE peer='primary'").get() as
+      | { last_pull: string; last_push: string; last_pull_seq: number | null; last_push_seq: number | null }
+      | undefined;
+
+  try {
+    // 1) Bootstrap: last_pull_seq NULL iken istek since_seq=0 tasimali.
+    db.prepare("DELETE FROM sync_state WHERE peer='primary'").run();
+    seen.urls.length = 0;
+    stubPrimary(emptyRemote({ max_seq: 4242 }));
+    await syncWithPrimary(["http://stub"], "");
+    check(
+      "sync seq: bootstrap turunda since_seq=0 istenir",
+      seen.urls.length === 1 && seen.urls[0].includes("since_seq=0"),
+      seen.urls[0] ?? "(istek yok)"
+    );
+
+    // 2) max_seq donduyse seq moduna gecilir ve sonraki tur onu kullanir.
+    check(
+      "sync seq: max_seq donunce last_pull_seq benimsenir",
+      syncState()?.last_pull_seq === 4242,
+      `last_pull_seq=${syncState()?.last_pull_seq}`
+    );
+    seen.urls.length = 0;
+    stubPrimary(emptyRemote({ max_seq: 4243 }));
+    await syncWithPrimary(["http://stub"], "");
+    check(
+      "sync seq: sonraki tur onceki max_seq ile ister",
+      seen.urls[0]?.includes("since_seq=4242") === true,
+      seen.urls[0] ?? "(istek yok)"
+    );
+
+    // 3) Fallback: eski primary max_seq gondermez -> last_pull_seq YAZILMAZ.
+    db.prepare("UPDATE sync_state SET last_pull_seq=NULL WHERE peer='primary'").run();
+    stubPrimary(emptyRemote());
+    await syncWithPrimary(["http://stub"], "");
+    check(
+      "sync seq: max_seq yoksa zaman moduna sadik kalinir (last_pull_seq NULL)",
+      syncState()?.last_pull_seq === null,
+      `last_pull_seq=${syncState()?.last_pull_seq}`
+    );
+
+    // 4) ECHO: primary'den gelen kayit, sonraki turun push setinde OLMAMALI.
+    const echoUid = lowerHex32();
+    db.prepare("DELETE FROM sync_state WHERE peer='primary'").run();
+    stubPrimary(emptyRemote({
+      max_seq: 999999,
+      memories: [{
+        uid: echoUid, type: "fact", title: "uzaktan gelen", body: "echo testi",
+        project: "ai-hub", tags: "[]", source: "stub",
+        created_at: "2030-01-01 00:00:00.000", updated_at: "2030-01-01 00:00:00.000",
+      }],
+    }));
+    await syncWithPrimary(["http://stub"], ""); // bu turda kayit apply edilir
+    seen.pushes.length = 0;
+    stubPrimary(emptyRemote({ max_seq: 999999 }));
+    await syncWithPrimary(["http://stub"], ""); // sonraki tur: geri push edilmemeli
+    const echoed = seen.pushes.some((p) => (p.memories ?? []).some((m: any) => m.uid === echoUid));
+    check(
+      "sync seq: uzaktan gelen kayit kaynagina geri push EDILMEZ (echo yok)",
+      !echoed,
+      `push turu=${seen.pushes.length}, echo=${echoed}`
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
 
 
