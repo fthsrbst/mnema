@@ -31,6 +31,10 @@ export interface Memory {
   supersedes_uid: string | null;
   /** is_current=0 yapılma gerekçesi (memory_invalidate — faz 2). */
   invalidated_reason: string | null;
+  /** ADR-006 faz 2: bu kaydın en son doğrulandığı zaman (volatil iddialar için). */
+  verified_at: string | null;
+  /** ADR-006 faz 2: bu tarihten sonra doğrulanmamışsa formatRecall görünür bir uyarı ekler (kaydı GİZLEMEZ). */
+  review_after: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -55,6 +59,10 @@ export interface MemoryInput {
   /** Hangi cihazdan yazıldığı. Verilmezse resolveMachineName() ile damgalanır. Sync'ten pull edilen
    *  kayıtlarda bu alan yutulmaz (karşı tarafın değeri korunur). */
   origin_machine?: string | null;
+  /** ADR-006 faz 2: son doğrulama zamanı (opsiyonel; ISO 8601 veya "YYYY-MM-DD HH:MM:SS"). */
+  verified_at?: string | null;
+  /** ADR-006 faz 2: bu tarihten sonra doğrulanmamışsa formatRecall uyarı ekler. */
+  review_after?: string | null;
 }
 
 /** Bağlantılı hafızanın yerel çözümü (uid → bu cihazdaki id + başlık). */
@@ -114,6 +122,12 @@ export interface SimilarHit {
 /** saveMemory() dönüşü: benzer kayıt bulunduysa `similar` alanı eklenir. */
 export interface SavedMemory extends Memory {
   similar?: SimilarHit[];
+  /**
+   * ADR-006: benzer kayit bulundugunda YAZAN AGENT'a ne yapacagini soyler.
+   * Sistem kendisi karar VERMEZ — yanlis bir gecersiz kilma, bayat kayittan kotudur.
+   * Bu yuzden karar cagirana birakilir ve yalnizca secenek hatirlatilir.
+   */
+  similar_hint?: string;
 }
 
 export interface DocumentInput {

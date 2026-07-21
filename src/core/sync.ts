@@ -61,6 +61,9 @@ export interface SyncMemory {
   is_current?: number;
   supersedes_uid?: string | null;
   invalidated_reason?: string | null;
+  // ADR-006 faz 2: dogrulama yasi. Ayni geriye uyumluluk deseni.
+  verified_at?: string | null;
+  review_after?: string | null;
   embedding?: string; // base64 float32
 }
 
@@ -290,6 +293,8 @@ function collectPayload(mode: CollectMode): SyncPayload {
     is_current: m.is_current ?? 1,
     supersedes_uid: m.supersedes_uid ?? null,
     invalidated_reason: m.invalidated_reason ?? null,
+    verified_at: m.verified_at ?? null,
+    review_after: m.review_after ?? null,
     // last_accessed/access_count kasıtlı olarak taşınmaz — cihaz-yerel istatistik
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
@@ -439,6 +444,8 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       is_current: raw.is_current === undefined ? null : raw.is_current,
       supersedes_uid: raw.supersedes_uid ?? null,
       invalidated_reason: raw.invalidated_reason ?? null,
+      verified_at: raw.verified_at ?? null,
+      review_after: raw.review_after ?? null,
     };
     // Bu uid bizde daha yeni silinmişse alma
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memories' AND uid = ?").get(m.uid) as { deleted_at: string } | undefined;
@@ -463,6 +470,8 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
          is_current=COALESCE(@is_current, is_current),
          supersedes_uid=COALESCE(@supersedes_uid, supersedes_uid),
          invalidated_reason=COALESCE(@invalidated_reason, invalidated_reason),
+         verified_at=COALESCE(@verified_at, verified_at),
+         review_after=COALESCE(@review_after, review_after),
          updated_at=@updated_at WHERE uid=@uid`
       ).run(m);
       const resolvedIsCurrent = m.is_current ?? local.is_current;
@@ -474,11 +483,13 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
            uid, type, title, body, project, tags, source, language, canonical_summary,
            normalizer_generation, importance, related, origin_machine,
            valid_from, valid_to, is_current, supersedes_uid, invalidated_reason,
+           verified_at, review_after,
            created_at, updated_at
          ) VALUES (
            @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
            @normalizer_generation, @importance, @related, @origin_machine,
            @valid_from, @valid_to, COALESCE(@is_current, 1), @supersedes_uid, @invalidated_reason,
+           @verified_at, @review_after,
            @created_at, @updated_at
          )`
       ).run(m);
