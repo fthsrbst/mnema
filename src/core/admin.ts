@@ -102,6 +102,9 @@ export function usageStats(): UsageStats {
   const fields = "id, title, type, project, access_count, last_accessed, importance";
   const staleCond = `((last_accessed IS NULL AND created_at < datetime('now', '-90 days'))
     OR last_accessed < datetime('now', '-90 days'))`;
+  // access_count recall() ve contextGet() tarafından çift sayılabilir (bkz.
+  // memories.ts recordMemoryAccess yorumu) — bu liste yalnız kaba bir "en çok
+  // görülen" göstergesidir, tam sayı üzerine karar kurma.
   const top = db
     .prepare(`SELECT ${fields} FROM memories ORDER BY access_count DESC LIMIT 10`)
     .all() as UsageMemoryItem[];
