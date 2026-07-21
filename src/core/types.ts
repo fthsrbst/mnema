@@ -20,6 +20,17 @@ export interface Memory {
   /** Kaydın ilk yazıldığı cihaz (resolveMachineName() ile damgalanır). Yerel oluşturma sırasında damgalanır;
    *  sync'ten pull edilen satırda karşı tarafın verdiği değer korunur. */
   origin_machine: string | null;
+  /** ADR-006: hafıza yaşam döngüsü — documents'taki desenin birebir aynısı. */
+  /** Bu kaydın geçerlilik başlangıcı. Migration'da mevcut kayıtlar için created_at ile doldurulur; yeni kayıtlarda boş bırakılabilir. */
+  valid_from: string | null;
+  /** Geçerlilik bitişi (supersede/invalidate anında damgalanır). */
+  valid_to: string | null;
+  /** 1 = varsayılan okuma/arama sonuçlarına dahil; 0 = supersede/invalidate edilmiş, yalnız include_superseded ile görünür. */
+  is_current: number;
+  /** Bu kaydı geçersiz kılan/yerine geçen kaydın uid'i (varsa). */
+  supersedes_uid: string | null;
+  /** is_current=0 yapılma gerekçesi (memory_invalidate — faz 2). */
+  invalidated_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -82,6 +93,8 @@ export interface SearchFilters {
   project?: string;
   tag?: string;
   limit?: number;
+  /** ADR-006: varsayılan false — supersede/invalidate edilmiş (is_current=0) kayıtlar dahil edilmez. */
+  include_superseded?: boolean;
 }
 
 export interface ScoredMemory extends Memory {
