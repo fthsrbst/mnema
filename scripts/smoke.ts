@@ -59,6 +59,9 @@ const {
   saveAsset,
   saveMemoryRelation,
   saveMemory,
+  planBackfillCandidates,
+  backfillMissingEmbeddings,
+  EMBED_BACKFILL_SEQ_KEY,
   invalidateMemory,
   revalidateMemory,
   searchChunks,
@@ -1687,6 +1690,67 @@ check(
       flagged!.excerpt.includes("<untrusted-evidence-data") &&
       bundle3.warnings.some((w) => /instruction-like/i.test(w)),
     `sarmalandi=${flagged?.excerpt.includes("<untrusted-evidence-data")}, uyari=${bundle3.warnings.length}`
+  );
+}
+
+
+// --- Embedding backfill: change_log kuyrugu + emniyet-agi tam taramasi ---
+{
+  const db = getDb();
+  const meta = (k: string) => (db.prepare("SELECT value FROM system_metadata WHERE key=?").get(k) as { value: string } | undefined)?.value ?? null;
+  const maxSeq = () => (db.prepare("SELECT COALESCE(MAX(seq),0) AS m FROM change_log").get() as { m: number }).m;
+
+  // 1) Imlec bossa TAM TARAMA yolu secilir (eski/mevcut davranis korunur).
+  db.prepare("DELETE FROM system_metadata WHERE key IN (?, 'embed_backfill_last_full_scan')").run(EMBED_BACKFILL_SEQ_KEY);
+  const first = planBackfillCandidates(50);
+  check(
+    "backfill: imleç boşken tam tarama yolu seçiliyor",
+    first.mode === "full_scan",
+    `mode=${first.mode}`
+  );
+
+  // 2) Imlec guncel max'a set edilince kuyruk yoluna gecer ve YENI degisiklikleri gorur.
+  db.prepare("INSERT INTO system_metadata(key,value,updated_at) VALUES (?,?,strftime('%Y-%m-%d %H:%M:%f','now')) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(EMBED_BACKFILL_SEQ_KEY, String(maxSeq()));
+  db.prepare("INSERT INTO system_metadata(key,value,updated_at) VALUES ('embed_backfill_last_full_scan',?,strftime('%Y-%m-%d %H:%M:%f','now')) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(new Date().toISOString());
+  const queued = await saveMemory({ title: "turuncukedi kuyruk testi", body: "turuncukedi: kuyruk yolundan gorulmeli", project: "ai-hub" });
+  const afterWrite = planBackfillCandidates(50);
+  check(
+    "backfill: kuyruk yolu yalnız imleçten sonra değişen kaydı aday yapıyor",
+    afterWrite.mode === "queue" && afterWrite.memoryIds.includes(queued.id),
+    `mode=${afterWrite.mode}, aday=${afterWrite.memoryIds.join(",")}`
+  );
+
+  // 3) BUDAMA ETKILESIMI: satir birden cok kez degisip ara seq'ler budandiktan sonra da
+  //    kuyrukta gorunmeli (hayatta kalan en buyuk seq imlecten buyuk oldugu icin).
+  db.prepare("UPDATE memories SET body='turuncukedi v2', updated_at=strftime('%Y-%m-%d %H:%M:%f','now') WHERE id=?").run(queued.id);
+  db.prepare("UPDATE memories SET body='turuncukedi v3', updated_at=strftime('%Y-%m-%d %H:%M:%f','now') WHERE id=?").run(queued.id);
+  pruneChangeLog();
+  const afterPrune = planBackfillCandidates(50);
+  check(
+    "backfill: budama sonrası kayıt kuyrukta kaybolmuyor",
+    afterPrune.mode === "queue" && afterPrune.memoryIds.includes(queued.id),
+    `aday=${afterPrune.memoryIds.join(",")}`
+  );
+
+  // 4) EMNIYET AGI: change_log'da hic izi olmayan ama embedding'i eksik kayit,
+  //    tam taramada yakalanmali.
+  const orphan = await saveMemory({ title: "gribalina izsiz kayit", body: "gribalina: change_log izi silinecek", project: "ai-hub" });
+  db.prepare("DELETE FROM change_log WHERE tbl='memories' AND row_key=?").run(orphan.uid);
+  const fullScan = planBackfillCandidates(100, { forceFullScan: true });
+  const queueOnly = planBackfillCandidates(100);
+  check(
+    "backfill: change_log izi olmayan kayıt yalnız tam taramada yakalanıyor (emniyet ağı)",
+    fullScan.memoryIds.includes(orphan.id) && !queueOnly.memoryIds.includes(orphan.id),
+    `tam_tarama=${fullScan.memoryIds.includes(orphan.id)}, kuyruk=${queueOnly.memoryIds.includes(orphan.id)}`
+  );
+
+  // 5) Embedding KAPALIYKEN imlec ilerlemez (imlecin anlami "buraya kadar embed edildi").
+  const before = meta(EMBED_BACKFILL_SEQ_KEY);
+  await backfillMissingEmbeddings(10);
+  check(
+    "backfill: embedding kapalıyken imleç ilerlemiyor",
+    meta(EMBED_BACKFILL_SEQ_KEY) === before,
+    `once=${before}, sonra=${meta(EMBED_BACKFILL_SEQ_KEY)}`
   );
 }
 

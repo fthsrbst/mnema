@@ -274,11 +274,17 @@ export async function backfillMissingEmbeddings(
 
   // İmleç yalnız bu tur HATASIZ tamamlandıysa buraya ulaşır ve ilerletilir. embed() Gemini
   // hatasında (3 denemeden sonra) throw eder; bu durumda fonksiyon burada patlar, imleç ESKİ
-  // değerinde kalır ve bir sonraki tur aynı aralığı tekrar dener (çağıran taraf zaten
-  // .catch ile logluyor, bkz. src/server/index.ts). embeddingsEnabled() false olsa da imleç
-  // ilerler (embed() burada throw etmez, sessizce null döner) — yukarıdaki yorumda açıklandı.
-  setMeta(db, EMBED_BACKFILL_SEQ_KEY, String(plan.maxSeq));
-  if (plan.mode === "full_scan") setMeta(db, EMBED_BACKFILL_FULL_SCAN_KEY, new Date().toISOString());
+  // değerinde kalır ve bir sonraki tur aynı aralığı tekrar dener (çağıran taraf .catch ile
+  // logluyor, bkz. src/server/index.ts).
+  //
+  // Embedding KAPALIYKEN imleç ilerletilmez. İmlecin anlami "buraya kadar embed edildi"dir;
+  // anahtar yokken ilerletilirse o araliktaki kayitlar "islenmis" sayilir ve anahtar sonradan
+  // eklendiginde kuyruk yolu onlari bir daha hic gormez — yalnizca gunluk tam tarama kurtarir.
+  // Bu projede 16 memory + 12 chunk tam olarak bu sinifta sessizce embedding'siz kalmisti.
+  if (embeddingsEnabled()) {
+    setMeta(db, EMBED_BACKFILL_SEQ_KEY, String(plan.maxSeq));
+    if (plan.mode === "full_scan") setMeta(db, EMBED_BACKFILL_FULL_SCAN_KEY, new Date().toISOString());
+  }
 
   return result;
 }
