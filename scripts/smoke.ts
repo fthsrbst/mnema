@@ -22,6 +22,7 @@ const {
   consolidateMemories,
   configuredEmbeddingGeneration,
   collectChanges,
+  collectChangesBySeq,
   deleteAsset,
   deleteMemory,
   deleteMemoryRelation,
@@ -1180,6 +1181,86 @@ check(
     `rows=[${delRows.map((r) => r.row_key).join(",")}]`
   );
 }
+
+// --- ADR-005 step 2: seed + seq-modu collectChanges ---
+{
+  // closeDb() sonrası eski handle gecersiz olur — her kullanimda getDb() ile taze handle al.
+  const maxSeq = () => (getDb().prepare("SELECT COALESCE(MAX(seq),0) AS m FROM change_log").get() as { m: number }).m;
+
+  // 1) Seed idempotent: marker + change_log temizlenip DB yeniden açılınca mevcut satırlar
+  //    yeniden seed edilir; ikinci açılışta sayı ARTMAZ (marker devrede).
+  getDb().prepare("DELETE FROM change_log").run();
+  getDb().prepare("DELETE FROM system_metadata WHERE key = 'change_log_seeded'").run();
+  closeDb();
+  const afterSeed = (getDb().prepare("SELECT COUNT(*) AS n FROM change_log").get() as { n: number }).n;
+  closeDb();
+  const afterSecond = (getDb().prepare("SELECT COUNT(*) AS n FROM change_log").get() as { n: number }).n;
+  check(
+    "change_log seed: mevcut satırlar dolduruldu ve ikinci açılışta tekrarlanmadı",
+    afterSeed > 0 && afterSecond === afterSeed,
+    `ilk=${afterSeed}, ikinci=${afterSecond}`
+  );
+
+  // 2) Denklik: seed sonrası seq-modu tam süpürme ile zaman-modu tam süpürme aynı kümeyi vermeli.
+  const byTime = collectChanges("1970-01-01 00:00:00");
+  const bySeq = collectChangesBySeq(0);
+  const ids = (p: typeof byTime) => ({
+    m: [...new Set(p.memories.map((x) => x.uid))].sort().join(","),
+    d: [...new Set(p.documents.map((x) => x.uid))].sort().join(","),
+    s: [...new Set(p.sessions.map((x) => x.uid))].sort().join(","),
+  });
+  const a = ids(byTime);
+  const b = ids(bySeq);
+  check(
+    "seq modu: collectChangesBySeq(0) zaman-modu tam süpürmeyle aynı kümeyi döndürür",
+    a.m === b.m && a.d === b.d && a.s === b.s,
+    `mem ${byTime.memories.length}/${bySeq.memories.length}, doc ${byTime.documents.length}/${bySeq.documents.length}, ses ${byTime.sessions.length}/${bySeq.sessions.length}`
+  );
+
+  // 3) Artımlılık: watermark'tan sonra değişen TEK kayıt gelmeli.
+  const before = maxSeq();
+  const incUid = lowerHex32();
+  getDb().prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'seq artimli', 'body', 'ai-hub', '[]', 'smoke-seq', strftime('%Y-%m-%d %H:%M:%f','now'), strftime('%Y-%m-%d %H:%M:%f','now'))`
+  ).run(incUid);
+  const incremental = collectChangesBySeq(before);
+  check(
+    "seq modu: yalnız watermark sonrası değişen kayıt döner",
+    incremental.memories.length === 1 && incremental.memories[0].uid === incUid,
+    `dönen=${incremental.memories.length}`
+  );
+
+  // 4) ASIL BUG REGRESYONU: updated_at'i GEÇMİŞTE olan bir kayıt applyChanges ile gelir.
+  //    Eski (zaman-modu) yol onu kaçırır; seq modu trigger'ın bastığı taze seq sayesinde yakalar.
+  const wallBefore = (getDb().prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS n").get() as { n: string }).n;
+  const seqBefore = maxSeq();
+  const lateUid = lowerHex32();
+  applyChanges({
+    ...emptyPayload,
+    memories: [
+      {
+        uid: lateUid,
+        type: "fact",
+        title: "gec ulasan kayit",
+        body: "ucuncu cihaz gec senkronize oldu",
+        project: "ai-hub",
+        tags: "[]",
+        source: "smoke-late",
+        created_at: "2020-01-01 00:00:00.000",
+        updated_at: "2020-01-01 00:00:00.000",
+      },
+    ],
+  });
+  const seenBySeq = collectChangesBySeq(seqBefore).memories.some((m) => m.uid === lateUid);
+  const seenByTime = collectChanges(wallBefore).memories.some((m) => m.uid === lateUid);
+  check(
+    "geç gelen kayıt: seq modu YAKALAR, eski zaman-modu KAÇIRIR (ADR-005 asıl bug)",
+    seenBySeq && !seenByTime,
+    `seq=${seenBySeq}, zaman=${seenByTime}`
+  );
+}
+
 
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });

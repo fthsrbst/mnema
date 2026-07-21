@@ -15,6 +15,7 @@ import {
   configuredEmbeddingGeneration,
   getDb,
   NOW_MS,
+  SYNC_TABLES,
 } from "./db.js";
 import { config } from "./config.js";
 import { syncPayloadSchema } from "./schemas.js";
@@ -99,6 +100,8 @@ interface StoredSyncDocument extends Omit<SyncDocument, "chunks"> {
 
 export interface SyncPayload {
   now: string;
+  /** Bu payload'un uretildigi andaki change_log en buyuk seq'i. Eski peer'lar gondermez. */
+  max_seq?: number;
   /** Generation hash for every transported vector. Missing only on legacy peers. */
   embedding_generation?: string;
   memories: SyncMemory[];
@@ -193,14 +196,77 @@ function getVecBuffer(table: string, rowid: number): Buffer | null {
   return vectorStore.get(table === "memories_vec" ? "memory" : "chunk", rowid);
 }
 
+/**
+ * Toplama modu. `time` eski (olay-zamanlı) yoldur ve yalnız geriye uyumluluk/tam süpürme
+ * için durur; `seq` change_log tabanlı teslimat yoludur (ADR-005).
+ */
+type CollectMode =
+  | { kind: "time"; since: string }
+  | { kind: "seq"; sinceSeq: number; maxSeq: number };
+
+/** SQLite değişken limiti 999; anahtar listesi bunun altında parçalanarak sorgulanır. */
+const KEY_CHUNK = 400;
+
+function keyExprFor(tbl: string): string {
+  const entry = SYNC_TABLES.find((t) => t.tbl === tbl);
+  // Sync'e tablo eklenip SYNC_TABLES'a eklenmezse sessizce eksik teslimat olurdu; gürültülü patla.
+  if (!entry) throw new Error(`sync: ${tbl} icin change_log tanimi yok (SYNC_TABLES)`);
+  return entry.rowKey;
+}
+
+/**
+ * Bir tablonun bu turda taşınacak ham satırlarını döner. İki mod SADECE burada,
+ * WHERE koşulunda ayrışır; satır→payload dönüşümü collectPayload içinde tektir.
+ */
+function rowsFor<T>(tbl: string, cols: string, timeCol: string, mode: CollectMode): T[] {
+  const db = getDb();
+  if (mode.kind === "time") {
+    return db.prepare(`SELECT ${cols} FROM ${tbl} WHERE ${timeCol} >= ?`).all(mode.since) as T[];
+  }
+  const keys = (
+    db
+      .prepare("SELECT DISTINCT row_key FROM change_log WHERE tbl = ? AND seq > ? AND seq <= ?")
+      .all(tbl, mode.sinceSeq, mode.maxSeq) as { row_key: string }[]
+  ).map((r) => r.row_key);
+  if (keys.length === 0) return [];
+  const keyExpr = keyExprFor(tbl);
+  const out: T[] = [];
+  for (let i = 0; i < keys.length; i += KEY_CHUNK) {
+    const slice = keys.slice(i, i + KEY_CHUNK);
+    const holes = slice.map(() => "?").join(",");
+    out.push(...(db.prepare(`SELECT ${cols} FROM ${tbl} WHERE ${keyExpr} IN (${holes})`).all(...slice) as T[]));
+  }
+  return out;
+}
+
 /** `since`'ten (ISO, UTC "YYYY-MM-DD HH:MM:SS") beri değişen her şeyi topla. */
 export function collectChanges(since: string): SyncPayload {
+  return collectPayload({ kind: "time", since });
+}
+
+/**
+ * change_log seq'ine göre topla — geç ulaşan kayıtları kaçırmayan yol (ADR-005).
+ *
+ * maxSeq ÖNCE okunur ve aralık `seq > sinceSeq AND seq <= maxSeq` ile sınırlanır: toplama
+ * sürerken gelen yazımlar bu tura değil sonrakine kalır (at-least-once; kaybetmek yerine
+ * tekrarlamak doğru yön, apply zaten LWW altında idempotent).
+ */
+export function collectChangesBySeq(sinceSeq: number): SyncPayload {
+  const maxSeq = (getDb().prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM change_log").get() as { m: number }).m;
+  return collectPayload({ kind: "seq", sinceSeq, maxSeq });
+}
+
+function collectPayload(mode: CollectMode): SyncPayload {
   const db = getDb();
   const now = (db.prepare(`SELECT ${NOW_MS} AS n`).get() as { n: string }).n;
+  // time modunda da güncel max_seq bildirilir: tam süpürme yapan istemci bu değeri
+  // benimseyip seq moduna geçebilsin diye (bootstrap yolu, ADR-005).
+  const maxSeq =
+    mode.kind === "seq"
+      ? mode.maxSeq
+      : (db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM change_log").get() as { m: number }).m;
 
-  const memories = (db
-    .prepare("SELECT * FROM memories WHERE updated_at >= ?")
-    .all(since) as (SyncMemory & { id: number })[]).map((m) => ({
+  const memories = rowsFor<SyncMemory & { id: number }>("memories", "*", "updated_at", mode).map((m) => ({
     uid: m.uid, type: m.type, title: m.title, body: m.body, project: m.project,
     tags: m.tags, source: m.source, created_at: m.created_at, updated_at: m.updated_at,
     language: m.language ?? null,
@@ -213,9 +279,7 @@ export function collectChanges(since: string): SyncPayload {
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
 
-  const docRows = db
-    .prepare("SELECT * FROM documents WHERE updated_at >= ?")
-    .all(since) as (Omit<SyncDocument, "chunks"> & { id: number })[];
+  const docRows = rowsFor<Omit<SyncDocument, "chunks"> & { id: number }>("documents", "*", "updated_at", mode);
   const chunkStmt = db.prepare("SELECT id, seq, heading, text FROM chunks WHERE document_id = ? ORDER BY seq");
   const documents = docRows.map((d) => ({
     uid: d.uid, title: d.title, source: d.source, uri: d.uri, project: d.project,
@@ -231,51 +295,59 @@ export function collectChanges(since: string): SyncPayload {
 
   return {
     now,
+    max_seq: maxSeq,
     embedding_generation: configuredEmbeddingGeneration(),
     memories,
     documents,
-    relations: db
-      .prepare(
-        `SELECT uid, from_uid, to_uid, relation_type, confidence, valid_from,
-                valid_to, source, metadata, created_at, updated_at
-         FROM memory_relations WHERE updated_at >= ?`
-      )
-      .all(since) as NonNullable<SyncPayload["relations"]>,
-    projects: db.prepare("SELECT name, data, updated_at FROM projects WHERE updated_at >= ?").all(since) as SyncPayload["projects"],
-    sessions: db
-      .prepare("SELECT uid, project, summary, source, origin_machine, created_at, updated_at FROM session_logs WHERE updated_at >= ?")
-      .all(since) as SyncPayload["sessions"],
-    machines: db.prepare("SELECT name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
-    assets: db
-      .prepare("SELECT uid, kind, name, content, created_at, updated_at FROM assets WHERE updated_at >= ?")
-      .all(since) as SyncPayload["assets"],
-    agent_presence: db
-      .prepare(
-        `SELECT uid, machine, agent, project, branch, task, status, started_at, heartbeat_at, finished_at, created_at, updated_at
-         FROM agent_presence WHERE updated_at >= ?`
-      )
-      .all(since) as SyncPayload["agent_presence"],
+    relations: rowsFor(
+      "memory_relations",
+      `uid, from_uid, to_uid, relation_type, confidence, valid_from,
+       valid_to, source, metadata, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as NonNullable<SyncPayload["relations"]>,
+    projects: rowsFor("projects", "name, data, updated_at", "updated_at", mode) as SyncPayload["projects"],
+    sessions: rowsFor(
+      "session_logs",
+      "uid, project, summary, source, origin_machine, created_at, updated_at",
+      "updated_at",
+      mode
+    ) as SyncPayload["sessions"],
+    machines: rowsFor(
+      "machines",
+      "name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at",
+      "updated_at",
+      mode
+    ) as SyncPayload["machines"],
+    assets: rowsFor("assets", "uid, kind, name, content, created_at, updated_at", "updated_at", mode) as SyncPayload["assets"],
+    agent_presence: rowsFor(
+      "agent_presence",
+      `uid, machine, agent, project, branch, task, status, started_at, heartbeat_at, finished_at, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as SyncPayload["agent_presence"],
     // Agent Intelligence Platform tables
-    tasks: db
-      .prepare(
-        `SELECT uid, project, title, description, status, priority, created_by, claimed_by, claimed_at,
-                depends_on, tags, result, error, due_at, started_at, finished_at, created_at, updated_at
-         FROM tasks WHERE updated_at >= ?`
-      )
-      .all(since) as SyncPayload["tasks"],
-    agent_capabilities: db
-      .prepare(
-        `SELECT uid, agent, machine, capabilities, models, max_concurrent, status, last_seen_at, metadata, created_at, updated_at
-         FROM agent_capabilities WHERE updated_at >= ?`
-      )
-      .all(since) as SyncPayload["agent_capabilities"],
-    agent_messages: db
-      .prepare(
-        `SELECT uid, from_agent, to_agent, project, task_uid, kind, subject, body, payload, read_at, created_at
-         FROM agent_messages WHERE created_at >= ?`
-      )
-      .all(since) as SyncPayload["agent_messages"],
-    deletions: db.prepare("SELECT uid, tbl, deleted_at FROM deletions WHERE deleted_at >= ?").all(since) as SyncPayload["deletions"],
+    tasks: rowsFor(
+      "tasks",
+      `uid, project, title, description, status, priority, created_by, claimed_by, claimed_at,
+       depends_on, tags, result, error, due_at, started_at, finished_at, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as SyncPayload["tasks"],
+    agent_capabilities: rowsFor(
+      "agent_capabilities",
+      `uid, agent, machine, capabilities, models, max_concurrent, status, last_seen_at, metadata, created_at, updated_at`,
+      "updated_at",
+      mode
+    ) as SyncPayload["agent_capabilities"],
+    // agent_messages insert-only: eski yolda filtre created_at, seq yolunda fark etmez.
+    agent_messages: rowsFor(
+      "agent_messages",
+      `uid, from_agent, to_agent, project, task_uid, kind, subject, body, payload, read_at, created_at`,
+      "created_at",
+      mode
+    ) as SyncPayload["agent_messages"],
+    deletions: rowsFor("deletions", "uid, tbl, deleted_at", "deleted_at", mode) as SyncPayload["deletions"],
   };
 }
 

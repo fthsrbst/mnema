@@ -321,6 +321,8 @@ const syncChunkSchema = z.object({
 
 export const syncPayloadSchema = z.object({
   now: syncTimestamp,
+  // Eski peer'lar bu alani gondermez; gonderildiginde istemci seq moduna gecebilir (ADR-005).
+  max_seq: z.number().int().nonnegative().optional(),
   embedding_generation: z.string().max(128).optional(),
   memories: z.array(z.object({
     uid: syncUid,

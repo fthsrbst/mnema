@@ -428,22 +428,75 @@ function installChangeTrigger(
  * `INSERT OR REPLACE INTO deletions`) trigger'lardan önce gelmeli; yoksa her tarihsel
  * tombstone change_log'a düşer ve tüm peer'lara yeniden yayınlanır (ADR-005).
  */
-function installChangeTriggers(database: Database.Database): void {
-  installChangeTrigger(database, "memories", "new.uid");
-  installChangeTrigger(database, "documents", "new.uid");
-  installChangeTrigger(database, "memory_relations", "new.uid");
-  installChangeTrigger(database, "projects", "new.name");
-  installChangeTrigger(database, "session_logs", "new.uid");
-  installChangeTrigger(database, "machines", "new.name");
-  installChangeTrigger(database, "assets", "new.uid");
-  installChangeTrigger(database, "agent_presence", "new.uid");
-  installChangeTrigger(database, "tasks", "new.uid");
-  installChangeTrigger(database, "agent_capabilities", "new.uid");
+/**
+ * Senkronize edilen tabloların change_log tanımı — TEK KAYNAK.
+ *
+ * `rowKey` ile `triggerRowKey` AYNI değeri üretmek zorundadır: trigger yeni yazımları,
+ * `rowKey` ise seed'i ve seq-modu sorgularını besler. Ayrışırlarsa seq modu satırı
+ * bulamaz ve kayıt sessizce teslim edilmez — bu yüzden ikisi yan yana durur.
+ * Değerler derleme-zamanı sabitidir; SQL'e gömülmeleri güvenlidir (kullanıcı girdisi değil).
+ */
+export const SYNC_TABLES: {
+  tbl: string;
+  /** change_log.row_key'i üreten ifade (tablonun kendi bağlamında). */
+  rowKey: string;
+  /** Aynı ifadenin trigger gövdesindeki (new.*) hali. */
+  triggerRowKey: string;
+  /** false ise AFTER UPDATE trigger'ı kurulmaz (insert-only tablolar). */
+  update?: boolean;
+}[] = [
+  { tbl: "memories", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "documents", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "memory_relations", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "projects", rowKey: "name", triggerRowKey: "new.name" },
+  { tbl: "session_logs", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "machines", rowKey: "name", triggerRowKey: "new.name" },
+  { tbl: "assets", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "agent_presence", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "tasks", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "agent_capabilities", rowKey: "uid", triggerRowKey: "new.uid" },
   // agent_messages insert-only (ADR-005): read_at cihaz-yereldir, update trigger yok.
-  installChangeTrigger(database, "agent_messages", "new.uid", { update: false });
+  { tbl: "agent_messages", rowKey: "uid", triggerRowKey: "new.uid", update: false },
   // deletions PK birleşik (tbl, uid) — row_key tek başına uid olursa iki tablodaki
   // aynı uid çakışır, bu yüzden "tbl:uid" bileşik anahtar kullanılır.
-  installChangeTrigger(database, "deletions", "new.tbl || ':' || new.uid");
+  {
+    tbl: "deletions",
+    rowKey: "tbl || ':' || uid",
+    triggerRowKey: "new.tbl || ':' || new.uid",
+  },
+];
+
+function installChangeTriggers(database: Database.Database): void {
+  for (const t of SYNC_TABLES) {
+    installChangeTrigger(database, t.tbl, t.triggerRowKey, { update: t.update });
+  }
+}
+
+/**
+ * Var olan satırlar için change_log'u BİR KEZ doldurur.
+ *
+ * Trigger'lar yalnız yeni yazımlarda tetiklenir; yükseltme anında tablolarda duran
+ * kayıtların hiç change_log izi olmaz ve `since_seq=0` boş döner. Seed bunu kapatır ve
+ * yan etkisi kasıtlıdır: bir kereye mahsus tam yeniden yayın, cihazlar arasında birikmiş
+ * ıraksamayı LWW altında (idempotent) kapatır — ADR-005'teki "ilk turda tam süpürme"nin
+ * sunucu tarafındaki karşılığı. Idempotency deseni migrateLegacyRelations ile aynıdır.
+ */
+function seedChangeLog(database: Database.Database): void {
+  const marker = database.prepare("SELECT value FROM system_metadata WHERE key = 'change_log_seeded'").get() as
+    | { value: string }
+    | undefined;
+  if (marker?.value === "1") return;
+  database.transaction(() => {
+    for (const t of SYNC_TABLES) {
+      database.prepare(`INSERT INTO change_log(tbl, row_key) SELECT '${t.tbl}', ${t.rowKey} FROM ${t.tbl}`).run();
+    }
+    database
+      .prepare(
+        `INSERT INTO system_metadata(key, value, updated_at) VALUES ('change_log_seeded', '1', ${NOW_MS})
+         ON CONFLICT(key) DO UPDATE SET value='1', updated_at=${NOW_MS}`
+      )
+      .run();
+  })();
 }
 
 /** Var olan DB'lere eşitleme kolonlarını ekler (uid, updated_at) ve backfill yapar. */
@@ -543,6 +596,10 @@ function migrate(database: Database.Database): void {
   // önce çalışmalı; yoksa her tarihsel tombstone change_log'a düşer ve tüm peer'lara
   // rebroadcast olur (ADR-005).
   installChangeTriggers(database);
+  // Trigger'lardan SONRA: var olan satırlar için tek seferlik change_log seed'i.
+  // Sıra önemli değil (seed doğrudan change_log'a yazar, kaynak tablolara dokunmaz)
+  // ama kavramsal olarak "trigger'lar kuruldu, geçmiş de dolduruldu" okunur.
+  seedChangeLog(database);
 }
 
 function migrateLegacyRelations(database: Database.Database): void {
