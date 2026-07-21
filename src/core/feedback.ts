@@ -7,6 +7,19 @@ import { feedbackInputSchema } from "./schemas.js";
  * Cihaz-yerel tutulur (sync'e girmez) — her cihazın recall yolu kendi HUB_RECALL_*
  * eşikleriyle çalışır; kalibrasyon verisi de o cihaza aittir. Birikince
  * scripts/recall-check.ts ile birlikte eşik ayarının kanıt tabanı olur.
+ *
+ * TÜKETİLMEYEN ALANLAR (bilinçli — silme): rank, channels, delivery_id, intent,
+ * project, target_uid, target_kind her yazımda kaydedilir ve listRecallFeedback()
+ * (SELECT *) ile dışarı (REST/MCP) aynen döner, ama bu dosyadaki hiçbir agregasyon
+ * bunları kullanmıyor — feedbackSummary() yalnız verdict, feedbackQualityBreakdown()
+ * yalnız verdict × target_kind sayıyor. Aynı şekilde db.ts'teki
+ * idx_recall_feedback_target (target_kind, target_id, created_at) ve
+ * idx_recall_feedback_project_intent (project, intent, created_at) indexlerini
+ * kullanan bir WHERE cümlesi şu an kod tabanında yok. Kasıtlı tutuluyorlar: eşik
+ * kalibrasyonu ("hangi rank'te noisy artıyor", "hangi intent'te miss çoğalıyor",
+ * "target_kind'a göre mi filtrelemeli") ileride bu ham veri üzerinden yapılacak —
+ * o zaman toplanmamış olması eksik veri demek olurdu. Kolonları/indexleri şimdiden
+ * düşürmek ayrı bir karar; burada uygulanmadı.
  */
 export function addRecallFeedback(input: {
   query: string;
