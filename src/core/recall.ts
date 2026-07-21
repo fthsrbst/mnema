@@ -139,6 +139,25 @@ export async function transferableKnowledge(project: string, limit = 5): Promise
   return suggestions;
 }
 
+/**
+ * review_after hem SQLite'ın varsayılan "YYYY-MM-DD HH:MM:SS" biçimini hem de ISO 8601
+ * (offset/Z'li) girdiyi kabul eder — schema formatı zorlamaz (memory_save/memory_update
+ * herhangi bir agent'tan gelebilir).
+ */
+function parseReviewAfter(ts: string): number {
+  const looksIso = ts.includes("T") || /[zZ]$/.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts);
+  return Date.parse(looksIso ? ts : `${ts.replace(" ", "T")}Z`);
+}
+
+/** ADR-006 faz 2: review_after geçmişte kalmışsa görünür bir uyarı üretir; boşsa "". */
+function reviewAfterWarning(reviewAfter: string | null | undefined): string {
+  if (!reviewAfter) return "";
+  const dueMs = parseReviewAfter(reviewAfter);
+  if (!Number.isFinite(dueMs) || dueMs >= Date.now()) return "";
+  const days = Math.floor((Date.now() - dueMs) / 86_400_000);
+  return ` ⚠ ${days} gündür doğrulanmadı`;
+}
+
 /** Hook çıktısı: agent bağlamına enjekte edilecek kompakt markdown. Boşsa "". */
 export function formatRecall(result: RecallResult): string {
   if (result.memories.length === 0 && result.chunks.length === 0) return "";
@@ -148,7 +167,8 @@ export function formatRecall(result: RecallResult): string {
     const compact = m.canonical_summary ?? m.body;
     const body = compact.length > 400 ? compact.slice(0, 400) + "…" : compact;
     const normalized = m.canonical_summary ? " | canonical-summary" : "";
-    lines.push(`- [memory #${m.id} | ${m.type}${m.project ? ` | ${m.project}` : ""}${normalized}] ${m.title}: ${body}`);
+    const staleTag = reviewAfterWarning(m.review_after);
+    lines.push(`- [memory #${m.id} | ${m.type}${m.project ? ` | ${m.project}` : ""}${normalized}] ${m.title}: ${body}${staleTag}`);
     // Bağlantılı kayıtlar tek satır başlık olarak gelir — agent derine inmek isterse id ile çeker.
     // Tek sorgu: listMemoryRelations, resolveRelated'ın (memories.related JSON alanı) ürettiği
     // 'related' tipli kenarları da içerir (legacy alan bu tabloya projekte edilir) — ayrı bir

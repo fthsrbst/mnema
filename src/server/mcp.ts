@@ -38,6 +38,8 @@ import {
   searchChunks,
   searchMemories,
   updateMemory,
+  invalidateMemory,
+  revalidateMemory,
   updateMemoryRelation,
   upsertProfessionalProfile,
   upsertProject,
@@ -59,6 +61,8 @@ import {
   memoryInputBaseSchema,
   memoryConsolidateBaseSchema,
   memoryPatchBaseSchema,
+  memoryInvalidateBaseSchema,
+  memoryRevalidateBaseSchema,
   memoryTypeSchema,
   memoryRelationInputBaseSchema,
   memoryRelationPatchBaseSchema,
@@ -285,6 +289,34 @@ export function buildMcpServer(): McpServer {
     async ({ id, ...patch }) => {
       const updated = await updateMemory(id, patch);
       return updated ? json(updated) : json({ error: `memory #${id} bulunamadı` });
+    }
+  );
+
+  server.registerTool(
+    "memory_invalidate",
+    {
+      title: "Hafıza kaydını geçersiz kıl",
+      description:
+        "Bir hafıza kaydının ARTIK DOĞRU OLMADIĞINI işaretler: aramada varsayılan olarak görünmez olur ama SATIR SİLİNMEZ ve memory_revalidate ile geri alınabilir. `evidence` ZORUNLUDUR — bu iddiayı yanlışlayan komut çıktısı veya gözlem. Kanıtsız geçersiz kılma, bayat kayıttan daha kötüdür: hatalı bir testle doğru bir kaydı gömebilirsin. Yerine yeni bir kayıt geçiyorsa replaced_by_id ver; supersedes ilişkisi otomatik kurulur.",
+      inputSchema: memoryInvalidateBaseSchema.shape,
+    },
+    async (input) => {
+      const result = await invalidateMemory(input);
+      return result ? json(result) : json({ error: "hafıza kaydı bulunamadı" });
+    }
+  );
+
+  server.registerTool(
+    "memory_revalidate",
+    {
+      title: "Geçersiz kılınmış hafızayı geri getir",
+      description:
+        "memory_invalidate ile geçersiz kılınmış bir kaydı tekrar geçerli yapar (aramada yeniden görünür). Yanlış yapılmış bir geçersiz kılmayı düzeltmek içindir.",
+      inputSchema: memoryRevalidateBaseSchema.shape,
+    },
+    async (input) => {
+      const result = await revalidateMemory(input);
+      return result ? json(result) : json({ error: "hafıza kaydı bulunamadı" });
     }
   );
 

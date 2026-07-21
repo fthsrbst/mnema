@@ -80,6 +80,8 @@ import {
   searchChunks,
   searchMemories,
   updateMemory,
+  invalidateMemory,
+  revalidateMemory,
   updateMemoryRelation,
   upsertProfessionalProfile,
   upsertProject,
@@ -210,6 +212,14 @@ export function buildRestRouter(): Router {
     mem ? res.json(mem) : res.status(404).json({ error: "bulunamadı" });
   }));
   r.delete("/memory/:id", wrap((req, res) => res.json({ deleted: deleteMemory(Number(req.params.id)) })));
+  r.post("/memory/invalidate", wrap(async (req, res) => {
+    const result = await invalidateMemory(req.body);
+    return result ? res.json(result) : res.status(404).json({ error: "hafıza kaydı bulunamadı" });
+  }));
+  r.post("/memory/revalidate", wrap(async (req, res) => {
+    const result = await revalidateMemory(req.body);
+    return result ? res.json(result) : res.status(404).json({ error: "hafıza kaydı bulunamadı" });
+  }));
   r.post("/memory/consolidate", wrap(async (req, res) => {
     res.json(await consolidateMemories(memoryConsolidateSchema.parse(req.body)));
   }));
