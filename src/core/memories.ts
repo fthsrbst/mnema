@@ -90,10 +90,10 @@ async function upsertVector(
     // kullanıldığından öksüz vektör başka bir kayda yapışabilir — yazmadan önce doğrula.
     if (!db.prepare("SELECT 1 FROM memories WHERE id = ?").get(id)) return undefined;
     // sqlite-vec rowid için katı INTEGER ister; number REAL bağlandığından BigInt şart
-    const stored = db.prepare("SELECT project FROM memories WHERE id = ?").get(id) as
-      | { project: string | null }
+    const stored = db.prepare("SELECT project, is_current FROM memories WHERE id = ?").get(id) as
+      | { project: string | null; is_current: number }
       | undefined;
-    vectorStore.putMemory(id, stored?.project, toBuffer(vec));
+    vectorStore.putMemory(id, stored?.project, stored?.is_current ?? 1, toBuffer(vec));
     return await findSimilar(id, vec);
   } catch (err) {
     console.error(`[hub] memory #${id} embed edilemedi (FTS'te aranabilir): ${(err as Error).message}`);
@@ -180,7 +180,7 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
     await upsertVector(id, merged.title, merged.body, merged.canonical_summary);
   } else if (patch.project !== undefined && vectorStore.available()) {
     const embedding = vectorStore.get("memory", id);
-    if (embedding) vectorStore.putMemory(id, merged.project, embedding);
+    if (embedding) vectorStore.putMemory(id, merged.project, existing.is_current, embedding);
   }
   notifyWrite();
   return getMemory(id);
@@ -331,12 +331,15 @@ export function recordMemoryAccess(ids: number[]): void {
 }
 
 export async function searchMemories(query: string, filters: SearchFilters = {}): Promise<ScoredMemory[]> {
-  // Project/type/tag constraints are candidate-generation filters. The final
+  // Project/type/tag/is_current constraints are candidate-generation filters. The final
   // relational checks below are defense in depth, not post-fusion filtering.
+  // ADR-006: include_superseded=false (varsayılan) ⇒ currentOnly=true ⇒ is_current=0
+  // kayıtlar hem FTS hem vektör KNN'in İÇİNDE elenir, top-k'dan sonra değil.
   const ranked = await hybridSearch("memories_fts", "memories_vec", query, config.searchCandidates, {
     project: filters.project,
     memoryType: filters.type,
     memoryTag: filters.tag,
+    currentOnly: !filters.include_superseded,
   });
   if (ranked.length === 0) return [];
   // N+1 yerine tek sorgu: sıralama RRF'ten gelir, satırlar id→row haritasından okunur.
@@ -355,6 +358,7 @@ export async function searchMemories(query: string, filters: SearchFilters = {})
     if (filters.type && mem.type !== filters.type) continue;
     if (filters.project && mem.project !== filters.project) continue;
     if (filters.tag && !mem.tags.includes(filters.tag)) continue;
+    if (!filters.include_superseded && mem.is_current === 0) continue;
     const ageMs = Math.max(0, now - parseSqliteUtc(mem.updated_at));
     // Tabanlı decay: taze kayıt öne geçer ama eski kayıt asla decayFloor'un altına
     // ezilmez — "1 yıl önce şu sorunu nasıl çözmüştüm" sorgusu hâlâ sonuç bulur.

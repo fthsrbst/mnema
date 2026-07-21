@@ -108,6 +108,102 @@ check(
   tagged.length > 0 && tagged.every((item) => item.tags.includes("architecture"))
 );
 
+// --- ADR-006: hafıza yaşam döngüsü (validity/supersession, faz 1) ---
+
+// 1) Migration: valid_from dolduğunda is_current'a dokunulmaz (retroaktif bayatlama yasak).
+// migrate() bu smoke DB'sinde bir kez, tamamen boşken çalıştığından backfill'in gerçek
+// etkisini görmek için aynı UPDATE'i (db.ts#migrate ile birebir aynı SQL) burada da,
+// valid_from'u elle boşaltılmış gerçek bir satıra karşı çalıştırıyoruz.
+const migrationMem = await saveMemory({
+  type: "fact",
+  title: "Migration backfill testi",
+  body: "valid_from migration senaryosu icin kayit",
+  project: "ai-hub",
+  source: "smoke",
+});
+check(
+  "yeni kayıt: is_current=1 varsayılan, valid_from başlangıçta boş",
+  getMemory(migrationMem.id)?.is_current === 1 && getMemory(migrationMem.id)?.valid_from === null,
+  `is_current=${getMemory(migrationMem.id)?.is_current}, valid_from=${getMemory(migrationMem.id)?.valid_from}`
+);
+getDb().prepare("UPDATE memories SET valid_from = created_at WHERE valid_from IS NULL").run();
+const migratedMem = getMemory(migrationMem.id);
+check(
+  "migration backfill: valid_from=created_at, is_current hâlâ 1 (retroaktif bayatlama yok)",
+  migratedMem?.valid_from === migratedMem?.created_at && migratedMem?.is_current === 1,
+  `valid_from=${migratedMem?.valid_from}, created_at=${migratedMem?.created_at}, is_current=${migratedMem?.is_current}`
+);
+
+// 2) is_current=0 (supersede/invalidate edilmiş) kayıt varsayılan aramadan düşer.
+const validityMem = await saveMemory({
+  type: "fact",
+  title: "Gecersiz kilinacak test kaydi",
+  body: "zumrutgecerlilik supersedilmis test anahtar kelimesi",
+  project: "ai-hub",
+  tags: ["smoke-validity"],
+  source: "smoke",
+});
+getDb()
+  .prepare("UPDATE memories SET is_current = 0, invalidated_reason = ? WHERE id = ?")
+  .run("smoke: manuel test invalidation", validityMem.id);
+const hiddenResults = await searchMemories("zumrutgecerlilik supersedilmis");
+check(
+  "is_current=0 kayıt searchMemories varsayılanında görünmüyor",
+  hiddenResults.every((m) => m.id !== validityMem.id),
+  `hits=[${hiddenResults.map((m) => m.id).join(",")}]`
+);
+
+// 3) include_superseded:true ile aynı kayıt geri gelir.
+const shownResults = await searchMemories("zumrutgecerlilik supersedilmis", { include_superseded: true });
+check(
+  "include_superseded:true ile is_current=0 kayıt görünüyor",
+  shownResults.some((m) => m.id === validityMem.id && m.is_current === 0),
+  `hits=[${shownResults.map((m) => m.id).join(",")}]`
+);
+
+// 4) Sync geriye uyumluluğu: eski peer payload'u (is_current/valid_from/... hiç yok) yerel
+// is_current'ı ezmemeli — origin_machine ile aynı COALESCE deseni.
+const legacySyncMem = await saveMemory({
+  type: "fact",
+  title: "Sync geriye uyumluluk testi",
+  body: "sync eski peer senaryosu ilk govde",
+  project: "ai-hub",
+  source: "smoke",
+});
+getDb().prepare("UPDATE memories SET is_current = 0 WHERE id = ?").run(legacySyncMem.id);
+const beforeLegacySync = getMemory(legacySyncMem.id)!;
+const legacyPeerPayload = {
+  now: "2031-01-01 00:00:00.000",
+  memories: [
+    {
+      uid: beforeLegacySync.uid,
+      type: beforeLegacySync.type,
+      title: beforeLegacySync.title,
+      body: "eski peer tarafından güncellenmiş gövde (is_current alanı hiç yok)",
+      project: beforeLegacySync.project,
+      tags: JSON.stringify(beforeLegacySync.tags),
+      source: beforeLegacySync.source,
+      created_at: beforeLegacySync.created_at,
+      updated_at: "2031-01-01 00:00:00.000",
+      // importance/related/origin_machine/valid_from/valid_to/is_current/supersedes_uid/
+      // invalidated_reason bilerek YOK — eski (ADR-006 öncesi) peer şemasını simüle eder.
+    },
+  ],
+  documents: [],
+  projects: [],
+  sessions: [],
+  machines: [],
+  deletions: [],
+};
+applyChanges(legacyPeerPayload as unknown as Parameters<typeof applyChanges>[0]);
+const afterLegacySync = getMemory(legacySyncMem.id);
+check(
+  "sync geriye uyumluluk: eski peer payloadu yerel is_current'i ezmiyor",
+  afterLegacySync?.body === "eski peer tarafından güncellenmiş gövde (is_current alanı hiç yok)" &&
+    afterLegacySync?.is_current === 0,
+  `body_updated=${afterLegacySync?.body !== beforeLegacySync.body}, is_current=${afterLegacySync?.is_current}`
+);
+
 const doc = await addDocument({
   title: "Test notu",
   text: "# Embedding\n\nGemini embedding API'si batchEmbedContents ucunu kullanır. Normalizasyon 768 boyutta şarttır.\n\n## Tuzaklar\n\nRate limit 429 döner, backoff gerekir. Türkçe karakterler unicode61 tokenizer ile aranabilir.",

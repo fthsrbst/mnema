@@ -340,6 +340,12 @@ export const syncPayloadSchema = z.object({
     importance: z.number().finite().min(0.5).max(2).optional(),
     related: z.string().max(50_000).optional(),
     origin_machine: z.string().max(100).nullable().optional(),
+    // ADR-006: hafıza yaşam döngüsü — eski peer bu alanları hiç göndermez (hepsi optional).
+    valid_from: syncTimestamp.nullable().optional(),
+    valid_to: syncTimestamp.nullable().optional(),
+    is_current: z.number().int().min(0).max(1).optional(),
+    supersedes_uid: syncUid.nullable().optional(),
+    invalidated_reason: z.string().max(2000).nullable().optional(),
     embedding: syncVector,
   }).strict()).max(100_000),
   documents: z.array(z.object({

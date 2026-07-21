@@ -121,9 +121,9 @@ function rewriteProjectReferences(
 ): ProjectReferenceMigrationResult | ProjectReferenceDetachResult {
   const db = getDb();
   const memoryVectors = vectorStore.available()
-    ? (db.prepare("SELECT id FROM memories WHERE project = ?").all(from) as { id: number }[])
+    ? (db.prepare("SELECT id, is_current FROM memories WHERE project = ?").all(from) as { id: number; is_current: number }[])
         .map((row) => ({ ...row, embedding: vectorStore.get("memory", row.id) }))
-        .filter((row): row is { id: number; embedding: Buffer } => Boolean(row.embedding))
+        .filter((row): row is { id: number; is_current: number; embedding: Buffer } => Boolean(row.embedding))
     : [];
   const chunkVectors = vectorStore.available()
     ? (db
@@ -146,7 +146,7 @@ function rewriteProjectReferences(
     const sessions = db
       .prepare(`UPDATE session_logs SET project = ?, updated_at = ${NOW_MS} WHERE project = ?`)
       .run(to, from).changes;
-    for (const row of memoryVectors) vectorStore.putMemory(row.id, to, row.embedding);
+    for (const row of memoryVectors) vectorStore.putMemory(row.id, to, row.is_current, row.embedding);
     for (const row of chunkVectors) vectorStore.putChunk(row.id, to, row.enabled, row.is_current, row.kind, row.embedding);
     return { from, to, memories, documents, sessions };
   })();

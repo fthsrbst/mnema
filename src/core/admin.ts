@@ -548,11 +548,11 @@ async function doReindex(force: boolean, result: ReindexResult): Promise<Reindex
       db.transaction(() => {
         vecs.forEach((v, i) => {
           const expected = mems[i];
-          const current = db.prepare("SELECT title, body, project FROM memories WHERE id = ?").get(expected.id) as
-            | { title: string; body: string; project: string | null }
+          const current = db.prepare("SELECT title, body, project, is_current FROM memories WHERE id = ?").get(expected.id) as
+            | { title: string; body: string; project: string | null; is_current: number }
             | undefined;
           if (!current || current.title !== expected.title || current.body !== expected.body) return;
-          putMemoryVector(expected.id, current.project, toBuffer(v));
+          putMemoryVector(expected.id, current.project, current.is_current, toBuffer(v));
           result.memories_embedded++;
         });
       })();

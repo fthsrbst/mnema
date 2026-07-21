@@ -550,6 +550,15 @@ function migrate(database: Database.Database): void {
   // resolveMachineName() ile otomatik damgalanır.
   addColumn("memories", "origin_machine", "origin_machine TEXT");
   addColumn("session_logs", "origin_machine", "origin_machine TEXT");
+  // ADR-006: hafıza yaşam döngüsü — documents'ta zaten var olan deseni (kind/version hariç)
+  // memories'e taşır. is_current NOT NULL DEFAULT 1: var olan hiçbir kayıt geriye dönük
+  // bayat işaretlenmez (ADR bunu açıkça yasaklıyor). valid_from mevcut kayıtlar için
+  // aşağıda created_at ile doldurulur; valid_to/supersedes_uid/invalidated_reason boş kalır.
+  addColumn("memories", "valid_from", "valid_from TEXT");
+  addColumn("memories", "valid_to", "valid_to TEXT");
+  addColumn("memories", "is_current", "is_current INTEGER NOT NULL DEFAULT 1");
+  addColumn("memories", "supersedes_uid", "supersedes_uid TEXT");
+  addColumn("memories", "invalidated_reason", "invalidated_reason TEXT");
   // Retrieval feedback was memory-only in the first release. Keep memory_id for
   // compatibility, but use target_kind/target_id for memory, chunk, document,
   // or whole-context feedback and retain the delivered ranking evidence.
@@ -582,6 +591,10 @@ function migrate(database: Database.Database): void {
   `);
   migrateLegacyRelations(database);
   migrateMemoryFts(database);
+  // ADR-006 backfill: yalnızca valid_from doldurulur (henüz hiç dolmamış eski satırlar için).
+  // is_current'a DOKUNULMAZ — kolon zaten NOT NULL DEFAULT 1 ile eklendi, hiçbir kayıt
+  // bu migration'la bayat işaretlenmez.
+  database.prepare("UPDATE memories SET valid_from = created_at WHERE valid_from IS NULL").run();
   database.exec(`
     UPDATE memories SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
     UPDATE documents SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL;
@@ -788,7 +801,12 @@ function ensureVectorSchema(database: Database.Database): void {
   const chunkSql = vectorTableSql(database, "chunks_vec");
   const expectedDim = `float[${config.embeddingDim}]`;
 
-  const rebuildMemories = Boolean(memorySql && (!memorySql.includes("project text partition key") || !memorySql.includes(expectedDim)));
+  const rebuildMemories = Boolean(
+    memorySql &&
+      (!memorySql.includes("project text partition key") ||
+        !memorySql.includes("is_current integer") ||
+        !memorySql.includes(expectedDim))
+  );
   const rebuildChunks = Boolean(
     chunkSql &&
       (!chunkSql.includes("project text partition key") ||
@@ -803,17 +821,23 @@ function ensureVectorSchema(database: Database.Database): void {
       const sameDim = memorySql!.includes(expectedDim);
       database.exec("DROP TABLE IF EXISTS temp.memories_vec_backup");
       if (sameDim) {
+        // ADR-006: memories.is_current migration'ı bu noktadan önce (migrate() içinde)
+        // zaten çalıştı, bu yüzden JOIN burada güncel değeri okuyabilir.
         database.exec(`CREATE TEMP TABLE memories_vec_backup AS
-          SELECT v.rowid, COALESCE(NULLIF(trim(m.project), ''), '${GLOBAL_VECTOR_PROJECT}') AS project, v.embedding
+          SELECT v.rowid, COALESCE(NULLIF(trim(m.project), ''), '${GLOBAL_VECTOR_PROJECT}') AS project,
+                 CAST(m.is_current AS INTEGER) AS is_current, v.embedding
           FROM memories_vec v JOIN memories m ON m.id = v.rowid`);
       }
       database.exec("DROP TABLE memories_vec");
       database.exec(`CREATE VIRTUAL TABLE memories_vec USING vec0(
         project text partition key,
+        is_current integer,
         embedding float[${config.embeddingDim}]
       )`);
       if (sameDim) {
-        database.prepare("INSERT INTO memories_vec(rowid, project, embedding) SELECT rowid, project, embedding FROM memories_vec_backup").run();
+        database.prepare(
+          "INSERT INTO memories_vec(rowid, project, is_current, embedding) SELECT rowid, project, is_current, embedding FROM memories_vec_backup"
+        ).run();
         database.exec("DROP TABLE memories_vec_backup");
       } else {
         console.warn("[hub] embedding dimension changed; memory vectors were cleared and require reindex");
@@ -821,6 +845,7 @@ function ensureVectorSchema(database: Database.Database): void {
     } else if (!memorySql) {
       database.exec(`CREATE VIRTUAL TABLE memories_vec USING vec0(
         project text partition key,
+        is_current integer,
         embedding float[${config.embeddingDim}]
       )`);
     }
@@ -966,8 +991,17 @@ export function markEmbeddingGenerationReady(provenance = "reindexed"): void {
   setMetadata(database, "embedding_reindex_required", "0");
 }
 
-/** Insert or replace one memory vector with retrieval-time partition metadata. */
-export function putMemoryVector(rowid: number, project: string | null | undefined, embedding: Buffer): void {
+/**
+ * Insert or replace one memory vector with retrieval-time partition + lifecycle metadata.
+ * `isCurrent` mirrors `putChunkVector`'s `isCurrent` argument (ADR-006): the filter must
+ * run inside the KNN via vec0 metadata, not as a post-top-k pass.
+ */
+export function putMemoryVector(
+  rowid: number,
+  project: string | null | undefined,
+  isCurrent: boolean | number,
+  embedding: Buffer
+): void {
   if (!hasVec()) return;
   if (embedding.byteLength !== config.embeddingDim * Float32Array.BYTES_PER_ELEMENT) {
     throw new Error(`memory vector dimension mismatch: ${embedding.byteLength} bytes`);
@@ -975,8 +1009,8 @@ export function putMemoryVector(rowid: number, project: string | null | undefine
   const database = getDb();
   database.prepare("DELETE FROM memories_vec WHERE rowid = ?").run(BigInt(rowid));
   database
-    .prepare("INSERT INTO memories_vec(rowid, project, embedding) VALUES (?, ?, ?)")
-    .run(BigInt(rowid), vectorProject(project), embedding);
+    .prepare("INSERT INTO memories_vec(rowid, project, is_current, embedding) VALUES (?, ?, ?, ?)")
+    .run(BigInt(rowid), vectorProject(project), BigInt(isCurrent ? 1 : 0), embedding);
 }
 
 /** Insert or replace one chunk vector with project and lifecycle metadata. */
