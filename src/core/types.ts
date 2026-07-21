@@ -266,6 +266,22 @@ export interface AgentPresenceView extends AgentPresence {
 
 export type TaskStatus = "pending" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled";
 
+/**
+ * Quality-gate verification proof attached at task completion time.
+ * Stored as JSON in the `tasks.verification` column. `kind:"none"` is an
+ * explicit conscious-choice signal (no warning emitted); a null column means
+ * "no verification recorded" — `task_complete` surfaces a soft `uyari` in
+ * that case (advisory, consistent with presence philosophy; never a hard lock).
+ */
+export type TaskVerificationKind = "tests" | "build" | "manual" | "none";
+
+export interface TaskVerification {
+  kind: TaskVerificationKind;
+  command?: string;
+  exit_code?: number;
+  summary?: string;
+}
+
 /** Task queue item: agent-to-agent work delegation and tracking. */
 export interface Task {
   id: number;
@@ -282,6 +298,7 @@ export interface Task {
   tags: string[];
   result: string | null;
   error: string | null;
+  verification: TaskVerification | null;
   due_at: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -307,7 +324,16 @@ export interface TaskPatch {
   result?: string;
   error?: string;
   tags?: string[];
+  verification?: TaskVerification | null;
 }
+
+/**
+ * `task_complete` yanıtı: görevin task satırına ek olarak bir `uyari` alanı
+ * eklenir. `uyari` yalnızca verification kanıtı verilmemişse (kolon null
+ * kaldıysa ve `kind:"none"` açıkça seçilmemişse) dolar — sert kilit değil,
+ * agent'ı bilgilendirme amaçlı advisory alan.
+ */
+export type TaskCompleteResult = Task & { uyari?: string };
 
 export interface TaskFilter {
   project?: string;
@@ -532,4 +558,27 @@ export interface MetricsSnapshot {
   active_tasks: number;
   agent_count: number;
   jobs: { queued: number; running: number; done: number; failed: number };
+  coordination: CoordinationMetrics;
+}
+
+/**
+ * Agent koordinasyon-yükü sinyalleri (son 7 gün penceresi).
+ * Tüm değerler tek SQL turunda, ucuz bir sorguyla üretilir; getMetricsSnapshot
+ * sıcak yolda çağrılır — 5 ms altı kalmalı.
+ *
+ * Tanımlar:
+ * - tasks_completed_7d: Son 7 günde done olan görev sayısı.
+ * - avg_task_cycle_time_min: claim→finish ortalaması (dakika); claimed_at null olanlar hariç.
+ * - handoff_ratio: handoff mesaj sayısı / tamamlanan görev sayısı (yüksek = iş devirde boğuluyor).
+ * - reclaim_count_7d: aynı göreve ikinci ve sonraki claim'lerin toplam sayısı
+ *   (agent düşmüş / iş dönüp durmuş sinyali). hub_events'teki task_claimed
+ *   olaylarından: (toplam claim olayı) − (unique claim edilen task sayısı).
+ * - verification_coverage: doğrulama kanıtı (kind != "none") verilen tamamlanan görev oranı.
+ */
+export interface CoordinationMetrics {
+  tasks_completed_7d: number;
+  avg_task_cycle_time_min: number;
+  handoff_ratio: number;
+  reclaim_count_7d: number;
+  verification_coverage: number;
 }

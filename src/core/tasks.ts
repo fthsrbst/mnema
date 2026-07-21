@@ -9,13 +9,14 @@ import { config } from "./config.js";
 import { notifyWrite } from "./events.js";
 import { emitHubEvent } from "./events-bus.js";
 import { recordDeletion } from "./sync.js";
-import type { Task, TaskInput, TaskPatch, TaskFilter, TaskStatus } from "./types.js";
+import type { Task, TaskInput, TaskPatch, TaskFilter, TaskStatus, TaskVerification, TaskCompleteResult } from "./types.js";
 
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     ...(row as unknown as Task),
     depends_on: JSON.parse((row.depends_on as string) ?? "[]"),
     tags: JSON.parse((row.tags as string) ?? "[]"),
+    verification: row.verification ? (JSON.parse(row.verification as string) as TaskVerification) : null,
   };
 }
 
@@ -122,6 +123,10 @@ export function updateTask(uid: string, patch: TaskPatch): Task {
     sets.push("tags=@tags");
     params.tags = JSON.stringify(patch.tags);
   }
+  if (patch.verification !== undefined) {
+    sets.push("verification=@verification");
+    params.verification = patch.verification === null || patch.verification === undefined ? null : JSON.stringify(patch.verification);
+  }
   if (sets.length === 0) return task;
   sets.push(`updated_at=${NOW_MS}`);
   db.prepare(`UPDATE tasks SET ${sets.join(", ")} WHERE uid=@uid`).run(params);
@@ -135,9 +140,20 @@ export function updateTask(uid: string, patch: TaskPatch): Task {
   return updated;
 }
 
-/** Mark a task as done with an optional result. */
-export function completeTask(uid: string, result?: string): Task {
-  return updateTask(uid, { status: "done", result });
+/** Mark a task as done with an optional result and verification proof. */
+export function completeTask(uid: string, result?: string, verification?: TaskVerification): TaskCompleteResult {
+  const task = updateTask(uid, { status: "done", result, verification });
+  // Advisory uyarı: kanıt verilmemişse (kind:"none" bilinçli seçilmediyse) agent'a
+  // hatırlatma döner. Sert kilit DEĞİL — presence felsefesiyle tutarlı.
+  const noneVerified = verification === undefined || verification === null;
+  if (noneVerified) {
+    return {
+      ...task,
+      uyari:
+        "Doğrulama kanıtı verilmedi — hangi komutu çalıştırdın ve sonucu neydi? task_update ile ekleyebilirsin.",
+    };
+  }
+  return task;
 }
 
 /** Mark a task as cancelled with an optional error reason. */

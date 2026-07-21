@@ -876,6 +876,7 @@ const {
   getEventLog,
   getEventLogDb,
   compactSessions,
+  getMetricsSnapshot,
 } = await import("../src/core/index.js");
 
 // --- Tasks ---
@@ -903,11 +904,82 @@ check("task_claim", claimed.status === "claimed" && claimed.claimed_by === "smok
 const completed = completeTask(task1.uid, "Test tamamlandı");
 check("task_complete", completed.status === "done" && completed.result === "Test tamamlandı");
 
+// --- Task quality gate: doğrulama kanıtı (advisory — sert kilit DEĞİL) ---
+const verifyTaskObj = createTask({ title: "Kanıtsız tamamlanacak görev", project: "ai-hub", created_by: "smoke" });
+claimTask(verifyTaskObj.uid, "smoke-agent");
+const completedNoProof = completeTask(verifyTaskObj.uid, "Kanıtsız bitti");
+check(
+  "task_complete: kanıt verilmedi → görev done olur AMA uyarı döner (sert kilit YOK)",
+  completedNoProof.status === "done" &&
+    typeof completedNoProof.uyari === "string" && completedNoProof.uyari.length > 0,
+  `status=${completedNoProof.status}, uyari=${completedNoProof.uyari ? "var" : "yok"}`
+);
+
+const proofTask = createTask({ title: "Kanıtlı tamamlanacak görev", project: "ai-hub", created_by: "smoke" });
+claimTask(proofTask.uid, "smoke-agent");
+const completedWithProof = completeTask(proofTask.uid, "Kanıtla bitti", {
+  kind: "tests",
+  command: "npm run smoke",
+  exit_code: 0,
+  summary: "Tüm smoke testleri geçti",
+});
+check(
+  "task_complete: kanıt (kind!=none) verilince uyarı YOK",
+  completedWithProof.status === "done" &&
+    (completedWithProof as { uyari?: string }).uyari === undefined &&
+    completedWithProof.verification?.kind === "tests" &&
+    completedWithProof.verification?.command === "npm run smoke" &&
+    completedWithProof.verification?.exit_code === 0,
+  `uyari=${(completedWithProof as { uyari?: string }).uyari ?? "yok"}, kind=${completedWithProof.verification?.kind}`
+);
+
+const noneTask = createTask({ title: "kind:none bilinçli görev", project: "ai-hub", created_by: "smoke" });
+claimTask(noneTask.uid, "smoke-agent");
+const completedNone = completeTask(noneTask.uid, "Bilinçli kanıtsız", { kind: "none" });
+check(
+  "task_complete: kind:'none' açıkça verilirse uyarı YOK (bilinçli tercih saygı)",
+  completedNone.status === "done" &&
+    (completedNone as { uyari?: string }).uyari === undefined &&
+    completedNone.verification?.kind === "none",
+  `uyari=${(completedNone as { uyari?: string }).uyari ?? "yok"}`
+);
+
 const tasks = listTasks({ project: "ai-hub" });
 check("task_list", tasks.length >= 2);
+check(
+  "task_list: verification kolonu görünüyor",
+  tasks.some((t: { uid: string; verification: { kind: string } | null }) => t.uid === proofTask.uid && t.verification?.kind === "tests"),
+  `proofTask görünüyor mu: ${tasks.some((t: { uid: string }) => t.uid === proofTask.uid)}`
+);
 
 const queue = taskQueue("ai-hub");
 check("task_queue (bağımlılık çözülünce sıraya girer)", queue.some((t: { uid: string }) => t.uid === task2.uid));
+
+// --- Metrics coordination block (7 gün penceresi; tek SQL turu, ucuz) ---
+const snapshot = getMetricsSnapshot();
+check(
+  "metrics_overview: coordination bloğu döner (uygun tipler)",
+  typeof snapshot.coordination === "object" &&
+    snapshot.coordination !== null &&
+    typeof snapshot.coordination.tasks_completed_7d === "number" &&
+    typeof snapshot.coordination.avg_task_cycle_time_min === "number" &&
+    typeof snapshot.coordination.handoff_ratio === "number" &&
+    typeof snapshot.coordination.reclaim_count_7d === "number" &&
+    typeof snapshot.coordination.verification_coverage === "number" &&
+    snapshot.coordination.verification_coverage >= 0 &&
+    snapshot.coordination.verification_coverage <= 1,
+  `completed_7d=${snapshot.coordination.tasks_completed_7d}, verify_cov=${snapshot.coordination.verification_coverage}`
+);
+check(
+  "metrics_overview: coordination.reclaim_count_7d >= 0 (ilk claim'ler unique kabul)",
+  snapshot.coordination.reclaim_count_7d >= 0,
+  `reclaim_count_7d=${snapshot.coordination.reclaim_count_7d}`
+);
+check(
+  "metrics_overview: coordination.tasks_completed_7d smoke'ta claim→complete yaptıklarımızı sayar",
+  snapshot.coordination.tasks_completed_7d >= 4,
+  `tasks_completed_7d=${snapshot.coordination.tasks_completed_7d}`
+);
 
 // --- Agent Capabilities ---
 const agent1 = registerAgent({

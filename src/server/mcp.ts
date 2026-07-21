@@ -800,6 +800,15 @@ export function buildMcpServer(): McpServer {
         priority: z.number().int().min(0).max(100).optional(),
         result: z.string().max(50000).optional(),
         error: z.string().max(5000).optional(),
+        verification: z
+          .object({
+            kind: z.enum(["tests", "build", "manual", "none"]),
+            command: z.string().optional(),
+            exit_code: z.number().int().optional(),
+            summary: z.string().max(2000).optional(),
+          })
+          .nullable()
+          .optional(),
       },
     },
     async ({ uid, ...patch }) => {
@@ -812,14 +821,23 @@ export function buildMcpServer(): McpServer {
     "task_complete",
     {
       title: "Complete a task",
-      description: "Mark a task as done with an optional structured result.",
+      description:
+        "Mark a task as done with an optional structured result and verification proof. Doğrulama kanıtı (verification) verilmezse görev yine done olur AMA yanıtta `uyari` alanı döner — sert kilit DEĞİL, advisory. kind:'none' bilinçli seçilirse uyarı verilmez.",
       inputSchema: {
         uid: z.string(),
         result: z.string().max(50000).optional(),
+        verification: z
+          .object({
+            kind: z.enum(["tests", "build", "manual", "none"]),
+            command: z.string().optional(),
+            exit_code: z.number().int().optional(),
+            summary: z.string().max(2000).optional(),
+          })
+          .optional(),
       },
     },
-    async ({ uid, result }) => {
-      const task = completeTask(uid, result);
+    async ({ uid, result, verification }) => {
+      const task = completeTask(uid, result, verification);
       return task ? json(task) : json({ error: `Task not found: ${uid}` });
     }
   );

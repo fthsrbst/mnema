@@ -51,7 +51,12 @@ Bu hub'ı kullanan HER agent (Claude Code, Codex, opencode, cursor…) şu proto
 6. Görev almadan önce `task_queue(project)` ile bağımlılığı çözülmüş, önceliğe göre sıralı
    bekleyen işleri kontrol et; uygun olanı `task_claim` ile al.
 7. İş bitince `task_complete` + `task_feedback` (outcome, ne işe yaradı/yaramadı, dersler) —
-   dersler otomatik `howto` hafızasına düşer ve `project_lessons` ile başka agent'lara ulaşır.
+   `task_complete` çağrılırken mümkünse `verification` kanıtı geçir
+   (`{kind, command?, exit_code?, summary}`; `kind`: `tests`|`build`|`manual`|`none`).
+   Kanıt verilmezse görev yine `done` olur ama yanıtta `uyari` döner (advisory,
+   sert kilit DEĞİL — presence felsefesiyle tutarlı); `kind:"none"` bilinçli
+   seçilirse uyarı verilmez. Dersler otomatik `howto` hafızasına düşer ve
+   `project_lessons` ile başka agent'lara ulaşır.
 8. Agent'lar arası mesajlar için `agent_inbox` / `agent_message_send` kullan (presence'tan
    ayrı bir kanaldır); bir işi tamamen başka bir agent'a devredeceksen `agent_handoff`.
 
