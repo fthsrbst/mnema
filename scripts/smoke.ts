@@ -876,6 +876,7 @@ const {
   getEventLog,
   getEventLogDb,
   compactSessions,
+  getMetricsSnapshot,
 } = await import("../src/core/index.js");
 
 // --- Tasks ---
@@ -953,6 +954,32 @@ check(
 
 const queue = taskQueue("ai-hub");
 check("task_queue (bağımlılık çözülünce sıraya girer)", queue.some((t: { uid: string }) => t.uid === task2.uid));
+
+// --- Metrics coordination block (7 gün penceresi; tek SQL turu, ucuz) ---
+const snapshot = getMetricsSnapshot();
+check(
+  "metrics_overview: coordination bloğu döner (uygun tipler)",
+  typeof snapshot.coordination === "object" &&
+    snapshot.coordination !== null &&
+    typeof snapshot.coordination.tasks_completed_7d === "number" &&
+    typeof snapshot.coordination.avg_task_cycle_time_min === "number" &&
+    typeof snapshot.coordination.handoff_ratio === "number" &&
+    typeof snapshot.coordination.reclaim_count_7d === "number" &&
+    typeof snapshot.coordination.verification_coverage === "number" &&
+    snapshot.coordination.verification_coverage >= 0 &&
+    snapshot.coordination.verification_coverage <= 1,
+  `completed_7d=${snapshot.coordination.tasks_completed_7d}, verify_cov=${snapshot.coordination.verification_coverage}`
+);
+check(
+  "metrics_overview: coordination.reclaim_count_7d >= 0 (ilk claim'ler unique kabul)",
+  snapshot.coordination.reclaim_count_7d >= 0,
+  `reclaim_count_7d=${snapshot.coordination.reclaim_count_7d}`
+);
+check(
+  "metrics_overview: coordination.tasks_completed_7d smoke'ta claim→complete yaptıklarımızı sayar",
+  snapshot.coordination.tasks_completed_7d >= 4,
+  `tasks_completed_7d=${snapshot.coordination.tasks_completed_7d}`
+);
 
 // --- Agent Capabilities ---
 const agent1 = registerAgent({

@@ -550,4 +550,27 @@ export interface MetricsSnapshot {
   active_tasks: number;
   agent_count: number;
   jobs: { queued: number; running: number; done: number; failed: number };
+  coordination: CoordinationMetrics;
+}
+
+/**
+ * Agent koordinasyon-yükü sinyalleri (son 7 gün penceresi).
+ * Tüm değerler tek SQL turunda, ucuz bir sorguyla üretilir; getMetricsSnapshot
+ * sıcak yolda çağrılır — 5 ms altı kalmalı.
+ *
+ * Tanımlar:
+ * - tasks_completed_7d: Son 7 günde done olan görev sayısı.
+ * - avg_task_cycle_time_min: claim→finish ortalaması (dakika); claimed_at null olanlar hariç.
+ * - handoff_ratio: handoff mesaj sayısı / tamamlanan görev sayısı (yüksek = iş devirde boğuluyor).
+ * - reclaim_count_7d: aynı göreve ikinci ve sonraki claim'lerin toplam sayısı
+ *   (agent düşmüş / iş dönüp durmuş sinyali). hub_events'teki task_claimed
+ *   olaylarından: (toplam claim olayı) − (unique claim edilen task sayısı).
+ * - verification_coverage: doğrulama kanıtı (kind != "none") verilen tamamlanan görev oranı.
+ */
+export interface CoordinationMetrics {
+  tasks_completed_7d: number;
+  avg_task_cycle_time_min: number;
+  handoff_ratio: number;
+  reclaim_count_7d: number;
+  verification_coverage: number;
 }

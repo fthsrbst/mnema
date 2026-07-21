@@ -117,7 +117,7 @@ media, integrity/audit/vector) için bkz. `README.md` → "Tools".
 
 | Araç | Ne yapar |
 |---|---|
-| `metrics_overview` | Sistem metriklerini döner: uptime, istek sayıları, gecikme yüzdelikleri, hafıza/görev/agent istatistikleri. |
+| `metrics_overview` | Sistem metriklerini döner: uptime, istek sayıları, gecikme yüzdelikleri, hafıza/görev/agent istatistikleri ve son 7 güne ait **koordinasyon-yükü bloğu** (`coordination`): `tasks_completed_7d`, `avg_task_cycle_time_min` (claim→finish dk ort.), `handoff_ratio` (handoff mesaj / tamamlanan görev; yüksek = iş devirde boğuluyor), `reclaim_count_7d` (aynı göreve ikinci+ claim — agent düşmüş / dönüp duran iş sinyali), `verification_coverage` (kanıt (kind != `none`) ile biten tamamlanan görev oranı). Tek SQL turu, sıcak yolda ~0.1 ms. |
 | `event_log` | Hata ayıklama/izleme için son hub olaylarını döner. |
 
 ## Yeni DB tabloları
@@ -188,6 +188,7 @@ Mikro-benchmark (`npx tsx scripts/benchmark.ts`): 32/32 test geçti, toplam 67 m
 | `findDuplicates` (tüm DB) | ~1.050 ms |
 | `hygieneReport` (tek proje) | ~800 ms |
 | `getMetricsSnapshot` | 0,5 ms |
+| `coordinationStats` (7-günlük koordinasyon bloğu, tek SQL turu) | ~0,1 ms |
 
 Not: `findDuplicates` maliyetinin tamamına yakını 2. geçişteki en yeni 200 memory için atılan
 FTS sorgularıdır (kayıt başına ~5 ms). 6 saatlik bakım döngüsü ve elle tetiklenen

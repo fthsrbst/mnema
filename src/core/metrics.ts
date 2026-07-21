@@ -4,7 +4,7 @@
  */
 import { getDb } from "./db.js";
 import { jobStats } from "./worker.js";
-import type { MetricsSnapshot } from "./types.js";
+import type { CoordinationMetrics, MetricsSnapshot } from "./types.js";
 
 interface Counter {
   value: number;
@@ -78,6 +78,73 @@ function percentile(values: number[], p: number): number {
   return sorted[Math.max(0, idx)];
 }
 
+/**
+ * Agent koordinasyon-yükü sinyalleri: tek SQL turunda 7 günlük pencere için.
+ *
+ * - tasks_completed_7d: done task sayısı (finished_at >= 7 gün önce).
+ * - avg_task_cycle_time_min: claimed_at→finished_at ortalaması (dakika).
+ *   NULL claimed_at olanlar AVG'de otomatik hariç; hiç completed yoksa 0.
+ * - handoff_ratio: handoff mesaj sayısı / tamamlanan görev sayısı; completed=0 ise 0 (MAX(1,...)).
+ * - reclaim_count_7d: (total task_claimed events) − (unique claim edilen task sayısı).
+ *   hub_events.payload JSON'dan json_extract ile task_uid çekilir.
+ * - verification_coverage: kind != 'none' ile verification'lı tamamlanan görev oranı.
+ *
+ * Sorgu tek bir CTE + prepared statement'le sıcak yolu tıkamadan işletilebilir:
+ * getMetricsSnapshot'da zaten saniyede en fazla bir kez çağrılmaktadır.
+ */
+export function coordinationStats(): CoordinationMetrics {
+  const db = getDb();
+  const since = (
+    db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now','-7 days') AS c").get() as { c: string }
+  ).c;
+  const row = db
+    .prepare(
+      `WITH recent_claims AS (
+         SELECT json_extract(payload, '$.payload.task_uid') AS tu
+         FROM hub_events
+         WHERE type = 'task_claimed' AND created_at >= ?
+       )
+       SELECT
+         COALESCE((SELECT COUNT(*) FROM tasks
+                    WHERE status = 'done' AND finished_at >= ?), 0) AS tasks_completed_7d,
+         COALESCE((SELECT AVG((julianday(finished_at) - julianday(claimed_at)) * 1440)
+                    FROM tasks
+                    WHERE status = 'done' AND finished_at >= ? AND claimed_at IS NOT NULL), 0) AS avg_task_cycle_time_min,
+         COALESCE(
+           (SELECT COUNT(*) FROM agent_messages
+              WHERE kind = 'handoff' AND created_at >= ?) * 1.0 /
+           MAX(1, (SELECT COUNT(*) FROM tasks
+                     WHERE status = 'done' AND finished_at >= ?)), 0
+         ) AS handoff_ratio,
+         COALESCE(
+           (SELECT COUNT(*) FROM recent_claims) -
+           (SELECT COUNT(DISTINCT tu) FROM recent_claims), 0
+         ) AS reclaim_count_7d,
+         COALESCE(
+           (SELECT COUNT(*) FROM tasks
+              WHERE status = 'done' AND finished_at >= ?
+                AND verification IS NOT NULL
+                AND json_extract(verification, '$.kind') != 'none') * 1.0 /
+           MAX(1, (SELECT COUNT(*) FROM tasks
+                     WHERE status = 'done' AND finished_at >= ?)), 0
+         ) AS verification_coverage`
+    )
+    .get(since, since, since, since, since, since, since) as {
+    tasks_completed_7d: number;
+    avg_task_cycle_time_min: number | null;
+    handoff_ratio: number | null;
+    reclaim_count_7d: number | null;
+    verification_coverage: number | null;
+  };
+  return {
+    tasks_completed_7d: row.tasks_completed_7d ?? 0,
+    avg_task_cycle_time_min: Math.round(row.avg_task_cycle_time_min ?? 0),
+    handoff_ratio: Math.round((row.handoff_ratio ?? 0) * 1000) / 1000,
+    reclaim_count_7d: row.reclaim_count_7d ?? 0,
+    verification_coverage: Math.round((row.verification_coverage ?? 0) * 1000) / 1000,
+  };
+}
+
 /** Get a full metrics snapshot. */
 export function getMetricsSnapshot(): MetricsSnapshot {
   const db = getDb();
@@ -90,6 +157,7 @@ export function getMetricsSnapshot(): MetricsSnapshot {
 
   const durations = getHistogram("http_request_duration_ms").values;
   const jobs = jobStats();
+  const coordination = coordinationStats();
 
   return {
     uptime_sec: Math.round((Date.now() - startTime) / 1000),
@@ -106,6 +174,7 @@ export function getMetricsSnapshot(): MetricsSnapshot {
     active_tasks: activeTasks,
     agent_count: agentCount,
     jobs,
+    coordination,
   };
 }
 
@@ -160,6 +229,14 @@ export function prometheusMetrics(): string {
   lines.push(`hub_jobs{status="running"} ${snap.jobs.running}`);
   lines.push(`hub_jobs{status="done"} ${snap.jobs.done}`);
   lines.push(`hub_jobs{status="failed"} ${snap.jobs.failed}`);
+
+  lines.push("# HELP hub_coordination Agent koordinasyon-yükü sinyalleri (7 gün pencere)");
+  lines.push("# TYPE hub_coordination gauge");
+  lines.push(`hub_coordination{signal="tasks_completed_7d"} ${snap.coordination.tasks_completed_7d}`);
+  lines.push(`hub_coordination{signal="avg_task_cycle_time_min"} ${snap.coordination.avg_task_cycle_time_min}`);
+  lines.push(`hub_coordination{signal="handoff_ratio"} ${snap.coordination.handoff_ratio}`);
+  lines.push(`hub_coordination{signal="reclaim_count_7d"} ${snap.coordination.reclaim_count_7d}`);
+  lines.push(`hub_coordination{signal="verification_coverage"} ${snap.coordination.verification_coverage}`);
 
   return lines.join("\n") + "\n";
 }

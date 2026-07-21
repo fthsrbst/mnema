@@ -48,7 +48,7 @@ const {
   // Worker
   enqueueJob, getJob, listJobs, jobStats,
   // Metrics
-  getMetricsSnapshot, incCounter, recordRequest,
+  getMetricsSnapshot, incCounter, recordRequest, coordinationStats,
   // Context
   contextGet,
   // Recall
@@ -391,6 +391,30 @@ await bench("9.2 İstek kaydı (recordRequest)", () => {
   recordRequest("GET", "/api/test", 500, 5.2);
   const snapshot = getMetricsSnapshot();
   assert(snapshot.errors_5xx >= 1, "errors_5xx >= 1 olmalı");
+})();
+
+// 9.3 — Koordinasyon-yükü bloğu (metrics_overview'a 7 günlük pencere eklendi).
+// B benchmark vakasında zaten 1+ görev tamamlandı (bkz. BÖLÜM 1) ve
+// task_claimed hub_events'te saklanır; bu ölçüm hem doğruluk hem latans kontrolü.
+await bench("9.3 Koordinasyon bloğu — coordinationStats (<5ms)", () => {
+  const t0 = performance.now();
+  const c = coordinationStats();
+  const dur = performance.now() - t0;
+  assert(typeof c.tasks_completed_7d === "number", "tasks_completed_7d number olmalı");
+  assert(typeof c.avg_task_cycle_time_min === "number", "avg_task_cycle_time_min number olmalı");
+  assert(typeof c.handoff_ratio === "number" && c.handoff_ratio >= 0, "handoff_ratio >= 0 olmalı");
+  assert(typeof c.reclaim_count_7d === "number" && c.reclaim_count_7d >= 0, "reclaim_count_7d >= 0 olmalı");
+  assert(
+    typeof c.verification_coverage === "number" && c.verification_coverage >= 0 && c.verification_coverage <= 1,
+    `verification_coverage [0,1] olmalı, gelen: ${c.verification_coverage}`
+  );
+  assert(dur < 5, `coordinationStats 5ms altında olmalı, gelen: ${dur.toFixed(2)}ms`);
+})();
+
+await bench("9.4 coordination — getMetricsSnapshot coordination alanı döner", () => {
+  const snap = getMetricsSnapshot();
+  assert(snap.coordination !== undefined, "snapshot.coordination tanımlı olmalı");
+  assert(snap.coordination.tasks_completed_7d >= 0, "coordination.tasks_completed_7d >= 0 olmalı");
 })();
 
 // ═══════════════════════════════════════════════════════════
