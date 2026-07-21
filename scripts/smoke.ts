@@ -59,6 +59,8 @@ const {
   saveAsset,
   saveMemoryRelation,
   saveMemory,
+  invalidateMemory,
+  revalidateMemory,
   searchChunks,
   searchMemories,
   seedAssetsFromDisk,
@@ -1513,6 +1515,119 @@ check(
     "digest: sayım aynı ama uid kümesi farklıysa yakalar",
     d4.tables.memories.count === d3.tables.memories.count && d4.tables.memories.uid_hash !== d3.tables.memories.uid_hash,
     `sayim=${d4.tables.memories.count}, hash farkli=${d4.tables.memories.uid_hash !== d3.tables.memories.uid_hash}`
+  );
+}
+
+
+// --- ADR-006 faz 2: memory_invalidate / revalidate / dogrulama yasi ---
+{
+  const db = getDb();
+  const stale = await saveMemory({
+    title: "kirmizidefter tailscale bozuk",
+    body: "kirmizidefter: PC'de Tailscale NoState'e takili, LAN yolu kullanilmali",
+    project: "ai-hub", type: "howto",
+  });
+  const fresh = await saveMemory({
+    title: "kirmizidefter tailscale calisiyor",
+    body: "kirmizidefter: Tailscale duzeldi, ssh fatihpi calisiyor",
+    project: "ai-hub", type: "howto",
+  });
+
+  // 1) Kanit ZORUNLU — kanitsiz cagri reddedilmeli.
+  let rejected = false;
+  try {
+    await invalidateMemory({ id: stale.id, reason: "artik dogru degil" } as never);
+  } catch {
+    rejected = true;
+  }
+  check("memory_invalidate: kanıt (evidence) olmadan reddediliyor", rejected, `reddedildi=${rejected}`);
+
+  // 2) Gecersiz kilma: aramada gizlenir, satir DURUR, include_superseded ile gorunur.
+  await invalidateMemory({
+    id: stale.id,
+    reason: "Tailscale duzeldi",
+    evidence: "ssh fatihpi -> hostname dondu; tailscale status: fatihpi active",
+    replaced_by_id: fresh.id,
+  });
+  const defaultHits = await searchMemories("kirmizidefter tailscale");
+  const withSuperseded = await searchMemories("kirmizidefter tailscale", { include_superseded: true });
+  const rowStillThere = (db.prepare("SELECT COUNT(*) n FROM memories WHERE id=?").get(stale.id) as { n: number }).n;
+  check(
+    "memory_invalidate: aramada gizlenir ama satır silinmez",
+    !defaultHits.some((m) => m.id === stale.id) &&
+      withSuperseded.some((m) => m.id === stale.id) &&
+      rowStillThere === 1,
+    `varsayilan=${defaultHits.some((m) => m.id === stale.id)}, include_superseded=${withSuperseded.some((m) => m.id === stale.id)}, satir=${rowStillThere}`
+  );
+
+  // 3) replaced_by_id -> supersedes kenari + yeni kaydin supersedes_uid'i.
+  const rels = listMemoryRelations({ memory_id: fresh.id, limit: 10 });
+  const supersedesEdge = rels.find((r) => r.relation_type === "supersedes" && r.to_id === stale.id);
+  const freshRow = db.prepare("SELECT supersedes_uid FROM memories WHERE id=?").get(fresh.id) as { supersedes_uid: string | null };
+  check(
+    "memory_invalidate: supersedes kenarı ve supersedes_uid kuruluyor",
+    Boolean(supersedesEdge) && freshRow.supersedes_uid === stale.uid,
+    `kenar=${Boolean(supersedesEdge)}, supersedes_uid eslesme=${freshRow.supersedes_uid === stale.uid}`
+  );
+
+  // 4) Yarim durum yok: olmayan replacement ile cagri kaydi gecersizlestirmemeli.
+  const victim = await saveMemory({ title: "kirmizidefter kurban", body: "kirmizidefter dokunulmamali", project: "ai-hub" });
+  try {
+    await invalidateMemory({ id: victim.id, reason: "test", evidence: "test", replaced_by_id: 999999 });
+  } catch { /* beklenen */ }
+  const victimRow = db.prepare("SELECT is_current FROM memories WHERE id=?").get(victim.id) as { is_current: number };
+  check(
+    "memory_invalidate: geçersiz replacement'ta kayıt bozulmadan kalıyor (yarım durum yok)",
+    victimRow.is_current === 1,
+    `is_current=${victimRow.is_current}`
+  );
+
+  // 5) revalidate geri getirir.
+  await revalidateMemory({ id: stale.id });
+  const backHits = await searchMemories("kirmizidefter tailscale");
+  const backRow = db.prepare("SELECT is_current, valid_to, invalidated_reason FROM memories WHERE id=?").get(stale.id) as
+    { is_current: number; valid_to: string | null; invalidated_reason: string | null };
+  check(
+    "memory_revalidate: kayıt aramaya geri döner ve gerekçe temizlenir",
+    backHits.some((m) => m.id === stale.id) && backRow.is_current === 1 && backRow.valid_to === null && backRow.invalidated_reason === null,
+    `gorunur=${backHits.some((m) => m.id === stale.id)}, is_current=${backRow.is_current}`
+  );
+
+  // 6) review_after gecmisteyse formatRecall gorunur uyari eklemeli (kaydi GIZLEMEDEN).
+  const volatile = await saveMemory({
+    title: "kirmizidefter volatil iddia",
+    body: "kirmizidefter: bu servis su an ayakta",
+    project: "ai-hub",
+    review_after: "2020-01-01 00:00:00",
+  });
+  const recallText = formatRecall({
+    memories: [volatile as never],
+    chunks: [], project: null, session: null, injected: [volatile.id],
+  } as never);
+  check(
+    "review_after geçmişte: formatRecall görünür uyarı ekliyor, kaydı gizlemiyor",
+    recallText.includes(String(volatile.id)) && /doğrulanmad/i.test(recallText),
+    `kayit_var=${recallText.includes(String(volatile.id))}, uyari=${/doğrulanmad/i.test(recallText)}`
+  );
+
+  // 7) Sync geriye uyumlulugu: eski peer verified_at/review_after gondermezse yerel deger EZILMEZ.
+  db.prepare("UPDATE memories SET verified_at='2026-01-01 00:00:00' WHERE id=?").run(volatile.id);
+  const row = db.prepare("SELECT * FROM memories WHERE id=?").get(volatile.id) as Record<string, unknown>;
+  applyChanges({
+    ...emptyPayload,
+    memories: [{
+      uid: String(row.uid), type: "fact", title: "kirmizidefter volatil iddia",
+      body: "eski peer govdeyi guncelledi", project: "ai-hub", tags: "[]", source: "legacy-peer",
+      created_at: String(row.created_at),
+      updated_at: "2099-01-01 00:00:00.000",
+    }],
+  });
+  const after = db.prepare("SELECT body, verified_at FROM memories WHERE id=?").get(volatile.id) as
+    { body: string; verified_at: string | null };
+  check(
+    "sync geriye uyumluluk: eski peer verified_at'i ezmiyor",
+    after.body === "eski peer govdeyi guncelledi" && after.verified_at === "2026-01-01 00:00:00",
+    `body_guncellendi=${after.body === "eski peer govdeyi guncelledi"}, verified_at=${after.verified_at}`
   );
 }
 
