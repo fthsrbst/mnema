@@ -1,7 +1,7 @@
 import { config } from "./config.js";
 import { getDb, hasVec } from "./db.js";
 import { embeddingsEnabled } from "./embeddings.js";
-import { recordMemoryAccess, resolveRelated, searchMemories } from "./memories.js";
+import { recordMemoryAccess, searchMemories } from "./memories.js";
 import { searchChunks } from "./documents.js";
 import { getProject, resolveProjectFromPath } from "./projects.js";
 import { recentSessionLogs } from "./sessions.js";
@@ -149,11 +149,20 @@ export function formatRecall(result: RecallResult): string {
     const body = compact.length > 400 ? compact.slice(0, 400) + "…" : compact;
     const normalized = m.canonical_summary ? " | canonical-summary" : "";
     lines.push(`- [memory #${m.id} | ${m.type}${m.project ? ` | ${m.project}` : ""}${normalized}] ${m.title}: ${body}`);
-    // Bağlantılı kayıtlar tek satır başlık olarak gelir — agent derine inmek isterse id ile çeker
-    const rel = resolveRelated(m).slice(0, 3);
+    // Bağlantılı kayıtlar tek satır başlık olarak gelir — agent derine inmek isterse id ile çeker.
+    // Tek sorgu: listMemoryRelations, resolveRelated'ın (memories.related JSON alanı) ürettiği
+    // 'related' tipli kenarları da içerir (legacy alan bu tabloya projekte edilir) — ayrı bir
+    // resolveRelated çağrısına gerek yok.
+    const relations = listMemoryRelations({ memory_id: m.id, active_at: new Date().toISOString(), limit: 12 });
+    const rel = relations
+      .filter((relation) => relation.relation_type === "related")
+      .slice(0, 3)
+      .map((relation) => {
+        const outgoing = relation.from_id === m.id;
+        return { id: outgoing ? relation.to_id : relation.from_id, title: outgoing ? relation.to_title : relation.from_title };
+      });
     if (rel.length > 0) lines.push(`  ilgili: ${rel.map((r) => `#${r.id} ${r.title}`).join(" · ")}`);
-    const typed = listMemoryRelations({ memory_id: m.id, active_at: new Date().toISOString(), limit: 3 })
-      .filter((relation) => relation.relation_type !== "related");
+    const typed = relations.filter((relation) => relation.relation_type !== "related").slice(0, 3);
     if (typed.length > 0) {
       lines.push(
         `  ilişkiler: ${typed
