@@ -55,3 +55,11 @@ export {
   type BackfillResult,
   type BackfillCandidates,
 } from "./backfill.js";
+export {
+  runConsistencyCheck,
+  reconcileDeleteObservations,
+  pendingDeleteObservations,
+  DELETE_WITHOUT_TOMBSTONE,
+  PEER_DIVERGENCE,
+  type ConsistencyCheckResult,
+} from "./consistency.js";

@@ -59,6 +59,9 @@ const {
   saveAsset,
   saveMemoryRelation,
   saveMemory,
+  reconcileDeleteObservations,
+  pendingDeleteObservations,
+  runConsistencyCheck,
   planBackfillCandidates,
   backfillMissingEmbeddings,
   EMBED_BACKFILL_SEQ_KEY,
@@ -1751,6 +1754,67 @@ check(
     "backfill: embedding kapalıyken imleç ilerlemiyor",
     meta(EMBED_BACKFILL_SEQ_KEY) === before,
     `once=${before}, sonra=${meta(EMBED_BACKFILL_SEQ_KEY)}`
+  );
+}
+
+
+// --- Silme invaryanti (gozlem + uzlastirma) ve gunluk tutarlilik turu ---
+{
+  const db = getDb();
+  const events = (type: string) =>
+    (db.prepare("SELECT COUNT(*) AS n FROM hub_events WHERE type=?").get(type) as { n: number }).n;
+
+  // Onceki testlerden birikmis gozlemleri once tuket ki olcum yalniz BU senaryoyu yansitsin.
+  reconcileDeleteObservations(0);
+
+  // 1) NORMAL silme (deleteMemory -> recordDeletion) uyari URETMEMELI.
+  const legit = await saveMemory({ title: "sarikanat normal silme", body: "sarikanat: tombstone birakilacak", project: "ai-hub" });
+  deleteMemory(legit.id);
+  const warnBefore = events("sync.delete_without_tombstone");
+  reconcileDeleteObservations(0); // bekleme suresi 0: hemen uzlastir
+  check(
+    "silme invaryantı: tombstone bırakan normal silme uyarı üretmiyor",
+    events("sync.delete_without_tombstone") === warnBefore,
+    `uyari_artisi=${events("sync.delete_without_tombstone") - warnBefore}`
+  );
+
+  // 2) TOMBSTONE'SUZ dogrudan silme uyari URETMELI ve tablo+anahtar tasimali.
+  const sneaky = await saveMemory({ title: "karakedi dogrudan silme", body: "karakedi: tombstone birakilmayacak", project: "ai-hub" });
+  const sneakyUid = sneaky.uid;
+  db.prepare("DELETE FROM memories WHERE id=?").run(sneaky.id);
+  const before2 = events("sync.delete_without_tombstone");
+  const rec = reconcileDeleteObservations(0);
+  const warnRow = db
+    .prepare("SELECT payload FROM hub_events WHERE type=? ORDER BY id DESC LIMIT 1")
+    .get("sync.delete_without_tombstone") as { payload: string } | undefined;
+  const payloadOk = Boolean(warnRow && warnRow.payload.includes(sneakyUid) && warnRow.payload.includes("memories"));
+  check(
+    "silme invaryantı: tombstone'suz silme uyarı üretiyor (tablo + anahtar ile)",
+    events("sync.delete_without_tombstone") === before2 + 1 && rec.missing_tombstone === 1 && payloadOk,
+    `uyari=${events("sync.delete_without_tombstone") - before2}, payload_ok=${payloadOk}`
+  );
+
+  // 3) Uzlastirilan gozlemler tuketiliyor (hub_events sonsuza buyumesin).
+  check(
+    "silme invaryantı: işlenen gözlemler tüketiliyor",
+    pendingDeleteObservations() === 0,
+    `bekleyen=${pendingDeleteObservations()}`
+  );
+
+  // 4) Gunluk tur primary erisilemezken HATA FIRLATMIYOR.
+  const res = await runConsistencyCheck(["http://127.0.0.1:9"], "");
+  check(
+    "tutarlılık turu: primary erişilemezken çökmüyor",
+    res.ok === false && typeof res.error === "string" && res.deletes !== undefined,
+    `ok=${res.ok}, error=${res.error?.slice(0, 40)}`
+  );
+
+  // 5) Primary hic tanimli degilse yalniz yerel uzlastirma yapilir, ok doner.
+  const res2 = await runConsistencyCheck([], "");
+  check(
+    "tutarlılık turu: primary tanımlı değilken yerel uzlaştırma yapıp ok dönüyor",
+    res2.ok === true && res2.divergence === undefined,
+    `ok=${res2.ok}`
   );
 }
 

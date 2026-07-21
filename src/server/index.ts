@@ -35,6 +35,7 @@ import {
   pruneJobs,
   recordRequest,
   backfillMissingEmbeddings,
+  runConsistencyCheck,
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
@@ -489,6 +490,24 @@ app.listen(config.port, config.host, () => {
 
   // Gece özeti: dakikada bir saat kontrolü ile hafif zamanlayıcı (node-cron yok — sıfır bağımlılık).
   // Aynı gün ikinci kez tetiklenmeye karşı runDigest zaten memories'te o günün başlığını kontrol eder.
+  // Günlük tutarlılık turu (ADR-005): silme invaryantı uzlaştırması + primary ile digest
+  // karşılaştırması. Sync turu içindeki kontrol yalnız sync çalıştığında devreye girer;
+  // primary erişilemezse veya cihaz uzun süre kapalı kalırsa ıraksama fark edilmezdi.
+  // Asla throw etmez — bu bir uyarı kanalı, kapı değil.
+  if (communityEnabled) setInterval(() => {
+    const now = new Date();
+    if (now.getHours() === 4 && now.getMinutes() === 15) {
+      runConsistencyCheck(config.primaryUrls, config.primaryToken)
+        .then((res) => {
+          if (res.divergence) console.warn(`[hub] IRAKSAMA: ${res.divergence.join("; ")}`);
+          if (res.deletes.missing_tombstone > 0) {
+            console.warn(`[hub] tombstone'suz silme: ${res.deletes.missing_tombstone} kayıt`);
+          }
+        })
+        .catch((err) => console.error(`[hub] tutarlılık kontrolü: ${(err as Error).message}`));
+    }
+  }, 60_000);
+
   if (communityEnabled) setInterval(() => {
     const now = new Date();
     const hh = now.getHours();

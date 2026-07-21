@@ -560,7 +560,10 @@ export type HubEventType =
   | "webhook_triggered"
   | "job_completed"
   | "job_failed"
-  | "feedback_recorded";
+  | "feedback_recorded"
+  // ADR-005 tutarlilik kanali (bkz. src/core/consistency.ts). Bunlar UYARIDIR, kapi degil.
+  | "sync.delete_without_tombstone"
+  | "sync.peer_divergence";
 
 export interface HubEvent {
   id?: number;
