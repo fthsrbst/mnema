@@ -3,7 +3,7 @@ import os from "node:os";
 /**
  * Bu cihazı tanımlayan kanonik adı döner. Öncelik sırası:
  *   1. HUB_MACHINE_NAME env'i (boş değilse) — operatörün açıkça verdiği ad,
- *      ör. "fatih-pc". machines registry'deki kanonik adalarla tutarlı tutulmalı.
+ *      ör. "fatih-pc". machines registry'deki kanonik adlarla tutarlı tutulmalı.
  *   2. os.hostname() — HUB_MACHINE_NAME verilmemişse sistem adına düşer.
  *
  * Presence (`src/core/presence.ts`) ve capabilities (`src/core/capabilities.ts`)

@@ -421,14 +421,14 @@ app.listen(config.port, config.host, () => {
     });
   }
 
-// Primary yoksa (tek-node kurulum) presence prune sync döngüsüne binmez —
-  // bağımsız düşük frekanslı bir zamanlayıcı yeterli (ucuz, günde birkaçkez de olsa sorun değil).
+  // Primary yoksa (tek-node kurulum) presence prune sync döngüsüne binmez —
+  // bağımsız düşük frekanslı bir zamanlayıcı yeterli (ucuz, günde birkaç kez de olsa sorun değil).
   if (communityEnabled && config.primaryUrls.length === 0) {
     setInterval(() => pruneStalePresence(), 6 * 60 * 60 * 1_000);
   }
 
   // Embedding backfill, startup'ta bir kez: kayıt sırasında embedding başarısız olmuş
-  // memory/chunk'ları (Gemini hatası/aş kesintisi) tamamlar. Eksik yoksa no-op.
+  // memory/chunk'ları (Gemini hatası/ağ kesintisi) tamamlar. Eksik yoksa no-op.
   if (communityEnabled) {
     void backfillMissingEmbeddings()
       .then((r) => {
@@ -450,8 +450,8 @@ app.listen(config.port, config.host, () => {
     registerJobHandler("webhook_test", async () => ({ ok: true }));
     // Embedding backfill job handler: enqueue edilen 'embed' job'ları worker.ts'teki
     // sıra + exponential backoff çerçevesinde işlenir. Startup ve periyodik bakım
-    // döngüsü doğrudan npm run backfillMissingEmbeddings() çağırır (kuyruk birikimi
-    // olmadan), elle tetikleme de burada mümkün (hub job enqueue embed).
+    // döngüsü backfillMissingEmbeddings()'i doğrudan çağırır (kuyruk birikimi olmadan);
+    // elle tetikleme bu handler üzerinden mümkün (hub job enqueue embed).
     registerJobHandler("embed", async (payload) =>
       backfillMissingEmbeddings((payload.limit as number | undefined) ?? 100)
     );
@@ -474,7 +474,7 @@ app.listen(config.port, config.host, () => {
         console.error(`[hub] agent intelligence prune hatası: ${(err as Error).message}`);
       }
       // Embedding backfill: kayıt anında embed edilemeyen memory/chunk'ları (Gemini
-      // hatası/aş kesintisi) tamamlar. Eksik yoksa no-op; hata olursa bir sonraki
+      // hatası/ağ kesintisi) tamamlar. Eksik yoksa no-op; hata olursa bir sonraki
       // tur tekrar dener. Worker (reindex job) ile aynı tabloları paylaşır — çakışma
       // değil: ikisi de idempotent DELETE+INSERT (en son yazan kazanır).
       void backfillMissingEmbeddings()

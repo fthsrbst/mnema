@@ -1,6 +1,6 @@
 /**
- * Embedding backfill: kayıt sırasında embedding başarısız olursa (Gemini hatası/aş
- * süresi kesintisi) vektör sonsuza dek eksik kalırdı — reindex elle tetiklenmezse
+ * Embedding backfill: kayıt sırasında embedding başarısız olursa (Gemini hatası/ağ
+ * kesintisi) vektör sonsuza dek eksik kalırdı — reindex elle tetiklenmezse
  * hiç tamamlanmazdı. Bu modül, eksik memory/chunk vektörlerini periyodik tamamlar:
  * sunucu başlangıcında bir kez + 6 saatlik bakım döngüsünde. Eksik yoksa no-op.
  *
@@ -25,7 +25,7 @@ export interface BackfillResult {
  * Vektör indeksinde eksik (ana tabloda var, *_vec'te yok) memory ve chunk'ları embed
  * eder. Limit uygulanır (≥1 ≤100). Eksik kayıt yoksa sessizce no-op döner.
  *
- * Eşzamanlılık: `reindex()` ile aynı anda çağrılırsa iki yazar также putMemoryVector/
+ * Eşzamanlılık: `reindex()` ile aynı anda çağrılırsa iki yazar da putMemoryVector/
  * putChunkVector (idempotent DELETE+INSERT) yapar — son yazan kazanır, hasar olmaz.
  */
 export async function backfillMissingEmbeddings(limit = 100): Promise<BackfillResult> {
