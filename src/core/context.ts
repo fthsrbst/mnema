@@ -253,9 +253,13 @@ function compactProject(project: ProjectMap | null): ContextProjectAuthority | n
   return {
     name: project.name,
     status: project.status,
-    summary: project.summary ? excerpt(project.summary, 600) : undefined,
-    current_focus: project.current_focus ? excerpt(project.current_focus, 800) : undefined,
-    next_steps: Array.isArray(project.next_steps) ? project.next_steps.slice(0, 5).map((item) => excerpt(item, 260)) : [],
+    // Bu blok HER baglam paketine giriyor; proje map'i insan okusun diye uzun yazilabilir
+    // ama buraya oldugu gibi tasinirsa varsayilan 1200 token'in buyuk kismini yer ve kanit
+    // bastirilir (olculdu: authority tek basina ~799 token, current_status sorgusunda 0 chunk).
+    // Sinirlar bilincli olarak dar: current_focus en degerli alan oldugu icin en genis payi alir.
+    summary: project.summary ? excerpt(project.summary, 400) : undefined,
+    current_focus: project.current_focus ? excerpt(project.current_focus, 500) : undefined,
+    next_steps: Array.isArray(project.next_steps) ? project.next_steps.slice(0, 4).map((item) => excerpt(item, 180)) : [],
     updated_at: project.updated_at,
     provenance: "project_map",
   };
@@ -347,24 +351,40 @@ function estimateTokens(bundle: Omit<ContextBundle, "budget">): number {
   return Math.ceil(JSON.stringify(bundle).length / 4);
 }
 
+/**
+ * Bütçeyi uygularken KANIT TABANI TAMAMEN BOŞALTILMAZ.
+ *
+ * Eski sıra önce bütün chunk'ları, sonra ilişkileri, sonra memory'leri atıyor; authority
+ * bloğuna ancak ondan sonra dokunuyordu. Proje map'i büyüdükçe (uzun summary/current_focus/
+ * next_steps) authority tek başına varsayılan 1200 token'ın ~800'ünü yiyor ve sorgu ne olursa
+ * olsun SIFIR kanıtla dönülüyordu — ölçüldü: current_status sorgusunda 0 chunk, tahmini 958.
+ *
+ * Yeni sıra: kanıt önce bir tabana kadar (1 chunk / 1 memory) inceltilir; hâlâ taşıyorsa
+ * authority kırpılır (önce next_steps, sonra oturum özeti, sonra proje metinleri); ancak
+ * bunlar da yetmezse son kanıt öğeleri feda edilir. Authority hâlâ önceliklidir — yalnız
+ * artık kanıtı tümüyle kurban etme yetkisi yok.
+ */
 function enforceBudget(
   base: Omit<ContextBundle, "budget">,
   maxTokens: number
 ): { bundle: Omit<ContextBundle, "budget">; estimated: number; truncated: boolean } {
   let estimated = estimateTokens(base);
   let truncated = false;
-  while (estimated > maxTokens && base.evidence.chunks.length > 0) {
-    base.evidence.chunks.pop();
-    truncated = true;
-    estimated = estimateTokens(base);
-  }
-  while (estimated > maxTokens && base.evidence.relations.length > 0) {
-    base.evidence.relations.pop();
-    truncated = true;
-    estimated = estimateTokens(base);
-  }
-  while (estimated > maxTokens && base.evidence.memories.length > 1) {
-    base.evidence.memories.pop();
+  const shrink = (fn: () => boolean): void => {
+    while (estimated > maxTokens && fn()) {
+      truncated = true;
+      estimated = estimateTokens(base);
+    }
+  };
+
+  // 1) Kanıtı tabana kadar incelt: chunk ve memory'den birer tane bırak.
+  shrink(() => (base.evidence.chunks.length > 1 ? Boolean(base.evidence.chunks.pop()) : false));
+  shrink(() => (base.evidence.relations.length > 0 ? Boolean(base.evidence.relations.pop()) : false));
+  shrink(() => (base.evidence.memories.length > 1 ? Boolean(base.evidence.memories.pop()) : false));
+
+  // 2) Hâlâ taşıyorsa authority'yi kırp — kanıt tabanını korumak için.
+  if (estimated > maxTokens && (base.authority.project?.next_steps.length ?? 0) > 2) {
+    base.authority.project!.next_steps = base.authority.project!.next_steps.slice(0, 2);
     truncated = true;
     estimated = estimateTokens(base);
   }
@@ -373,11 +393,26 @@ function enforceBudget(
     truncated = true;
     estimated = estimateTokens(base);
   }
-  if (estimated > maxTokens && base.authority.project?.next_steps.length) {
-    base.authority.project.next_steps = base.authority.project.next_steps.slice(0, 2);
+  if (estimated > maxTokens && base.authority.project?.current_focus) {
+    base.authority.project.current_focus = excerpt(base.authority.project.current_focus, 320);
     truncated = true;
     estimated = estimateTokens(base);
   }
+  if (estimated > maxTokens && base.authority.project?.summary) {
+    base.authority.project.summary = excerpt(base.authority.project.summary, 240);
+    truncated = true;
+    estimated = estimateTokens(base);
+  }
+  if (estimated > maxTokens && (base.authority.project?.next_steps.length ?? 0) > 0) {
+    base.authority.project!.next_steps = [];
+    truncated = true;
+    estimated = estimateTokens(base);
+  }
+
+  // 3) Authority da yetmediyse son kanıt öğeleri feda edilir.
+  shrink(() => (base.evidence.chunks.length > 0 ? Boolean(base.evidence.chunks.pop()) : false));
+  shrink(() => (base.evidence.memories.length > 0 ? Boolean(base.evidence.memories.pop()) : false));
+
   return { bundle: base, estimated, truncated };
 }
 

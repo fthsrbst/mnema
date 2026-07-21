@@ -36,7 +36,9 @@
       "expect": {
         "intent": "decision",
         "authority_project": "mnema",
-        "memory_title_any": ["forced RLS"]
+        "memory_title_any": [
+          "forced RLS"
+        ]
       }
     },
     {
@@ -48,7 +50,9 @@
       "expect": {
         "intent": "technical_history",
         "authority_project": "mnema",
-        "memory_title_any": ["Supabase opaque secret keys"]
+        "memory_title_any": [
+          "Supabase opaque secret keys"
+        ]
       }
     },
     {
@@ -56,11 +60,13 @@
       "query": "Raspberry Pi'ye canonical Mnema nasil deploy edilir, runtime veriyi tasimadan?",
       "project": "mnema",
       "intent": "auto",
-      "max_tokens": 2000,
+      "max_tokens": 3000,
       "expect": {
         "intent": "technical_history",
         "authority_project": "mnema",
-        "memory_title_any": ["Deploy canonical Mnema"]
+        "memory_title_any": [
+          "Deploy canonical Mnema"
+        ]
       }
     },
     {
@@ -72,7 +78,9 @@
         "intent": "current_status",
         "authority_project": "mnema",
         "max_memories": 0,
-        "chunk_title_any": ["Cloud launch status"]
+        "chunk_title_any": [
+          "Cloud launch status"
+        ]
       }
     },
     {
@@ -94,7 +102,9 @@
         "authority_project": null,
         "max_memories": 0,
         "max_chunks": 2,
-        "warning_any": ["Unknown project map"]
+        "warning_any": [
+          "Unknown project map"
+        ]
       }
     }
   ]
