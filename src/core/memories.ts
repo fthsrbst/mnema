@@ -146,6 +146,21 @@ export function getMemory(id: number): Memory | null {
   return row ? rowToMemory(row) : null;
 }
 
+/**
+ * Toplu id→Memory çözümü (N+1 önleme). is_current'a göre FİLTRELEMEZ — getMemory ile
+ * aynı davranış: çağıran taraf (örn. context.ts graf genişletmesi) bilinçli olarak
+ * supersede/invalidate edilmiş bir komşuyu da çekebilmeli.
+ */
+export function getMemoriesByIds(ids: number[]): Memory[] {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const placeholders = unique.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare(`SELECT * FROM memories WHERE id IN (${placeholders})`)
+    .all(...unique) as Record<string, unknown>[];
+  return rows.map(rowToMemory);
+}
+
 export async function updateMemory(id: number, patch: Partial<MemoryInput>): Promise<Memory | null> {
   patch = memoryPatchSchema.parse(patch);
   const existing = getMemory(id);
