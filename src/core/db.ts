@@ -449,19 +449,25 @@ export const SYNC_TABLES: {
   triggerRowKey: string;
   /** false ise AFTER UPDATE trigger'ı kurulmaz (insert-only tablolar). */
   update?: boolean;
+  /**
+   * true ise AFTER DELETE gözlem trigger'ı kurulur (ADR-005 silme invariantı).
+   * `deletions` tablosunun kendisine kurulmaz. Bu tablolarda `rowKey` DÜZ BİR KOLON
+   * olmak zorundadır — trigger gövdesinde `old.<rowKey>` olarak kullanılır.
+   */
+  deleteGuard?: boolean;
 }[] = [
-  { tbl: "memories", rowKey: "uid", triggerRowKey: "new.uid" },
-  { tbl: "documents", rowKey: "uid", triggerRowKey: "new.uid" },
-  { tbl: "memory_relations", rowKey: "uid", triggerRowKey: "new.uid" },
-  { tbl: "projects", rowKey: "name", triggerRowKey: "new.name" },
-  { tbl: "session_logs", rowKey: "uid", triggerRowKey: "new.uid" },
-  { tbl: "machines", rowKey: "name", triggerRowKey: "new.name" },
-  { tbl: "assets", rowKey: "uid", triggerRowKey: "new.uid" },
-  { tbl: "agent_presence", rowKey: "uid", triggerRowKey: "new.uid" },
-  { tbl: "tasks", rowKey: "uid", triggerRowKey: "new.uid" },
-  { tbl: "agent_capabilities", rowKey: "uid", triggerRowKey: "new.uid" },
+  { tbl: "memories", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  { tbl: "documents", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  { tbl: "memory_relations", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  { tbl: "projects", rowKey: "name", triggerRowKey: "new.name", deleteGuard: true },
+  { tbl: "session_logs", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  { tbl: "machines", rowKey: "name", triggerRowKey: "new.name", deleteGuard: true },
+  { tbl: "assets", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  { tbl: "agent_presence", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  { tbl: "tasks", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  { tbl: "agent_capabilities", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
   // agent_messages insert-only (ADR-005): read_at cihaz-yereldir, update trigger yok.
-  { tbl: "agent_messages", rowKey: "uid", triggerRowKey: "new.uid", update: false },
+  { tbl: "agent_messages", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true, update: false },
   // deletions PK birleşik (tbl, uid) — row_key tek başına uid olursa iki tablodaki
   // aynı uid çakışır, bu yüzden "tbl:uid" bileşik anahtar kullanılır.
   {
@@ -471,9 +477,33 @@ export const SYNC_TABLES: {
   },
 ];
 
+/**
+ * Silme GÖZLEM trigger'ı (ADR-005 silme invariantı).
+ *
+ * ADR "silmeler yalnız `deletions` tombstone'u üzerinden yayılır" diyor ama hiçbir şey
+ * bunu zorlamıyordu: doğrudan `DELETE FROM memories ...` çalıştıran biri tombstone
+ * bırakmaz, silme hiçbir peer'a ulaşmaz ve sessiz ıraksama olur.
+ *
+ * Trigger burada tombstone'u KONTROL EDEMEZ: `recordDeletion` DELETE'ten SONRA çağrılıyor
+ * (bkz. memories.ts deleteMemory), yani "tombstone yok" koşulu her normal silmede de
+ * doğru olurdu ve uyarı sürekli yanlış alarm verirdi. Bu yüzden trigger yalnızca OLAYI
+ * kaydeder; tombstone ile uzlaştırma sonradan reconcileDeleteObservations() ile yapılır.
+ */
+function installDeleteGuardTrigger(database: Database.Database, tbl: string, rowKey: string): void {
+  database.exec(`
+    CREATE TRIGGER IF NOT EXISTS ${tbl}_del_observe AFTER DELETE ON ${tbl} BEGIN
+      INSERT INTO hub_events(type, payload) VALUES (
+        'sync.delete_observed',
+        json_object('tbl', '${tbl}', 'row_key', old.${rowKey})
+      );
+    END;
+  `);
+}
+
 function installChangeTriggers(database: Database.Database): void {
   for (const t of SYNC_TABLES) {
     installChangeTrigger(database, t.tbl, t.triggerRowKey, { update: t.update });
+    if (t.deleteGuard) installDeleteGuardTrigger(database, t.tbl, t.rowKey);
   }
 }
 
