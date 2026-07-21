@@ -382,7 +382,69 @@ CREATE TABLE IF NOT EXISTS hub_events(
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_hub_events_type ON hub_events(type, created_at);
+
+-- Sync delivery watermark: central monotonic change log fed by triggers (ADR-005).
+-- AUTOINCREMENT zorunlu — düz INTEGER PRIMARY KEY silinen en yüksek rowid'yi geri kullanır,
+-- prune sonrası seq monotonluğu bozulur ve geç watermark'lı peer kaçırdığı satırı tekrar kaçırır.
+CREATE TABLE IF NOT EXISTS change_log(
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  tbl        TEXT NOT NULL,
+  row_key    TEXT NOT NULL,
+  changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_change_log_key ON change_log(tbl, row_key);
 `;
+
+/**
+ * Bir tablo için change_log trigger'ları kurar. ADR-005: toplu/tekrarlı yazım patikalarını
+ * bypass edememesi için trigger tabanlı teslimat. `{ update: false }` insert-only
+ * tablolar için AFTER UPDATE trigger'ını kurmaz (örn. agent_messages — apply yolunda
+ * `if (exists) continue` ile es geçilir, read_at cihaz-yereldir).
+ */
+function installChangeTrigger(
+  database: Database.Database,
+  tbl: string,
+  rowKeyExpr: string,
+  opts: { update?: boolean } = {}
+): void {
+  const update = opts.update ?? true;
+  database.exec(`
+    CREATE TRIGGER IF NOT EXISTS ${tbl}_chg_ai AFTER INSERT ON ${tbl} BEGIN
+      INSERT INTO change_log(tbl, row_key) VALUES ('${tbl}', ${rowKeyExpr});
+    END;
+  `);
+  if (update) {
+    database.exec(`
+      CREATE TRIGGER IF NOT EXISTS ${tbl}_chg_au AFTER UPDATE ON ${tbl} BEGIN
+        INSERT INTO change_log(tbl, row_key) VALUES ('${tbl}', ${rowKeyExpr});
+      END;
+    `);
+  }
+}
+
+/**
+ * Senkronize edilen tüm tablolar için change_log trigger'larını kurar. migrate()'in EN SON
+ * adımıdır — önce çalışacak veri migration'ları (özellikle migrateDeletionPrimaryKey içindeki
+ * `INSERT OR REPLACE INTO deletions`) trigger'lardan önce gelmeli; yoksa her tarihsel
+ * tombstone change_log'a düşer ve tüm peer'lara yeniden yayınlanır (ADR-005).
+ */
+function installChangeTriggers(database: Database.Database): void {
+  installChangeTrigger(database, "memories", "new.uid");
+  installChangeTrigger(database, "documents", "new.uid");
+  installChangeTrigger(database, "memory_relations", "new.uid");
+  installChangeTrigger(database, "projects", "new.name");
+  installChangeTrigger(database, "session_logs", "new.uid");
+  installChangeTrigger(database, "machines", "new.name");
+  installChangeTrigger(database, "assets", "new.uid");
+  installChangeTrigger(database, "agent_presence", "new.uid");
+  installChangeTrigger(database, "tasks", "new.uid");
+  installChangeTrigger(database, "agent_capabilities", "new.uid");
+  // agent_messages insert-only (ADR-005): read_at cihaz-yereldir, update trigger yok.
+  installChangeTrigger(database, "agent_messages", "new.uid", { update: false });
+  // deletions PK birleşik (tbl, uid) — row_key tek başına uid olursa iki tablodaki
+  // aynı uid çakışır, bu yüzden "tbl:uid" bileşik anahtar kullanılır.
+  installChangeTrigger(database, "deletions", "new.tbl || ':' || new.uid");
+}
 
 /** Var olan DB'lere eşitleme kolonlarını ekler (uid, updated_at) ve backfill yapar. */
 function migrate(database: Database.Database): void {
@@ -476,6 +538,11 @@ function migrate(database: Database.Database): void {
   `);
   migrateSyncStatePeers(database);
   migrateDeletionPrimaryKey(database);
+  // En son: change_log trigger'ları. Önceki veri migration'ları (özellikle
+  // migrateDeletionPrimaryKey tarihsel tombstone'ları yeniden yazar) trigger'lardan
+  // önce çalışmalı; yoksa her tarihsel tombstone change_log'a düşer ve tüm peer'lara
+  // rebroadcast olur (ADR-005).
+  installChangeTriggers(database);
 }
 
 function migrateLegacyRelations(database: Database.Database): void {

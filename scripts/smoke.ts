@@ -74,6 +74,9 @@ function check(name: string, cond: boolean, detail?: string) {
   console.log(`${cond ? "OK  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
   if (!cond) failed++;
 }
+function lowerHex32(): string {
+  return Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+}
 
 const mem = await saveMemory({
   type: "decision",
@@ -1114,6 +1117,69 @@ check(
   "emitHubEvent -> getEventLogDb: kalıcı event log'a yazılır",
   dbEvents.some((e: { payload?: { task_uid?: string } }) => e.payload?.task_uid === dbEventMarker)
 );
+
+// --- ADR-005 step 1: change_log trigger altyapısı ---
+//
+// collectChanges/applyChanges Bu adımda dokunulmadı; doğrudan DB'ye yazarak trigger
+// davranışını doğruluyoruz.
+{
+  const db = getDb();
+  const now = "strftime('%Y-%m-%d %H:%M:%f','now')";
+  const sampleUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO memories(uid, type, title, body, project, tags, source, created_at, updated_at)
+     VALUES (?, 'fact', 'change_log insert', 'body', 'ai-hub', '[]', 'smoke-changelog', ${now}, ${now})`
+  ).run(sampleUid);
+  const afterInsert = db
+    .prepare("SELECT seq FROM change_log WHERE tbl = 'memories' AND row_key = ? ORDER BY seq")
+    .all(sampleUid) as { seq: number }[];
+  check(
+    "change_log: memories INSERT → satır oluşur",
+    afterInsert.length === 1,
+    `rows=${afterInsert.length}, uid=${sampleUid}`
+  );
+
+  db.prepare(`UPDATE memories SET body = 'updated body', updated_at = ${now} WHERE uid = ?`).run(sampleUid);
+  const afterUpdate = db
+    .prepare("SELECT seq FROM change_log WHERE tbl = 'memories' AND row_key = ? ORDER BY seq")
+    .all(sampleUid) as { seq: number }[];
+  check(
+    "change_log: memories UPDATE → ikinci satır, seq birinciden büyük",
+    afterUpdate.length === 2 && afterUpdate[1].seq > afterUpdate[0].seq,
+    `seqs=[${afterUpdate.map((r) => r.seq).join(",")}]`
+  );
+
+  const msgUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO agent_messages(uid, from_agent, to_agent, project, kind, subject, body, payload, created_at)
+     VALUES (?, 'smoke', 'smoke', 'ai-hub', 'info', 'change_log msg', 'body', '{}', ${now})`
+  ).run(msgUid);
+  const msgAfterInsert = db
+    .prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl = 'agent_messages' AND row_key = ?")
+    .get(msgUid) as { n: number };
+  db.prepare(`UPDATE agent_messages SET body = 'updated body' WHERE uid = ?`).run(msgUid);
+  const msgAfterUpdate = db
+    .prepare("SELECT COUNT(*) AS n FROM change_log WHERE tbl = 'agent_messages' AND row_key = ?")
+    .get(msgUid) as { n: number };
+  check(
+    "change_log: agent_messages insert-only (UPDATE trigger yok)",
+    msgAfterInsert.n === 1 && msgAfterUpdate.n === 1,
+    `after_insert=${msgAfterInsert.n}, after_update=${msgAfterUpdate.n}`
+  );
+
+  const delUid = lowerHex32();
+  db.prepare(
+    `INSERT INTO deletions(uid, tbl, deleted_at) VALUES (?, 'memories', ${now}), (?, 'documents', ${now})`
+  ).run(delUid, delUid);
+  const delRows = db
+    .prepare("SELECT row_key FROM change_log WHERE tbl = 'deletions' AND row_key LIKE ?")
+    .all(`%:${delUid}`) as { row_key: string }[];
+  check(
+    "change_log: deletions birleşik row_key (tbl:uid) çakışmaz",
+    delRows.length === 2 && delRows.some((r) => r.row_key === `memories:${delUid}`) && delRows.some((r) => r.row_key === `documents:${delUid}`),
+    `rows=[${delRows.map((r) => r.row_key).join(",")}]`
+  );
+}
 
 closeDb();
 fs.rmSync(process.env.HUB_DB_PATH!, { force: true });
