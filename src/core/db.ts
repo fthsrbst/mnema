@@ -424,6 +424,11 @@ function migrate(database: Database.Database): void {
   addColumn("memories", "language", "language TEXT");
   addColumn("memories", "canonical_summary", "canonical_summary TEXT");
   addColumn("memories", "normalizer_generation", "normalizer_generation TEXT");
+  // Machine attribution: hangi cihazdan yazıldığı (presence/capabilities'ta resolveMachineName()
+  // ile aynı kaynak). Sync'ten gelen satırlarda mevcut değer korunur, yeni yerel kayıtlarda
+  // resolveMachineName() ile otomatik damgalanır.
+  addColumn("memories", "origin_machine", "origin_machine TEXT");
+  addColumn("session_logs", "origin_machine", "origin_machine TEXT");
   // Retrieval feedback was memory-only in the first release. Keep memory_id for
   // compatibility, but use target_kind/target_id for memory, chunk, document,
   // or whole-context feedback and retain the delivered ranking evidence.

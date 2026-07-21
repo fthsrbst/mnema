@@ -3,10 +3,10 @@
  * Agents register their capabilities (code_review, testing, deploy, etc.) and
  * can be found by capability for task routing.
  */
-import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { getDb, NOW_MS } from "./db.js";
 import { config } from "./config.js";
+import { resolveMachineName } from "./machine.js";
 import { notifyWrite } from "./events.js";
 import { emitHubEvent } from "./events-bus.js";
 import { recordDeletion } from "./sync.js";
@@ -38,7 +38,7 @@ function capabilityRowByAgentMachine(agent: string, machine: string | null): Age
 /** Register or update an agent's capabilities. */
 export function registerAgent(input: AgentCapabilityInput): AgentCapability {
   const db = getDb();
-  const machine = input.machine?.trim() || os.hostname();
+  const machine = input.machine?.trim() || resolveMachineName();
   const existing = capabilityRowByAgentMachine(input.agent, machine);
 
   if (existing) {

@@ -347,7 +347,7 @@ export function buildRestRouter(): Router {
   r.post("/sessions", wrap((req, res) =>
     res.json((() => {
       const input = sessionInputSchema.parse(req.body);
-      return addSessionLog(input.summary, input.project, input.source);
+      return addSessionLog(input.summary, input.project, input.source, input.origin_machine);
     })())
   ));
   r.get("/sessions", wrap((req, res) => {

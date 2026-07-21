@@ -590,8 +590,8 @@ export function buildMcpServer(): McpServer {
         "Oturum sonunda ne yapıldığını kaydeder: bitirilenler, yarım kalanlar, sıradaki adım. Bir sonraki oturum (hangi cihazda olursa olsun) buradan devam eder. Proje odağı değiştiyse project_update ile current_focus/next_steps'i de güncelle — bayat map bir sonraki agent'ı yanlış yönlendirir.",
       inputSchema: sessionInputSchema.shape,
     },
-    async ({ summary, project, source }) => {
-      const log = addSessionLog(summary, project, source);
+    async ({ summary, project, source, origin_machine }) => {
+      const log = addSessionLog(summary, project, source, origin_machine);
       if (project && !getProject(project)) {
         return json({
           ...log,

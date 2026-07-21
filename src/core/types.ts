@@ -17,6 +17,9 @@ export interface Memory {
   access_count: number;
   /** Bağlantılı hafızaların uid'leri (id değil — id'ler cihaz-yerel, uid sync'te sabit). */
   related: string[];
+  /** Kaydın ilk yazıldığı cihaz (resolveMachineName() ile damgalanır). Yerel oluşturma sırasında damgalanır;
+   *  sync'ten pull edilen satırda karşı tarafın verdiği değer korunur. */
+  origin_machine: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +41,9 @@ export interface MemoryInput {
   importance?: number;
   /** Bağlantılı hafıza id'leri (yerel) — uid'e çevrilerek saklanır; bilinmeyen id sessizce atlanır. */
   related_ids?: number[];
+  /** Hangi cihazdan yazıldığı. Verilmezse resolveMachineName() ile damgalanır. Sync'ten pull edilen
+   *  kayıtlarda bu alan yutulmaz (karşı tarafın değeri korunur). */
+  origin_machine?: string | null;
 }
 
 /** Bağlantılı hafızanın yerel çözümü (uid → bu cihazdaki id + başlık). */
@@ -211,6 +217,8 @@ export interface SessionLog {
   project: string | null;
   summary: string;
   source: string | null;
+  /** Hangi cihazdan yazıldığı (resolveMachineName() ile damgalanır). */
+  origin_machine: string | null;
   created_at: string;
   updated_at: string;
 }

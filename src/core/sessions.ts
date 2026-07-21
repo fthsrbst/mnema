@@ -2,19 +2,37 @@ import { randomUUID } from "node:crypto";
 import { getDb, NOW_MS } from "./db.js";
 import { notifyWrite } from "./events.js";
 import { recordDeletion } from "./sync.js";
+import { resolveMachineName } from "./machine.js";
 import type { SessionLog } from "./types.js";
 import { assertProjectReference } from "./projects.js";
 import { sessionInputSchema } from "./schemas.js";
 
-export function addSessionLog(summary: string, project?: string, source?: string): SessionLog {
-  ({ summary, project, source } = sessionInputSchema.parse({ summary, project, source }));
-  assertProjectReference(project, "session");
+export function addSessionLog(
+  summary: string,
+  project?: string,
+  source?: string,
+  originMachineOverride?: string
+): SessionLog {
+  const parsed = sessionInputSchema.parse({
+    summary,
+    project,
+    source,
+    origin_machine: originMachineOverride,
+  });
+  assertProjectReference(parsed.project, "session");
+  const origin_machine = parsed.origin_machine ?? resolveMachineName();
   const info = getDb()
     .prepare(
-      `INSERT INTO session_logs(uid, project, summary, source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ${NOW_MS}, ${NOW_MS})`
+      `INSERT INTO session_logs(uid, project, summary, source, origin_machine, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ${NOW_MS}, ${NOW_MS})`
     )
-    .run(randomUUID().replaceAll("-", ""), project ?? null, summary, source ?? null);
+    .run(
+      randomUUID().replaceAll("-", ""),
+      parsed.project ?? null,
+      parsed.summary,
+      parsed.source ?? null,
+      origin_machine
+    );
   const log = getDb()
     .prepare("SELECT * FROM session_logs WHERE id = ?")
     .get(Number(info.lastInsertRowid)) as SessionLog;

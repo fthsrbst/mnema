@@ -52,6 +52,7 @@ export interface SyncMemory {
   updated_at: string;
   importance?: number; // eski peer göndermezse 1.0 varsayılır
   related?: string; // JSON uid listesi; eski peer göndermezse '[]'
+  origin_machine?: string | null; // cihaz etiketi; eski peer göndermezse yerel değer korunur
   embedding?: string; // base64 float32
 }
 
@@ -116,7 +117,7 @@ export interface SyncPayload {
     updated_at: string;
   }[];
   projects: { name: string; data: string; updated_at: string }[];
-  sessions: { uid: string; project: string | null; summary: string; source: string | null; created_at: string; updated_at?: string }[];
+  sessions: { uid: string; project: string | null; summary: string; source: string | null; origin_machine?: string | null; created_at: string; updated_at?: string }[];
   machines: { name: string; host: string; lmstudio_port: number | null; ollama_port?: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }[];
   /** Eski peer'lar bu alanı hiç göndermez (bkz. applyChangesUnsafe: yokluğu boş dizi sayılır). */
   assets?: { uid: string; kind: "skill" | "prompt"; name: string; content: string; created_at: string; updated_at: string }[];
@@ -207,6 +208,7 @@ export function collectChanges(since: string): SyncPayload {
     normalizer_generation: m.normalizer_generation ?? null,
     importance: m.importance ?? 1.0,
     related: m.related ?? "[]",
+    origin_machine: m.origin_machine ?? null,
     // last_accessed/access_count kasıtlı olarak taşınmaz — cihaz-yerel istatistik
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
@@ -241,7 +243,7 @@ export function collectChanges(since: string): SyncPayload {
       .all(since) as NonNullable<SyncPayload["relations"]>,
     projects: db.prepare("SELECT name, data, updated_at FROM projects WHERE updated_at >= ?").all(since) as SyncPayload["projects"],
     sessions: db
-      .prepare("SELECT uid, project, summary, source, created_at, updated_at FROM session_logs WHERE updated_at >= ?")
+      .prepare("SELECT uid, project, summary, source, origin_machine, created_at, updated_at FROM session_logs WHERE updated_at >= ?")
       .all(since) as SyncPayload["sessions"],
     machines: db.prepare("SELECT name, host, lmstudio_port, ollama_port, comfyui_port, notes, updated_at FROM machines WHERE updated_at >= ?").all(since) as SyncPayload["machines"],
     assets: db
@@ -326,7 +328,7 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
   const acceptVectors = generationMatches && vectorStore.ready();
 
   for (const raw of payload.memories ?? []) {
-    // eski peer importance/related göndermezse varsayılanla doldur
+    // eski peer importance/related/origin_machine göndermezse varsayılanla doldur
     const m = {
       ...raw,
       importance: raw.importance ?? 1.0,
@@ -334,6 +336,8 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       language: raw.language ?? null,
       canonical_summary: raw.canonical_summary ?? null,
       normalizer_generation: raw.normalizer_generation ?? null,
+      // origin_machine alanı eski peer'dan gelmeyebilir → INSERT'te null, UPDATE'te yerel korunur
+      origin_machine: raw.origin_machine ?? null,
     };
     // Bu uid bizde daha yeni silinmişse alma
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memories' AND uid = ?").get(m.uid) as { deleted_at: string } | undefined;
@@ -353,7 +357,8 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
         `UPDATE memories SET type=@type, title=@title, body=@body, project=@project, tags=@tags,
          source=@source, language=@language, canonical_summary=@canonical_summary,
          normalizer_generation=@normalizer_generation, importance=@importance,
-         related=@related, updated_at=@updated_at WHERE uid=@uid`
+         related=@related, origin_machine=COALESCE(@origin_machine, origin_machine),
+         updated_at=@updated_at WHERE uid=@uid`
       ).run(m);
       if (acceptVectors) insertMemoryVec(local.id, m.project, m.embedding);
       else if (m.embedding) result.vectors_skipped!++;
@@ -361,10 +366,10 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       const info = db.prepare(
         `INSERT INTO memories(
            uid, type, title, body, project, tags, source, language, canonical_summary,
-           normalizer_generation, importance, related, created_at, updated_at
+           normalizer_generation, importance, related, origin_machine, created_at, updated_at
          ) VALUES (
            @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
-           @normalizer_generation, @importance, @related, @created_at, @updated_at
+           @normalizer_generation, @importance, @related, @origin_machine, @created_at, @updated_at
          )`
       ).run(m);
       if (acceptVectors) insertMemoryVec(Number(info.lastInsertRowid), m.project, m.embedding);
@@ -503,7 +508,7 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
   }
 
   for (const s of payload.sessions ?? []) {
-    const session = { ...s, updated_at: s.updated_at ?? s.created_at };
+    const session = { ...s, updated_at: s.updated_at ?? s.created_at, origin_machine: s.origin_machine ?? null };
     const tomb = db.prepare("SELECT 1 FROM deletions WHERE tbl = 'session_logs' AND uid = ?").get(s.uid);
     if (tomb) continue; // silinmiş oturum logu geri dirilmesin
     const local = db.prepare("SELECT project, summary, source, created_at, updated_at FROM session_logs WHERE uid = ?").get(s.uid) as
@@ -515,12 +520,13 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       if (!remoteWins(local.updated_at, session.updated_at, () => fp(local), () => fp(session))) continue;
       db.prepare(
         `UPDATE session_logs SET project=@project, summary=@summary, source=@source,
+         origin_machine=COALESCE(@origin_machine, origin_machine),
          created_at=@created_at, updated_at=@updated_at WHERE uid=@uid`
       ).run(session);
     } else {
       db.prepare(
-        `INSERT INTO session_logs(uid, project, summary, source, created_at, updated_at)
-         VALUES (@uid, @project, @summary, @source, @created_at, @updated_at)`
+        `INSERT INTO session_logs(uid, project, summary, source, origin_machine, created_at, updated_at)
+         VALUES (@uid, @project, @summary, @source, @origin_machine, @created_at, @updated_at)`
       ).run(session);
     }
     result.sessions++;

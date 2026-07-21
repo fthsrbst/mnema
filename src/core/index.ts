@@ -46,3 +46,5 @@ export * from "./webhooks.js";
 export * from "./worker.js";
 export * from "./metrics.js";
 export * from "./logger.js";
+export { resolveMachineName } from "./machine.js";
+export { backfillMissingEmbeddings, type BackfillResult } from "./backfill.js";
