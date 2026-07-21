@@ -3,7 +3,7 @@ import { getProject, resolveProjectFromPath } from "./projects.js";
 import { recentSessionLogs } from "./sessions.js";
 import { recordMemoryAccess, searchMemories } from "./memories.js";
 import { searchChunks } from "./documents.js";
-import { listMemoryRelations } from "./relations.js";
+import { listMemoryRelationsForUids } from "./relations.js";
 import type { MemoryRelationType, MemoryType, ProjectMap, ScoredChunk, ScoredMemory, SessionLog } from "./types.js";
 import { contextGetSchema } from "./schemas.js";
 
@@ -417,14 +417,15 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
   ]);
   const diverseChunks = diversifyChunks(chunks, chunkLimit);
   const selectedMemoryIds = new Set(memories.map((memory) => memory.id));
-  const relationMap = new Map<string, ReturnType<typeof listMemoryRelations>[number]>();
-  for (const memory of memories) {
-    for (const relation of listMemoryRelations({ memory_id: memory.id, active_at: generatedAt, limit: 12 })) {
-      // Keep the bundle compact: a relation must connect two delivered memories.
-      // One-hop expansion is left to memory_relation_list to avoid semantic drift.
-      if (selectedMemoryIds.has(relation.from_id) && selectedMemoryIds.has(relation.to_id)) {
-        relationMap.set(relation.id, relation);
-      }
+  const relationMap = new Map<string, ReturnType<typeof listMemoryRelationsForUids>[number]>();
+  // Tek toplu sorgu (N+1 önleme): teslim edilen tüm memory'lerin ilişkileri bir
+  // seferde çekilir, yalnızca iki ucu da teslim edilmiş olanlar tutulur (JS filtresi).
+  const deliveredUids = memories.map((memory) => memory.uid);
+  for (const relation of listMemoryRelationsForUids(deliveredUids, { active_at: generatedAt, limit: 500 })) {
+    // Keep the bundle compact: a relation must connect two delivered memories.
+    // One-hop expansion is left to memory_relation_list to avoid semantic drift.
+    if (selectedMemoryIds.has(relation.from_id) && selectedMemoryIds.has(relation.to_id)) {
+      relationMap.set(relation.id, relation);
     }
   }
 
