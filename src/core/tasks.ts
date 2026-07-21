@@ -195,10 +195,32 @@ export function listTasks(filter: TaskFilter = {}): Task[] {
   return rows.map(rowToTask);
 }
 
-/** Get the next actionable tasks for a project (pending, dependencies met, ordered by priority). */
+/**
+ * Get the next actionable tasks for a project (pending, dependencies met, ordered by priority).
+ * Tek sorgu (N+1 önleme): her pending görev için ayrı dependenciesMet() COUNT'u yerine,
+ * bağımlılıkları henüz done/cancelled olmamış herhangi bir görevi bulunan pending
+ * görevler NOT EXISTS ile tek seferde elenir. bridge() bunu her oturum başında
+ * çağırdığından (100 pending görev = 100 sorgu idi) etki büyük.
+ */
 export function taskQueue(project?: string, limit = 10): Task[] {
-  const pending = listTasks({ project, status: "pending", limit: 100 });
-  return pending.filter((task) => dependenciesMet(task.depends_on)).slice(0, limit);
+  const db = getDb();
+  const conditions = ["t.status = 'pending'"];
+  const params: unknown[] = [];
+  if (project) {
+    conditions.push("t.project = ?");
+    params.push(project);
+  }
+  conditions.push(`NOT EXISTS (
+    SELECT 1 FROM json_each(t.depends_on) d
+    JOIN tasks dep ON dep.uid = d.value
+    WHERE dep.status NOT IN ('done', 'cancelled')
+  )`);
+  const rows = db
+    .prepare(
+      `SELECT * FROM tasks t WHERE ${conditions.join(" AND ")} ORDER BY t.priority DESC, t.created_at DESC LIMIT ?`
+    )
+    .all(...params, Math.max(limit, 0)) as Record<string, unknown>[];
+  return rows.map(rowToTask);
 }
 
 /** Get tasks claimed by a specific agent. */

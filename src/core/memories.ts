@@ -309,6 +309,16 @@ function parseSqliteUtc(ts: string): number {
 /**
  * Record evidence that was actually delivered to an agent. Candidate searches do
  * not call this: access_count represents injected/returned context, not ranking work.
+ *
+ * GÜVENİLMEZLİK UYARISI: Bu fonksiyon hem recall() (recall.ts) hem contextGet()
+ * (context.ts) tarafından çağrılır. Bir agent aynı mesaj için ikisini de tetiklerse
+ * (örn. önce context_get sonra recall, ya da tersi) access_count aynı "tek" erişim
+ * için iki kez artar — istek/mesaj kimliği taşınmadığı için idempotent yapılamıyor.
+ * Bu yüzden access_count'u KARAR VERMEDE (arşivleme, skorlama, eşikleme) kullanma;
+ * yalnız kabaca "hiç mi erişildi" (== 0) gibi ikili sinyaller güvenli — tam sayısı
+ * değil. searchMemories()'teki skorlama (score * importance * decay) bilerek
+ * access_count kullanmaz; last_accessed + importance kullanır. hygiene.ts/findStale
+ * de aynı sebeple last_accessed kullanır, access_count değil.
  */
 export function recordMemoryAccess(ids: number[]): void {
   if (ids.length === 0) return;

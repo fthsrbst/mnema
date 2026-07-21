@@ -147,6 +147,32 @@ export function listMemoryRelations(opts: {
     .all(...params) as RelationRow[]).map(rowToRelation);
 }
 
+/**
+ * Toplu ilişki sorgusu: birden çok memory için TEK sorguda tüm ilişkileri döner
+ * (N+1 önleme — çağıran taraf hangi ilişkinin hangi memory'ye ait olduğunu
+ * from_uid/to_uid üzerinden kendisi ayıklar). from_uid/to_uid indeksli olduğundan
+ * IN listesi doğrudan indeksi kullanır.
+ */
+export function listMemoryRelationsForUids(
+  uids: string[],
+  opts: { active_at?: string; limit?: number } = {}
+): MemoryRelation[] {
+  if (uids.length === 0) return [];
+  const unique = [...new Set(uids)];
+  const placeholders = unique.map(() => "?").join(",");
+  const conditions: string[] = [`(r.from_uid IN (${placeholders}) OR r.to_uid IN (${placeholders}))`];
+  const params: unknown[] = [...unique, ...unique];
+  if (opts.active_at) {
+    conditions.push("(r.valid_from IS NULL OR r.valid_from <= ?)", "(r.valid_to IS NULL OR r.valid_to > ?)");
+    params.push(opts.active_at, opts.active_at);
+  }
+  const where = ` WHERE ${conditions.join(" AND ")}`;
+  params.push(Math.min(Math.max(opts.limit ?? 500, 1), 2000));
+  return (getDb()
+    .prepare(`${SELECT_RELATION}${where} ORDER BY r.updated_at DESC LIMIT ?`)
+    .all(...params) as RelationRow[]).map(rowToRelation);
+}
+
 export function updateMemoryRelation(
   uid: string,
   patch: {
