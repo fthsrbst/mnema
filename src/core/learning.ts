@@ -8,6 +8,7 @@ import { getDb, NOW_MS } from "./db.js";
 import { notifyWrite } from "./events.js";
 import { emitHubEvent } from "./events-bus.js";
 import { saveMemory, searchMemories } from "./memories.js";
+import { enqueueJob } from "./worker.js";
 import type { TaskFeedback, TaskFeedbackInput, TaskOutcome } from "./types.js";
 
 function rowToFeedback(row: Record<string, unknown>): TaskFeedback {
@@ -46,6 +47,17 @@ export function recordTaskFeedback(input: TaskFeedbackInput): TaskFeedback {
       source: input.agent ?? "learning-loop",
       importance: input.outcome === "failure" ? 1.5 : 1.0,
     });
+  }
+
+  // ADR-007: distill this task's trajectory into procedural-memory candidates. Runs
+  // async on the worker (local model, off the hot path) and needs a task uid to key
+  // the episode. Best-effort — never block or fail feedback recording on queueing.
+  if (input.task_uid) {
+    try {
+      enqueueJob("distill_episode", { task_uid: input.task_uid });
+    } catch {
+      /* queueing is advisory; feedback is already persisted */
+    }
   }
 
   return getTaskFeedback(uid)!;

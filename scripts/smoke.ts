@@ -70,6 +70,10 @@ const {
   admitCandidate,
   listLessonCandidates,
   revokeEpisode,
+  parseDistillerOutput,
+  assembleEpisode,
+  distillEpisode,
+  recordTaskFeedback,
   searchChunks,
   searchMemories,
   seedAssetsFromDisk,
@@ -1920,6 +1924,55 @@ check(
   // 8) held aday listede görünür (insan incelemesi için).
   const held = listLessonCandidates({ status: "held", project: "smoke-adr7" });
   check("ADR-007: held adaylar listelenebilir (insan incelemesi kuyruğu)", held.length === 2);
+}
+
+// ADR-007 faz 2: episode toplama + damıtıcı çıktı ayrıştırma + damıtma
+{
+  // parseDistillerOutput — model çıktısı güven sınırı (saf fonksiyon)
+  const valid = parseDistillerOutput('[{"kind":"recovery","situation":"X çöktü","guidance":"Y ile düzelt"}]');
+  check("ADR-007 faz2: geçerli JSON dizi → draft üretir",
+    valid.length === 1 && valid[0].kind === "recovery" && valid[0].situation === "X çöktü");
+
+  const fenced = parseDistillerOutput('```json\n[{"kind":"strategy","situation":"aaa","guidance":"bbb"}]\n```');
+  check("ADR-007 faz2: markdown fence içindeki JSON ayrıştırılır", fenced.length === 1 && fenced[0].kind === "strategy");
+
+  const prose = parseDistillerOutput("Bu bir ders değil, sadece serbest metin açıklaması.");
+  check("ADR-007 faz2: serbest metin → boş dizi (uydurma yok)", prose.length === 0);
+
+  const badKind = parseDistillerOutput('[{"kind":"bogus","situation":"aaa","guidance":"bbb"},{"kind":"strategy","situation":"ccc","guidance":"ddd"}]');
+  check("ADR-007 faz2: geçersiz kind düşürülür, geçerli kalır", badKind.length === 1 && badKind[0].kind === "strategy");
+
+  const missing = parseDistillerOutput('[{"kind":"strategy","situation":"yalnız durum var"}]');
+  check("ADR-007 faz2: eksik alan (guidance yok) düşürülür", missing.length === 0);
+
+  const capped = parseDistillerOutput(JSON.stringify(
+    Array.from({ length: 9 }, (_, i) => ({ kind: "strategy", situation: `s${i}aaa`, guidance: `g${i}bbb` }))
+  ));
+  check("ADR-007 faz2: aday sayısı 5 ile sınırlanır", capped.length === 5);
+
+  // assembleEpisode — mevcut satırlardan kaba iz + evidence
+  const epTask = createTask({ title: "Faz2 episode görevi", description: "Tailscale timeout ayıklandı", project: "smoke-adr7-p2", created_by: "smoke" });
+  recordTaskFeedback({ task_uid: epTask.uid, project: "smoke-adr7-p2", agent: "smoke", outcome: "success", what_worked: "LAN alias işe yaradı", lessons: "Tailscale takılırsa LAN alias'ına geç" });
+  const asm = assembleEpisode(epTask.uid);
+  check("ADR-007 faz2: assembleEpisode task+feedback'ten iz ve evidence kurar",
+    asm !== null && asm.episode_key === epTask.uid && asm.evidence_refs.includes(`task:${epTask.uid}`) &&
+    asm.evidence_refs.some((r: string) => r.startsWith("task_feedback:")) && asm.text.includes("LAN alias"),
+    `refs=${asm?.evidence_refs.length}`);
+
+  const asmNone = assembleEpisode("olmayan-task-uid-" + lowerHex32());
+  check("ADR-007 faz2: bilinmeyen episode → null", asmNone === null);
+
+  // recordTaskFeedback distill_episode job'unu kuyruğa atar (tetikleme kablolaması)
+  const queued = listJobs({ kind: "distill_episode" }).some((j: { payload: Record<string, unknown> }) => j.payload.task_uid === epTask.uid);
+  check("ADR-007 faz2: task feedback distill_episode job'unu kuyruğa atar", queued);
+
+  // distillEpisode — yerel model yoksa temiz geri düşer, çökmez, aday üretmez (smoke'ta makine kaydı yok)
+  const beforeCand = listLessonCandidates({ project: "smoke-adr7-p2" }).length;
+  const distilled = await distillEpisode(epTask.uid);
+  const afterCand = listLessonCandidates({ project: "smoke-adr7-p2" }).length;
+  check("ADR-007 faz2: yerel model yokken distillEpisode temiz geri düşer (çökmez, aday yok)",
+    distilled.skipped === "no_local_llm" && distilled.distilled === 0 && afterCand === beforeCand,
+    `skipped=${distilled.skipped}`);
 }
 
 

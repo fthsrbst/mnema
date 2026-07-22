@@ -520,7 +520,7 @@ export interface WebhookInput {
   secret?: string;
 }
 
-export type JobKind = "embed" | "compact" | "hygiene" | "webhook" | "webhook_test" | "sync" | "reindex" | "distill" | "custom";
+export type JobKind = "embed" | "compact" | "hygiene" | "webhook" | "webhook_test" | "sync" | "reindex" | "distill" | "distill_episode" | "custom";
 export type JobStatus = "queued" | "running" | "done" | "failed";
 
 /** SQLite-backed job queue item. */
