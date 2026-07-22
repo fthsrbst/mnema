@@ -9,6 +9,44 @@ import { toFtsQuery } from "./search.js";
 import { listMemoryRelations } from "./relations.js";
 import type { HygieneReport } from "./types.js";
 
+// Duplicate-pair gate: FTS/bm25 generates candidates, but on a domain-homogeneous
+// corpus (many notes sharing "mcp"/"hub"/"sync") bm25 alone massively over-reports.
+// We confirm each candidate pair with Jaccard overlap of the two titles' significant
+// tokens — a real near-duplicate restates the same thing, it doesn't merely share
+// vocabulary. Embedding-free so it still works in FTS-only mode.
+const DUP_TITLE_JACCARD_MIN = 0.5;
+const DUP_STOPWORDS = new Set([
+  "ve", "ile", "icin", "bir", "bu", "da", "de", "mi", "mu", "ya", "veya",
+  "the", "a", "an", "of", "to", "in", "on", "is", "are", "and", "or", "for",
+]);
+
+/** Türkçe aksanları katlar (context.foldTurkishAscii ile aynı ruh); bağımsız tutuldu. */
+function foldTr(s: string): string {
+  return s
+    .replace(/[İIı]/g, "i").replace(/[çÇ]/g, "c").replace(/[ğĞ]/g, "g")
+    .replace(/[öÖ]/g, "o").replace(/[şŞ]/g, "s").replace(/[üÜ]/g, "u")
+    .toLowerCase();
+}
+
+/** Başlığı anlamlı token kümesine indirger: aksan-katlanmış, kısa/stopword token'lar atılır. */
+function significantTokens(title: string): Set<string> {
+  const out = new Set<string>();
+  for (const tok of foldTr(title).split(/[^a-z0-9]+/)) {
+    if (tok.length < 3 || DUP_STOPWORDS.has(tok)) continue;
+    out.add(tok);
+  }
+  return out;
+}
+
+/** İki token kümesinin Jaccard benzerliği (kesişim/birleşim); ikisinden biri boşsa 0. */
+function titleJaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
 /**
  * Find potential duplicate memories. Synchronous and embedding-free (no
  * vectorStore dependency — must work in FTS-only mode too):
@@ -50,9 +88,15 @@ export function findDuplicates(project?: string): HygieneReport["duplicates"] {
     }
   }
 
-  // Pass 2: FTS near-duplicate scan over the newest 200 memories.
-  const memoryIds = new Set(
-    (db.prepare(`SELECT id FROM memories ${where}`).all(...params) as { id: number }[]).map((m) => m.id)
+  // Pass 2: FTS generates near-duplicate candidates over the newest 200 memories,
+  // then each pair is confirmed by title-token Jaccard overlap (see the helpers at
+  // the top of this file). bm25 alone flagged ~145 pairs on a 63-memory corpus —
+  // almost all false positives from shared technical vocabulary. The Jaccard gate
+  // keeps only pairs whose titles actually restate the same thing.
+  const titleById = new Map<number, string>(
+    (db.prepare(`SELECT id, title FROM memories ${where}`).all(...params) as { id: number; title: string }[]).map(
+      (m) => [m.id, m.title] as const
+    )
   );
   const newest = db
     .prepare(`SELECT id, title FROM memories ${where} ORDER BY id DESC LIMIT 200`)
@@ -60,6 +104,8 @@ export function findDuplicates(project?: string): HygieneReport["duplicates"] {
   for (const m of newest) {
     const fts = toFtsQuery(m.title);
     if (!fts) continue;
+    const mTokens = significantTokens(m.title);
+    if (mTokens.size === 0) continue;
     let rows: { rowid: number; rank: number }[];
     try {
       rows = db
@@ -73,14 +119,16 @@ export function findDuplicates(project?: string): HygieneReport["duplicates"] {
     }
     for (const r of rows) {
       if (r.rowid === m.id) continue;
-      if (project && !memoryIds.has(r.rowid)) continue; // FTS proje filtresi bilmiyor — burada uygula
+      const candTitle = titleById.get(r.rowid);
+      if (candTitle === undefined) continue; // FTS proje filtresini bilmez — kapsam dışıysa ele
       const key = [Math.min(m.id, r.rowid), Math.max(m.id, r.rowid)].join("-");
       if (seen.has(key)) continue;
-      // bm25() daha negatif = daha güçlü eşleşme; zayıf eşleşmeleri (rank çok küçük büyüklükte) ele.
-      if (r.rank > -4) continue;
+      // Precision gate: yalnızca AYNI şeyi tekrar eden başlıklar (yüksek Jaccard)
+      // duplicate sayılır; sadece ortak teknik kelime paylaşanlar (yanlış-pozitif) elenir.
+      const jaccard = titleJaccard(mTokens, significantTokens(candTitle));
+      if (jaccard < DUP_TITLE_JACCARD_MIN) continue;
       seen.add(key);
-      const distance = Math.min(1, Math.max(0, 1 + r.rank / 20)); // kabaca [0,1] aralığına sıkıştır
-      duplicates.push({ memory_id: m.id, title: m.title, similar_to: r.rowid, distance });
+      duplicates.push({ memory_id: m.id, title: m.title, similar_to: r.rowid, distance: Number((1 - jaccard).toFixed(2)) });
     }
   }
 
