@@ -326,6 +326,68 @@ export async function revokeEpisode(episodeKey: string, reason = "episode revoke
   return { candidates_deleted: del.changes, memories_invalidated: invalidated };
 }
 
+export interface CandidateStats {
+  pending: number;
+  held: number;
+  promoted: number;
+  rejected: number;
+}
+
+/** Candidate counts by status, optionally scoped to a project. For metrics/hygiene. */
+export function candidateStats(project?: string): CandidateStats {
+  const where = project ? "WHERE project = ?" : "";
+  const params = project ? [project] : [];
+  const rows = getDb()
+    .prepare(`SELECT status, COUNT(*) AS n FROM lesson_candidates ${where} GROUP BY status`)
+    .all(...params) as { status: CandidateStatus; n: number }[];
+  const stats: CandidateStats = { pending: 0, held: 0, promoted: 0, rejected: 0 };
+  for (const r of rows) stats[r.status] = r.n;
+  return stats;
+}
+
+/**
+ * Prune candidates that will never pay off: pending ones that never corroborated
+ * and rejected ones kept only briefly for audit, both older than maxAgeDays. HELD
+ * candidates are the human review queue and are never auto-pruned; PROMOTED ones
+ * are linked to memories and stay. Runs from the hygiene pass.
+ */
+export function pruneStaleCandidates(maxAgeDays = 14): number {
+  const del = getDb()
+    .prepare(
+      `DELETE FROM lesson_candidates
+        WHERE status IN ('pending','rejected')
+          AND created_at < strftime('%Y-%m-%d %H:%M:%f','now','-' || ? || ' days')`
+    )
+    .run(maxAgeDays);
+  if (del.changes > 0) notifyWrite();
+  return del.changes;
+}
+
+/**
+ * Human promotion of a HELD candidate (the sensitive class that never auto-promotes).
+ * The human vouches, so corroboration is bypassed and the howto memory is written
+ * directly. No-op unless the candidate is currently held.
+ */
+export async function promoteHeldCandidate(uid: string): Promise<AdmitResult | null> {
+  const c = getLessonCandidate(uid);
+  if (!c || c.status !== "held") return null;
+  const memory = await saveMemory({
+    type: "howto",
+    title: `${c.kind}: ${c.situation.slice(0, 80)}`,
+    body: `Durum: ${c.situation}\n\nRehber: ${c.guidance}`,
+    project: c.project ?? undefined,
+    tags: ["auto-lesson", "procedural", "human-approved", `kind-${c.kind}`, `episode-${c.episode_key.slice(0, 12)}`],
+    source: episodeSource(c.episode_key),
+    importance: c.kind === "recovery" ? 1.5 : 1.0,
+  });
+  getDb()
+    .prepare("UPDATE lesson_candidates SET status = 'promoted', promoted_memory_uid = ? WHERE uid = ?")
+    .run(memory.uid, uid);
+  notifyWrite();
+  emitHubEvent({ type: "feedback_recorded", payload: { candidate_uid: uid, reason: "human_promoted", memory_uid: memory.uid, project: c.project ?? null } });
+  return { status: "promoted", candidate_uid: uid, promoted_memory_uid: memory.uid, reason: "human_promoted" };
+}
+
 // ===========================================================================
 // Phase 2: episode assembly + distillation (wires the local model)
 // ===========================================================================

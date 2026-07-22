@@ -589,6 +589,8 @@ export interface MetricsSnapshot {
   agent_count: number;
   jobs: { queued: number; running: number; done: number; failed: number };
   coordination: CoordinationMetrics;
+  /** ADR-007 procedural-memory pipeline: candidate counts by status + promotion rate. */
+  procedural: { pending: number; held: number; promoted: number; rejected: number; promotion_rate: number };
 }
 
 /**

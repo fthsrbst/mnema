@@ -4,6 +4,7 @@
  */
 import { getDb } from "./db.js";
 import { jobStats } from "./worker.js";
+import { candidateStats } from "./procedural.js";
 import type { CoordinationMetrics, MetricsSnapshot } from "./types.js";
 
 interface Counter {
@@ -159,6 +160,16 @@ export function getMetricsSnapshot(): MetricsSnapshot {
   const jobs = jobStats();
   const coordination = coordinationStats();
 
+  // ADR-007: procedural-memory pipeline health. promotion_rate = promoted / (all
+  // candidates ever seen). A held backlog that only grows, or a promotion rate near
+  // zero, means the pipeline is producing noise no one acts on — a visible failure.
+  const cand = candidateStats();
+  const candidateTotal = cand.pending + cand.held + cand.promoted + cand.rejected;
+  const procedural = {
+    ...cand,
+    promotion_rate: candidateTotal > 0 ? Math.round((cand.promoted / candidateTotal) * 1000) / 1000 : 0,
+  };
+
   return {
     uptime_sec: Math.round((Date.now() - startTime) / 1000),
     requests_total: getCounter("http_requests_total").value,
@@ -175,6 +186,7 @@ export function getMetricsSnapshot(): MetricsSnapshot {
     agent_count: agentCount,
     jobs,
     coordination,
+    procedural,
   };
 }
 

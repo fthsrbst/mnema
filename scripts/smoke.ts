@@ -74,6 +74,11 @@ const {
   assembleEpisode,
   distillEpisode,
   recordTaskFeedback,
+  candidateStats,
+  pruneStaleCandidates,
+  promoteHeldCandidate,
+  getLessonCandidate,
+  runHygiene,
   searchChunks,
   searchMemories,
   seedAssetsFromDisk,
@@ -1973,6 +1978,55 @@ check(
   check("ADR-007 faz2: yerel model yokken distillEpisode temiz geri düşer (çökmez, aday yok)",
     distilled.skipped === "no_local_llm" && distilled.distilled === 0 && afterCand === beforeCand,
     `skipped=${distilled.skipped}`);
+}
+
+// ADR-007 faz 3: hijyen pruning + metrics + held onay
+{
+  const proj = "smoke-adr7-p3";
+  // Kurulum: pending (kanıtlı, tek bölüm), held (hassas), promoted (korroborasyon).
+  await admitCandidate({ kind: "strategy", situation: "p3 tek bölüm durum aaa", guidance: "p3 rehber bbb", project: proj, episode_key: "p3-ep-a", evidence_refs: ["audit:p1"] });
+  const heldRes = await admitCandidate({ kind: "strategy", situation: "sudo systemctl restart ile servis yenilendi", guidance: "sudo systemctl restart hub", project: proj, episode_key: "p3-ep-h", evidence_refs: ["audit:p2"] });
+  await admitCandidate({ kind: "recovery", situation: "p3 korrobe durum tailscale deploy timeout", guidance: "lan alias kullan", project: proj, episode_key: "p3-ep-c1", evidence_refs: ["audit:p3"] });
+  await admitCandidate({ kind: "recovery", situation: "p3 korrobe durum tailscale deploy timeout", guidance: "lan alias kullan", project: proj, episode_key: "p3-ep-c2", evidence_refs: ["audit:p4"] });
+
+  // candidateStats: durum sayaçları
+  const stats = candidateStats(proj);
+  check("ADR-007 faz3: candidateStats durum sayaçları doğru",
+    stats.pending === 1 && stats.held === 1 && stats.promoted === 2 && stats.rejected === 0,
+    `p=${stats.pending} h=${stats.held} pr=${stats.promoted} r=${stats.rejected}`);
+
+  // held onayı: insan vouch'u ile howto hafızası yazılır
+  const heldUid = heldRes.candidate_uid;
+  const promo = await promoteHeldCandidate(heldUid);
+  const heldNow = getLessonCandidate(heldUid);
+  check("ADR-007 faz3: promoteHeldCandidate held'i howto'ya terfi ettirir (insan onayı)",
+    promo !== null && promo.status === "promoted" && Boolean(promo.promoted_memory_uid) && heldNow?.status === "promoted",
+    `status=${promo?.status}`);
+
+  // held olmayan aday promoteHeldCandidate ile no-op
+  const noop = await promoteHeldCandidate("olmayan-uid-" + lowerHex32());
+  check("ADR-007 faz3: promoteHeldCandidate bilinmeyen/held-olmayan için no-op", noop === null);
+
+  // pruning: eski pending/rejected silinir, held/promoted kalır
+  getDb().prepare("UPDATE lesson_candidates SET created_at = strftime('%Y-%m-%d %H:%M:%f','now','-30 days') WHERE project = ?").run(proj);
+  const beforePrune = candidateStats(proj);
+  const pruned = pruneStaleCandidates(14);
+  const afterPrune = candidateStats(proj);
+  check("ADR-007 faz3: pruneStaleCandidates eski pending'i siler, promoted'ı korur",
+    pruned >= 1 && afterPrune.pending === 0 && afterPrune.promoted === beforePrune.promoted,
+    `pruned=${pruned}, pending ${beforePrune.pending}->${afterPrune.pending}, promoted korundu=${afterPrune.promoted === beforePrune.promoted}`);
+
+  // runHygiene aday sayaçlarını + pruning'i içerir
+  const hyg = runHygiene(proj);
+  check("ADR-007 faz3: runHygiene candidates_pruned + candidates döndürür",
+    typeof hyg.candidates_pruned === "number" && typeof hyg.candidates.promoted === "number");
+
+  // metrics snapshot procedural bloğu + promotion_rate
+  const snap = getMetricsSnapshot();
+  check("ADR-007 faz3: metrics_overview procedural bloğu taşır (promotion_rate dahil)",
+    snap.procedural !== undefined && typeof snap.procedural.promotion_rate === "number" &&
+    snap.procedural.promotion_rate >= 0 && snap.procedural.promotion_rate <= 1,
+    `rate=${snap.procedural?.promotion_rate}`);
 }
 
 

@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { notifyWrite } from "./events.js";
 import { toFtsQuery } from "./search.js";
 import { listMemoryRelations } from "./relations.js";
+import { pruneStaleCandidates, candidateStats } from "./procedural.js";
 import type { HygieneReport } from "./types.js";
 
 /**
@@ -212,6 +213,8 @@ export function runHygiene(project?: string): {
   report: HygieneReport;
   archived: number;
   orphans_cleaned: number;
+  candidates_pruned: number;
+  candidates: ReturnType<typeof candidateStats>;
 } {
   const report = hygieneReport(project);
 
@@ -224,7 +227,13 @@ export function runHygiene(project?: string): {
   // Clean up orphan relations
   const orphans_cleaned = cleanupOrphanRelations();
 
-  return { report, archived, orphans_cleaned };
+  // ADR-007: drop procedural-memory candidates that never paid off. Project scope
+  // is not applied to pruning — staleness is global and cheap; held candidates
+  // (the human queue) are never pruned. candidateStats surfaces the held count so
+  // hygiene_run readers see the review backlog.
+  const candidates_pruned = pruneStaleCandidates();
+
+  return { report, archived, orphans_cleaned, candidates_pruned, candidates: candidateStats(project) };
 }
 
 /** Get memory statistics for monitoring. */

@@ -89,6 +89,8 @@ import {
   createHandoff,
   hygieneReport,
   runHygiene,
+  listLessonCandidates,
+  promoteHeldCandidate,
   compactSessions,
   distillProject,
   recordTaskFeedback,
@@ -1074,6 +1076,37 @@ export function buildMcpServer(): McpServer {
       },
     },
     async ({ project }) => json(runHygiene(project))
+  );
+
+  server.registerTool(
+    "lesson_candidates_list",
+    {
+      title: "List procedural-memory candidates",
+      description:
+        "ADR-007: list distilled lesson candidates by status. 'held' is the human-review queue for sensitive candidates (credentials/commands) that never auto-promote; 'pending' awaits a second corroborating episode; 'promoted' became howto memories; 'rejected' failed the injection screen. Read-only.",
+      inputSchema: {
+        status: z.enum(["pending", "promoted", "rejected", "held"]).optional(),
+        project: z.string().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+    },
+    async ({ status, project, limit }) => json(listLessonCandidates({ status, project, limit }))
+  );
+
+  server.registerTool(
+    "candidate_promote",
+    {
+      title: "Human-approve a held lesson candidate",
+      description:
+        "ADR-007: promote a HELD candidate to a howto memory. Held candidates touch credentials, security config, or privileged commands and never auto-promote — this is the human vouch that writes the memory. No-op unless the candidate is currently held.",
+      inputSchema: {
+        uid: z.string().min(8),
+      },
+    },
+    async ({ uid }) => {
+      const result = await promoteHeldCandidate(uid);
+      return result ? json(result) : json({ ok: false, reason: "not found or not held" });
+    }
   );
 
   server.registerTool(

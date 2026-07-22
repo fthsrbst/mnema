@@ -5,6 +5,11 @@ each independently testable and shippable. Order is chosen so the security-
 critical, deterministic logic lands and is verified *before* the model is wired
 in.
 
+> **Status (2026-07-22):** Phases 1, 2, and 3 implemented on
+> `feat/adr-007-procedural-memory` with full smoke coverage (deterministic 5/5).
+> Live-model end-to-end distillation is verified separately; see the branch's
+> session logs. Not yet merged to master.
+
 ## Phase 1 — Candidate store + corroboration gate (deterministic, no model)
 
 The novel and security-critical part is the admission logic, and it is pure. It
