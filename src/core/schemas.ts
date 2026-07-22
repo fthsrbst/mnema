@@ -13,6 +13,8 @@ export const projectNameSchema = z
   });
 
 export const memoryTypeSchema = z.enum(["fact", "preference", "decision", "howto", "context"]);
+export const machineScopeSchema = z.enum(["global", "machine_dependent"]);
+export const machineStateStatusSchema = z.enum(["applied", "not_applied", "not_applicable"]);
 export const documentKindSchema = z.enum([
   "reference",
   "status",
@@ -64,6 +66,8 @@ export const memoryInputBaseSchema = z
     // ADR-006 faz 2: doğrulama yaşı (volatil iddialar için) — bkz. docs/adr/006.
     verified_at: z.string().trim().min(1).max(64).optional(),
     review_after: z.string().trim().min(1).max(64).optional(),
+    // Cihaz-farkındalığı: cihaza bağlı mı yoksa cihazdan bağımsız mı. Verilmezse NULL (global).
+    machine_scope: machineScopeSchema.nullable().optional(),
   })
   .strict();
 export const memoryInputSchema = memoryInputBaseSchema.refine(
@@ -88,6 +92,8 @@ export const memoryPatchBaseSchema = z
     // ADR-006 faz 2: null gönderilerek temizlenebilir (nullableTimestamp).
     verified_at: nullableTimestamp.optional(),
     review_after: nullableTimestamp.optional(),
+    // Cihaz-farkındalığı kapsamı güncellenebilir (machine_dependent ↔ global/null).
+    machine_scope: machineScopeSchema.nullable().optional(),
   })
   .strict();
 export const memoryPatchSchema = memoryPatchBaseSchema
@@ -154,6 +160,24 @@ export const memoryRevalidateBaseSchema = z
 export const memoryRevalidateSchema = memoryRevalidateBaseSchema.refine(
   (value) => value.id !== undefined || value.uid !== undefined,
   { message: "id or uid is required", path: ["id"] }
+);
+
+// Cihaz-farkındalığı: bir kaydın hangi cihazda uygulandığını işaretler (bkz. spec
+// docs/superpowers/specs/2026-07-21-...-design.md). memory_uid ZORUNLU — id cihaz-yereldir
+// ve deftere id yazmak satırı diğer cihazlarda yanlış kayda bağlar. MCP inputSchema Base
+// (refine'sız) sürümü kullanır; tam doğrulama (memory_uid şartı) çekirdek fonksiyonda.
+export const memoryMachineMarkBaseSchema = z
+  .object({
+    memory_uid: z.string().trim().min(1).max(200),
+    status: machineStateStatusSchema,
+    machine: z.string().trim().min(1).max(100).optional(),
+    note: z.string().trim().min(1).max(4000).optional(),
+    verified_by: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict();
+export const memoryMachineMarkSchema = memoryMachineMarkBaseSchema.refine(
+  (value) => value.memory_uid.length > 0,
+  { message: "memory_uid is required", path: ["memory_uid"] }
 );
 
 export const documentInputSchema = z
@@ -391,6 +415,7 @@ export const syncPayloadSchema = z.object({
     invalidated_reason: z.string().max(2000).nullable().optional(),
     verified_at: z.string().max(64).nullable().optional(),
     review_after: z.string().max(64).nullable().optional(),
+    machine_scope: machineScopeSchema.nullable().optional(),
     embedding: syncVector,
   }).strict()).max(100_000),
   documents: z.array(z.object({
@@ -519,11 +544,24 @@ export const syncPayloadSchema = z.object({
     read_at: syncTimestamp.nullable(),
     created_at: syncTimestamp,
   }).strict()).max(100_000).optional(),
+  // Cihaz-farkındalığı defteri — eski peer göndermezse yokluğu boş dizi sayılır
+  // (origin_machine/assets ile aynı COALESCE-vari desen: apply yerel satırları ezmez).
+  memory_machine_state: z.array(z.object({
+    uid: syncUid,
+    memory_uid: syncUid,
+    machine: z.string().min(1).max(100),
+    status: machineStateStatusSchema,
+    note: z.string().max(4000).nullable(),
+    verified_at: z.string().max(64).nullable(),
+    verified_by: z.string().max(100).nullable(),
+    updated_at: syncTimestamp,
+  }).strict()).max(100_000).optional(),
   deletions: z.array(z.object({
     uid: syncUid,
     tbl: z.enum([
       "memories", "documents", "memory_relations", "projects", "session_logs",
       "machines", "assets", "agent_presence", "tasks", "agent_capabilities", "agent_messages",
+      "memory_machine_state",
     ]),
     deleted_at: syncTimestamp,
   }).strict()).max(500_000),

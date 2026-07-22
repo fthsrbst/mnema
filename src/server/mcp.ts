@@ -47,6 +47,8 @@ import {
   type ProjectMap,
   type GraphNodeKind,
   migrateProjectReferences,
+  markMachineState,
+  memoryMachineMarkBaseSchema,
   verifyAuditChain,
   flushVectorOutbox,
   queueFullVectorProjection,
@@ -324,6 +326,20 @@ export function buildMcpServer(): McpServer {
     async (input) => {
       const result = await revalidateMemory(input);
       return result ? json(result) : json({ error: "hafıza kaydı bulunamadı" });
+    }
+  );
+
+  server.registerTool(
+    "memory_machine_mark",
+    {
+      title: "Hafıza kaydının cihaz durumunu işaretle",
+      description:
+        "Bir hafıza kaydının hangi cihazda UYGULANDI / UYGULANMADI / UYGULANABILIR DEĞIL olduğunu işaretler. memory_uid ZORUNLU (id cihaz-yereldir, deftere id yazmak satırı diğer cihazlarda yanlış kayda bağlar). machine verilmezse bu cihaz resolveMachineName() ile damgalanır (HUB_MACHINE_NAME). İlk işaret, kaydın machine_scope'unu machine_dependent yapar — cihaz bazında işaretlemek cihaza bağlılığının itirafıdır. Deterministik uid (sha256(memory_uid:machine)) sayesinde sync'te çakışmasız birleşir.",
+      inputSchema: memoryMachineMarkBaseSchema.shape,
+    },
+    async (input) => {
+      const state = markMachineState(input);
+      return json(state);
     }
   );
 

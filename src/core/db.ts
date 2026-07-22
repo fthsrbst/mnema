@@ -398,6 +398,25 @@ CREATE TABLE IF NOT EXISTS change_log(
   changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_change_log_key ON change_log(tbl, row_key);
+
+-- Hafızanın cihaz-farkındalığı: bir çözümün hangi cihazda uygulandığı/uygulanmadığı
+-- defteri (bkz. docs/superpowers/specs/2026-07-21-memory-machine-awareness-design.md).
+-- origin_machine provenans (nereye YAZILDI), bunu nereye UYGULANDI — ayrı boyut.
+-- uid deterministiktir (sha256(memory_uid:machine) ilk 32 hex) ki sync'te iki cihaz
+-- aynı (memory,machine) satırı için aynı uid üretsin ve LWW ile birleşsin.
+-- "unknown" satır YAZILMAZ — yokluk = bilinmiyor.
+CREATE TABLE IF NOT EXISTS memory_machine_state(
+  uid         TEXT PRIMARY KEY,
+  memory_uid  TEXT NOT NULL,
+  machine     TEXT NOT NULL,
+  status      TEXT NOT NULL CHECK(status IN ('applied','not_applied','not_applicable')),
+  note        TEXT,
+  verified_at TEXT,
+  verified_by TEXT,
+  updated_at  TEXT NOT NULL,
+  UNIQUE(memory_uid, machine)
+);
+CREATE INDEX IF NOT EXISTS idx_mms_memory ON memory_machine_state(memory_uid);
 `;
 
 /**
@@ -466,6 +485,8 @@ export const SYNC_TABLES: {
   { tbl: "agent_presence", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
   { tbl: "tasks", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
   { tbl: "agent_capabilities", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  // Cihaz-farkındalığı defteri — deterministik uid sayesinde sync'te çakışmasız birleşir.
+  { tbl: "memory_machine_state", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
   // agent_messages insert-only (ADR-005): read_at cihaz-yereldir, update trigger yok.
   { tbl: "agent_messages", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true, update: false },
   // deletions PK birleşik (tbl, uid) — row_key tek başına uid olursa iki tablodaki
@@ -595,6 +616,10 @@ function migrate(database: Database.Database): void {
   // yanlış olduğunu bilemez ama kimsenin kontrol etmediğini bilir, bunu söyleyebilir.
   addColumn("memories", "verified_at", "verified_at TEXT");
   addColumn("memories", "review_after", "review_after TEXT");
+  // Cihaz-farkındalığı: kaydın cihaza bağlı olup olmadığı. NULL/global = cihazdan
+  // bağımsız, hiç uyarı üretmez (geriye dönük uyumluluk: mevcut 58 kayıt etkilenmez).
+  // machine_dependent = okuma yolunda memory_machine_state defteri kontrol edilir.
+  addColumn("memories", "machine_scope", "machine_scope TEXT");
   // Retrieval feedback was memory-only in the first release. Keep memory_id for
   // compatibility, but use target_kind/target_id for memory, chunk, document,
   // or whole-context feedback and retain the delivered ranking evidence.
