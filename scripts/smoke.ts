@@ -1896,6 +1896,21 @@ check(
   check("ADR-007: kimlik-bilgisi içeren aday korroborasyona rağmen 'held', hafıza yok",
     cred1.status === "held" && cred2.status === "held" && credMem.n === 0, `c1=${cred1.status}, c2=${cred2.status}, mem=${credMem.n}`);
 
+  // 6b) Tekrarlayan korroborasyon DUPLİKE hafıza üretmez: 3. ve 4. bölüm aynı
+  //     örüntü → aynı hafızaya bağlanır, yeni howto yaratmaz.
+  const third = await admitCandidate({
+    kind: "recovery",
+    situation: "Pi deploy sırasında Tailscale bağlantısı yine zaman aşımına düştü",
+    guidance: "fatihpi-lan alias ile bağlan",
+    project: "smoke-adr7", episode_key: ep3, evidence_refs: ["audit:9"],
+  });
+  const howtoCount = getDb().prepare(
+    "SELECT COUNT(*) n FROM memories WHERE type='howto' AND source LIKE 'trajectory-distiller:%' AND project='smoke-adr7' AND is_current=1"
+  ).get() as { n: number };
+  check("ADR-007: tekrarlayan korroborasyon mevcut hafızaya bağlanır, duplike üretmez",
+    third.status === "promoted" && third.reason === "re_corroborated" && third.promoted_memory_uid === second.promoted_memory_uid && howtoCount.n === 1,
+    `reason=${third.reason}, howto=${howtoCount.n}`);
+
   // 7) revokeEpisode: terfi eden hafıza is_current=0 olur, adaylar silinir.
   const revoke = await revokeEpisode(ep2);
   const afterRevoke = getDb().prepare("SELECT is_current FROM memories WHERE uid = ?").get(second.promoted_memory_uid!) as { is_current: number };

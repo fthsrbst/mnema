@@ -166,12 +166,16 @@ function rowToCandidate(row: Record<string, unknown>): LessonCandidate {
   };
 }
 
-function insertCandidate(input: CandidateInput, status: CandidateStatus): { id: number; uid: string } {
+function insertCandidate(
+  input: CandidateInput,
+  status: CandidateStatus,
+  promotedMemoryUid: string | null = null
+): { id: number; uid: string } {
   const uid = randomUUID().replaceAll("-", "");
-  getDb()
+  const info = getDb()
     .prepare(
-      `INSERT INTO lesson_candidates(uid, kind, situation, guidance, project, episode_key, evidence_refs, status, created_at)
-       VALUES (@uid, @kind, @situation, @guidance, @project, @episode_key, @evidence_refs, @status, ${NOW_MS})`
+      `INSERT INTO lesson_candidates(uid, kind, situation, guidance, project, episode_key, evidence_refs, status, promoted_memory_uid, created_at)
+       VALUES (@uid, @kind, @situation, @guidance, @project, @episode_key, @evidence_refs, @status, @promoted_memory_uid, ${NOW_MS})`
     )
     .run({
       uid,
@@ -182,9 +186,15 @@ function insertCandidate(input: CandidateInput, status: CandidateStatus): { id: 
       episode_key: input.episode_key,
       evidence_refs: JSON.stringify(input.evidence_refs ?? []),
       status,
+      promoted_memory_uid: promotedMemoryUid,
     });
-  const id = getDb().prepare("SELECT id FROM lesson_candidates WHERE uid = ?").get(uid) as { id: number };
-  return { id: id.id, uid };
+  return { id: Number(info.lastInsertRowid), uid };
+}
+
+/** True only if the memory exists and is still current (not invalidated/revoked). */
+function memoryIsCurrent(uid: string): boolean {
+  const row = getDb().prepare("SELECT is_current FROM memories WHERE uid = ?").get(uid) as { is_current: number } | undefined;
+  return row?.is_current === 1;
 }
 
 /**
@@ -215,22 +225,33 @@ export async function admitCandidate(input: CandidateInput): Promise<AdmitResult
     return { status: "held", candidate_uid: uid, reason: "sensitive_held" };
   }
 
-  // 4. Corroboration: a PENDING candidate of the same kind, from a DIFFERENT
-  //    episode, whose situation is near-duplicate. Two candidates from the same
+  // 4. Corroboration. Look at same-kind candidates from a DIFFERENT episode,
+  //    whether still pending or already promoted. Two candidates from the same
   //    episode never corroborate each other.
-  const priorPending = getDb()
+  const prior = getDb()
     .prepare(
       `SELECT * FROM lesson_candidates
-       WHERE status = 'pending' AND kind = ? AND episode_key != ?`
+       WHERE kind = ? AND episode_key != ? AND status IN ('pending','promoted')`
     )
     .all(input.kind, input.episode_key) as Record<string, unknown>[];
 
-  const match = priorPending
-    .map(rowToCandidate)
-    .find((c) => situationSimilar(c.situation, input.situation));
+  const matches = prior.map(rowToCandidate).filter((c) => situationSimilar(c.situation, input.situation));
 
-  if (match) {
-    // Promote: write the howto memory, mark both candidates promoted.
+  // 4a. If the pattern was ALREADY promoted and its memory is still current, do
+  //     NOT mint a duplicate memory — attach this candidate to the existing one.
+  //     Repeated recurrence must not flood the base with copies of one lesson.
+  //     The is_current guard prevents resurrecting a human-invalidated lesson.
+  const promotedMatch = matches.find((c) => c.status === "promoted" && c.promoted_memory_uid && memoryIsCurrent(c.promoted_memory_uid));
+  if (promotedMatch) {
+    const { uid } = insertCandidate(input, "promoted", promotedMatch.promoted_memory_uid);
+    emitHubEvent({ type: "feedback_recorded", payload: { candidate_uid: uid, reason: "re_corroborated", memory_uid: promotedMatch.promoted_memory_uid, project: input.project ?? null } });
+    return { status: "promoted", candidate_uid: uid, promoted_memory_uid: promotedMatch.promoted_memory_uid!, reason: "re_corroborated" };
+  }
+
+  // 4b. First corroboration: a pending match exists -> mint the howto memory and
+  //     promote both candidates.
+  const pendingMatch = matches.find((c) => c.status === "pending");
+  if (pendingMatch) {
     const memory = await saveMemory({
       type: "howto",
       title: `${input.kind}: ${input.situation.slice(0, 80)}`,
@@ -240,10 +261,10 @@ export async function admitCandidate(input: CandidateInput): Promise<AdmitResult
       source: episodeSource(input.episode_key),
       importance: input.kind === "recovery" ? 1.5 : 1.0,
     });
-    const { uid } = insertCandidate(input, "promoted");
+    const { uid } = insertCandidate(input, "promoted", memory.uid);
     getDb()
-      .prepare("UPDATE lesson_candidates SET status = 'promoted', promoted_memory_uid = ? WHERE uid IN (?, ?)")
-      .run(memory.uid, uid, match.uid);
+      .prepare("UPDATE lesson_candidates SET status = 'promoted', promoted_memory_uid = ? WHERE uid = ?")
+      .run(memory.uid, pendingMatch.uid);
     notifyWrite();
     emitHubEvent({ type: "feedback_recorded", payload: { candidate_uid: uid, reason: "promoted", memory_uid: memory.uid, project: input.project ?? null } });
     return { status: "promoted", candidate_uid: uid, promoted_memory_uid: memory.uid, reason: "corroborated" };
