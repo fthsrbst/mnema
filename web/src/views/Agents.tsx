@@ -7,6 +7,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Button } from "../components/ui/Button";
 import { TextField, TextArea, Select } from "../components/ui/Field";
 import { SectionRule } from "../components/ui/Divider";
+import { Dialog } from "../components/ui/Dialog";
 import { Ticker } from "../components/ui/Ticker";
 import {
   fetchRegisteredAgents,
@@ -41,6 +42,12 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function fullTs(iso: string | null): string {
+  const t = parseTs(iso);
+  if (Number.isNaN(t)) return "—";
+  return new Date(t).toLocaleString();
+}
+
 function capStatusVariant(status: AgentCapability["status"]): "success" | "warning" | "neutral" {
   if (status === "available") return "success";
   if (status === "busy") return "warning";
@@ -52,6 +59,16 @@ function msgKindVariant(kind: AgentMessage["kind"]): "default" | "accent" | "dan
   if (kind === "alert") return "danger";
   if (kind === "handoff") return "warn";
   return "default";
+}
+
+// Small key/value row used inside detail dialogs.
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <HStack gap={3} vAlign="start" style={{ borderTop: "1px solid var(--border)", padding: "7px 0" }}>
+      <span className="u-label" style={{ flex: "0 0 118px", color: "var(--fg-dim)" }}>{label}</span>
+      <div style={{ flex: "1 1 auto", minWidth: 0, wordBreak: "break-word" }}>{children}</div>
+    </HStack>
+  );
 }
 
 // ============================================================================
@@ -81,6 +98,8 @@ interface MergedAgent {
   capabilities: string[];
   currentTask: string | null;
   currentProject: string | null;
+  branch: string | null;
+  registered: boolean;
   uid: string | null;
 }
 
@@ -96,6 +115,8 @@ function buildMergedAgents(agents: AgentCapability[], presence: AgentPresence[])
       capabilities: a.capabilities,
       currentTask: null,
       currentProject: null,
+      branch: null,
+      registered: true,
       uid: a.uid,
     });
   }
@@ -108,7 +129,12 @@ function buildMergedAgents(agents: AgentCapability[], presence: AgentPresence[])
       if (existing.currentTask === null && p.status === "active") {
         existing.currentTask = p.task;
         existing.currentProject = p.project;
+        existing.branch = p.branch;
+        if (existing.status === "offline" && !p.stale) existing.status = "busy";
       }
+      // A registered agent that never reported presence but is checked in should
+      // still read as busy; also let presence refresh a stale "last seen".
+      if (parseTs(p.heartbeat_at) > parseTs(existing.lastSeen)) existing.lastSeen = p.heartbeat_at;
     } else {
       byName.set(p.agent, {
         key: p.agent,
@@ -119,6 +145,8 @@ function buildMergedAgents(agents: AgentCapability[], presence: AgentPresence[])
         capabilities: [],
         currentTask: p.status === "active" ? p.task : null,
         currentProject: p.status === "active" ? p.project : null,
+        branch: p.status === "active" ? p.branch : null,
+        registered: false,
         uid: null,
       });
     }
@@ -127,13 +155,13 @@ function buildMergedAgents(agents: AgentCapability[], presence: AgentPresence[])
 }
 
 // ============================================================================
-// Agent card (roster)
+// Agent card (roster) — clickable, opens detail
 // ============================================================================
-function AgentCard({ agent, onHeartbeat }: { agent: MergedAgent; onHeartbeat: (uid: string) => void }) {
+function AgentCard({ agent, onHeartbeat, onOpen }: { agent: MergedAgent; onHeartbeat: (uid: string) => void; onOpen: () => void }) {
   const { t } = useI18n();
   const offline = agent.status === "offline" && !agent.currentTask;
   return (
-    <Panel style={{ opacity: offline ? 0.55 : 1 }}>
+    <Panel style={{ opacity: offline ? 0.6 : 1, cursor: "pointer" }} onClick={onOpen}>
       <VStack gap={3}>
         <HStack hAlign="between" vAlign="center">
           <Heading level={4} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -148,11 +176,12 @@ function AgentCard({ agent, onHeartbeat }: { agent: MergedAgent; onHeartbeat: (u
 
         <HStack gap={2} vAlign="center" wrap="wrap">
           <Tag>{agent.machine ?? "—"}</Tag>
+          {agent.registered ? <Tag variant="accent">MCP</Tag> : <Tag>presence</Tag>}
           <Text type="supporting" color="secondary">{t("agents.lastSeen")}: {timeAgo(agent.lastSeen)}</Text>
         </HStack>
 
         {agent.currentTask ? (
-          <Text type="supporting">
+          <Text type="supporting" style={{ wordBreak: "break-word" }}>
             {t("agents.currentTask")}: {agent.currentTask}
             {agent.currentProject ? ` (${agent.currentProject})` : ""}
           </Text>
@@ -162,37 +191,114 @@ function AgentCard({ agent, onHeartbeat }: { agent: MergedAgent; onHeartbeat: (u
 
         {agent.capabilities.length > 0 && (
           <HStack gap={1} wrap="wrap">
-            {agent.capabilities.map((cap) => (
+            {agent.capabilities.slice(0, 6).map((cap) => (
               <Tag key={cap} variant="accent">{cap}</Tag>
             ))}
           </HStack>
         )}
 
         {agent.uid && (
-          <Button label={t("agents.heartbeat")} size="sm" onClick={() => onHeartbeat(agent.uid!)} />
+          <div onClick={(e) => e.stopPropagation()}>
+            <Button label={t("agents.heartbeat")} size="sm" onClick={() => onHeartbeat(agent.uid!)} />
+          </div>
         )}
       </VStack>
     </Panel>
   );
 }
 
-// ============================================================================
-// Task board (3 columns, read-only)
-// ============================================================================
-function TaskCard({ task }: { task: Task }) {
+// Agent detail dialog: identity + related messages + claimed tasks.
+function AgentDetailDialog({
+  agent, messages, tasks, onClose, onOpenMessage, onOpenTask,
+}: {
+  agent: MergedAgent;
+  messages: AgentMessage[];
+  tasks: Task[];
+  onClose: () => void;
+  onOpenMessage: (m: AgentMessage) => void;
+  onOpenTask: (t: Task) => void;
+}) {
+  const { t } = useI18n();
+  const related = messages.filter((m) => m.from_agent === agent.name || m.to_agent === agent.name);
+  const claimed = tasks.filter((tk) => tk.claimed_by === agent.name);
   return (
-    <VStack gap={1} style={{ padding: "8px 0", borderTop: "1px solid var(--border)" }}>
-      <Text style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</Text>
+    <Dialog isOpen onOpenChange={(o) => { if (!o) onClose(); }} width={620} title={agent.name}>
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <StatusDot variant={capStatusVariant(agent.status)} label={t(`agents.cap.${agent.status}` as never)} />
+          {agent.registered ? <Tag variant="accent">MCP</Tag> : <Tag>presence</Tag>}
+        </HStack>
+        <VStack gap={0}>
+          <DetailRow label={t("agents.detailMachine")}>{agent.machine ?? "—"}</DetailRow>
+          <DetailRow label={t("agents.detailTask")}>{agent.currentTask ?? <Text color="secondary">{t("agents.noTask")}</Text>}</DetailRow>
+          <DetailRow label={t("agents.detailProject")}>{agent.currentProject ?? "—"}</DetailRow>
+          <DetailRow label={t("agents.detailBranch")}>{agent.branch ?? "—"}</DetailRow>
+          <DetailRow label={t("agents.lastSeen")}>{timeAgo(agent.lastSeen)} · {fullTs(agent.lastSeen)}</DetailRow>
+          <DetailRow label={t("agents.capabilities")}>
+            {agent.capabilities.length ? (
+              <HStack gap={1} wrap="wrap">{agent.capabilities.map((c) => <Tag key={c} variant="accent">{c}</Tag>)}</HStack>
+            ) : "—"}
+          </DetailRow>
+          {agent.uid && <DetailRow label={t("agents.uid")}><span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{agent.uid}</span></DetailRow>}
+        </VStack>
+
+        <SectionRule label={`${t("agents.relatedMessages")} (${related.length})`} />
+        {related.length === 0 ? (
+          <Text type="supporting" color="secondary">{t("agents.none")}</Text>
+        ) : (
+          <VStack>
+            {related.slice(0, 8).map((m) => (
+              <HStack key={m.uid} gap={2} vAlign="center" wrap="wrap"
+                style={{ borderTop: "1px solid var(--border)", padding: "6px 0", cursor: "pointer" }}
+                onClick={() => onOpenMessage(m)}>
+                <Tag variant={msgKindVariant(m.kind)}>{m.kind}</Tag>
+                <Text type="supporting">{m.from_agent} → {m.to_agent ?? t("agents.broadcast")}</Text>
+                <Text type="supporting" color="secondary" style={{ marginLeft: "auto" }}>{timeAgo(m.created_at)}</Text>
+                <Text style={{ flexBasis: "100%", wordBreak: "break-word" }}>{m.subject}</Text>
+              </HStack>
+            ))}
+          </VStack>
+        )}
+
+        <SectionRule label={`${t("agents.claimedTasks")} (${claimed.length})`} />
+        {claimed.length === 0 ? (
+          <Text type="supporting" color="secondary">{t("agents.none")}</Text>
+        ) : (
+          <VStack>
+            {claimed.slice(0, 8).map((tk) => (
+              <HStack key={tk.uid} gap={2} vAlign="center" wrap="wrap"
+                style={{ borderTop: "1px solid var(--border)", padding: "6px 0", cursor: "pointer" }}
+                onClick={() => onOpenTask(tk)}>
+                <Tag>{tk.status}</Tag>
+                <Text style={{ wordBreak: "break-word" }}>{tk.title}</Text>
+                <Text type="supporting" color="secondary" style={{ marginLeft: "auto" }}>P{tk.priority}</Text>
+              </HStack>
+            ))}
+          </VStack>
+        )}
+      </VStack>
+    </Dialog>
+  );
+}
+
+// ============================================================================
+// Task board (3 columns) — cards clickable
+// ============================================================================
+function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+  return (
+    <VStack gap={1} style={{ padding: "8px 0", borderTop: "1px solid var(--border)", cursor: "pointer" }} onClick={onOpen}>
+      <Text style={{ wordBreak: "break-word" }}>{task.title}</Text>
       <HStack gap={2} vAlign="center" wrap="wrap">
         {task.project && <Tag>{task.project}</Tag>}
         {task.claimed_by && <Text type="supporting" color="secondary">{task.claimed_by}</Text>}
         <Text type="supporting" color="secondary">P{task.priority}</Text>
+        {task.depends_on.length > 0 && <Tag variant="warn">deps {task.depends_on.length}</Tag>}
       </HStack>
     </VStack>
   );
 }
 
-function TaskColumn({ title, tasks }: { title: string; tasks: Task[] }) {
+function TaskColumn({ title, tasks, onOpen }: { title: string; tasks: Task[]; onOpen: (t: Task) => void }) {
   const { t } = useI18n();
   return (
     <VStack gap={2} style={{ flex: "1 1 220px", minWidth: 0 }}>
@@ -200,16 +306,47 @@ function TaskColumn({ title, tasks }: { title: string; tasks: Task[] }) {
       {tasks.length === 0 ? (
         <Text type="supporting" color="secondary">{t("agents.boardEmpty")}</Text>
       ) : (
-        <VStack>{tasks.map((tk) => <TaskCard key={tk.uid} task={tk} />)}</VStack>
+        <VStack>{tasks.map((tk) => <TaskCard key={tk.uid} task={tk} onOpen={() => onOpen(tk)} />)}</VStack>
       )}
     </VStack>
   );
 }
 
+function TaskDetailDialog({ task, onClose }: { task: Task; onClose: () => void }) {
+  const { t } = useI18n();
+  return (
+    <Dialog isOpen onOpenChange={(o) => { if (!o) onClose(); }} width={620} title={t("agents.taskDetailTitle")}>
+      <VStack gap={3}>
+        <Heading level={4} style={{ wordBreak: "break-word" }}>{task.title}</Heading>
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <Tag variant={task.status === "done" ? "accent" : task.status === "cancelled" ? "danger" : "default"}>{task.status}</Tag>
+          {task.project && <Tag>{task.project}</Tag>}
+          <Tag>P{task.priority}</Tag>
+        </HStack>
+        <VStack gap={0}>
+          <DetailRow label={t("agents.taskDesc")}>
+            {task.description ? <span style={{ whiteSpace: "pre-wrap" }}>{task.description}</span> : <Text color="secondary">{t("agents.taskNoDesc")}</Text>}
+          </DetailRow>
+          <DetailRow label={t("agents.taskClaimedBy")}>{task.claimed_by ?? "—"}</DetailRow>
+          <DetailRow label={t("agents.taskCreatedBy")}>{task.created_by ?? "—"}</DetailRow>
+          <DetailRow label={t("agents.taskDeps")}>
+            {task.depends_on.length ? (
+              <VStack gap={1}>{task.depends_on.map((d) => <span key={d} style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{d}</span>)}</VStack>
+            ) : "—"}
+          </DetailRow>
+          {task.result && <DetailRow label={t("agents.taskResult")}><span style={{ whiteSpace: "pre-wrap" }}>{task.result}</span></DetailRow>}
+          {task.error && <DetailRow label={t("agents.taskError")}><span style={{ whiteSpace: "pre-wrap", color: "var(--danger)" }}>{task.error}</span></DetailRow>}
+          <DetailRow label={t("agents.taskCreated")}>{fullTs(task.created_at)}</DetailRow>
+        </VStack>
+      </VStack>
+    </Dialog>
+  );
+}
+
 // ============================================================================
-// Message wire (fleet-wide activity feed)
+// Message wire — rows clickable, subject wraps, body preview inline
 // ============================================================================
-function MessageWire({ messages }: { messages: AgentMessage[] }) {
+function MessageWire({ messages, onOpen }: { messages: AgentMessage[]; onOpen: (m: AgentMessage) => void }) {
   const { t } = useI18n();
   if (messages.length === 0) {
     return <Text type="supporting" color="secondary">{t("agents.wireEmpty")}</Text>;
@@ -217,23 +354,71 @@ function MessageWire({ messages }: { messages: AgentMessage[] }) {
   return (
     <VStack>
       {messages.map((m) => (
-        <HStack key={m.uid} gap={2} vAlign="center" style={{ padding: "6px 0", borderTop: "1px solid var(--border)", flexWrap: "nowrap" }}>
-          <Tag variant={msgKindVariant(m.kind)}>{m.kind}</Tag>
-          <Text type="supporting" style={{ flexShrink: 0 }}>{m.from_agent}</Text>
-          <Text type="supporting" color="secondary" style={{ flexShrink: 0 }}>→</Text>
-          <Text type="supporting" color="secondary" style={{ flexShrink: 0 }}>{m.to_agent ?? t("agents.broadcast")}</Text>
-          <Text style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{m.subject}</Text>
-          <Text type="supporting" color="secondary" style={{ flexShrink: 0, marginLeft: "auto" }}>{timeAgo(m.created_at)}</Text>
-        </HStack>
+        <VStack key={m.uid} gap={1}
+          style={{ padding: "8px 0", borderTop: "1px solid var(--border)", cursor: "pointer" }}
+          onClick={() => onOpen(m)}>
+          <HStack gap={2} vAlign="center" wrap="wrap">
+            <Tag variant={msgKindVariant(m.kind)}>{m.kind}</Tag>
+            <Text type="supporting">{m.from_agent}</Text>
+            <Text type="supporting" color="secondary">→</Text>
+            <Text type="supporting" color="secondary">{m.to_agent ?? t("agents.broadcast")}</Text>
+            {m.project && <Tag>{m.project}</Tag>}
+            {m.read_at === null && m.to_agent && <StatusDot variant="warning" label={t("agents.msgUnread")} />}
+            <Text type="supporting" color="secondary" style={{ marginLeft: "auto" }}>{timeAgo(m.created_at)}</Text>
+          </HStack>
+          <Text style={{ wordBreak: "break-word" }}>{m.subject}</Text>
+          {m.body && (
+            <Text type="supporting" color="secondary"
+              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {m.body}
+            </Text>
+          )}
+        </VStack>
       ))}
     </VStack>
+  );
+}
+
+function MessageDetailDialog({ message, onClose }: { message: AgentMessage; onClose: () => void }) {
+  const { t } = useI18n();
+  const hasPayload = message.payload && Object.keys(message.payload).length > 0;
+  return (
+    <Dialog isOpen onOpenChange={(o) => { if (!o) onClose(); }} width={640} title={t("agents.msgDetailTitle")}>
+      <VStack gap={3}>
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <Tag variant={msgKindVariant(message.kind)}>{message.kind}</Tag>
+          <Text>{message.from_agent}</Text>
+          <Text color="secondary">→</Text>
+          <Text>{message.to_agent ?? t("agents.broadcast")}</Text>
+        </HStack>
+        <Heading level={4} style={{ wordBreak: "break-word" }}>{message.subject}</Heading>
+        {message.body && (
+          <Panel>
+            <Text style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{message.body}</Text>
+          </Panel>
+        )}
+        <VStack gap={0}>
+          <DetailRow label={t("agents.msgProject")}>{message.project ?? "—"}</DetailRow>
+          {message.task_uid && <DetailRow label={t("agents.msgTaskLink")}><span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{message.task_uid}</span></DetailRow>}
+          <DetailRow label={t("agents.taskStatus")}>{message.to_agent ? (message.read_at ? t("agents.msgRead") : t("agents.msgUnread")) : "—"}</DetailRow>
+          <DetailRow label={t("agents.msgTime")}>{fullTs(message.created_at)}</DetailRow>
+          {hasPayload && (
+            <DetailRow label={t("agents.msgPayload")}>
+              <pre style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 11, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                {JSON.stringify(message.payload, null, 2)}
+              </pre>
+            </DetailRow>
+          )}
+        </VStack>
+      </VStack>
+    </Dialog>
   );
 }
 
 // ============================================================================
 // Compose (collapsed behind a "Yeni mesaj" button — human broadcasting to agents)
 // ============================================================================
-function ComposeMessage({ agents, onSent }: { agents: AgentCapability[]; onSent: () => void }) {
+function ComposeMessage({ agents, onSent }: { agents: MergedAgent[]; onSent: () => void }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [fromAgent, setFromAgent] = useState("");
@@ -276,7 +461,7 @@ function ComposeMessage({ agents, onSent }: { agents: AgentCapability[]; onSent:
                   label={t("agents.msgFrom")}
                   value={fromAgent}
                   onChange={setFromAgent}
-                  options={agents.map((a) => ({ value: a.agent, label: a.agent }))}
+                  options={agents.map((a) => ({ value: a.name, label: a.name }))}
                 />
               </div>
               <div style={{ flex: "1 1 140px" }}>
@@ -285,7 +470,7 @@ function ComposeMessage({ agents, onSent }: { agents: AgentCapability[]; onSent:
                   value={toAgent}
                   onChange={setToAgent}
                   placeholder={t("agents.broadcast")}
-                  options={agents.filter((a) => a.agent !== fromAgent).map((a) => ({ value: a.agent, label: a.agent }))}
+                  options={agents.filter((a) => a.name !== fromAgent).map((a) => ({ value: a.name, label: a.name }))}
                 />
               </div>
               <div style={{ flex: "1 1 110px" }}>
@@ -322,6 +507,11 @@ export function Agents() {
   const [wire, setWire] = useState<AgentMessage[]>([]);
   const [connLost, setConnLost] = useState(false);
   const hasLoadedOnce = useRef(false);
+
+  // Detail selections (one dialog at a time).
+  const [openAgent, setOpenAgent] = useState<MergedAgent | null>(null);
+  const [openTask, setOpenTask] = useState<Task | null>(null);
+  const [openMessage, setOpenMessage] = useState<AgentMessage | null>(null);
 
   const loadWire = useCallback(async () => {
     try {
@@ -374,13 +564,21 @@ export function Agents() {
 
   const mergedAgents = useMemo(() => buildMergedAgents(agents, allPresence), [agents, allPresence]);
 
-  const stats = useMemo(() => ({
-    total: agents.length,
-    available: agents.filter((a) => a.status === "available").length,
-    busy: agents.filter((a) => a.status === "busy").length,
-    offline: agents.filter((a) => a.status === "offline").length,
-    activeNow: activePresence.filter((a) => !a.stale).length,
-  }), [agents, activePresence]);
+  // Stats are presence-aware: they count the same roster shown below, not just
+  // the MCP-registered agents (an agent that only checked in via presence still
+  // counts). This keeps the headline numbers consistent with the list.
+  const stats = useMemo(() => {
+    const busy = mergedAgents.filter((a) => a.status === "busy" || !!a.currentTask).length;
+    const available = mergedAgents.filter((a) => a.status === "available").length;
+    const offline = mergedAgents.filter((a) => a.status === "offline" && !a.currentTask).length;
+    return {
+      total: mergedAgents.length,
+      available,
+      busy,
+      offline,
+      activeNow: activePresence.filter((a) => !a.stale).length,
+    };
+  }, [mergedAgents, activePresence]);
 
   const board = useMemo(() => {
     const pending = allTasks.filter((tk) => tk.status === "pending");
@@ -426,7 +624,7 @@ export function Agents() {
         ) : (
           <Grid minWidth={280} gap={4}>
             {mergedAgents.map((a) => (
-              <AgentCard key={a.key} agent={a} onHeartbeat={handleHeartbeat} />
+              <AgentCard key={a.key} agent={a} onHeartbeat={handleHeartbeat} onOpen={() => setOpenAgent(a)} />
             ))}
           </Grid>
         )}
@@ -436,9 +634,9 @@ export function Agents() {
       <VStack gap={3}>
         <SectionRule label={t("agents.boardTitle")} />
         <HStack gap={4} wrap="wrap" style={{ alignItems: "flex-start" }}>
-          <TaskColumn title={t("agents.colPending")} tasks={board.pending} />
-          <TaskColumn title={t("agents.colActive")} tasks={board.active} />
-          <TaskColumn title={t("agents.colDone")} tasks={board.done} />
+          <TaskColumn title={t("agents.colPending")} tasks={board.pending} onOpen={setOpenTask} />
+          <TaskColumn title={t("agents.colActive")} tasks={board.active} onOpen={setOpenTask} />
+          <TaskColumn title={t("agents.colDone")} tasks={board.done} onOpen={setOpenTask} />
         </HStack>
       </VStack>
 
@@ -446,10 +644,25 @@ export function Agents() {
       <Panel>
         <VStack gap={3}>
           <SectionRule label={t("agents.wireTitle")} />
-          <ComposeMessage agents={agents} onSent={() => { void loadWire(); }} />
-          <MessageWire messages={wire} />
+          <Text type="supporting" color="secondary">{t("agents.wireHint")}</Text>
+          <ComposeMessage agents={mergedAgents} onSent={() => { void loadWire(); }} />
+          <MessageWire messages={wire} onOpen={setOpenMessage} />
         </VStack>
       </Panel>
+
+      {/* Detail dialogs */}
+      {openAgent && (
+        <AgentDetailDialog
+          agent={openAgent}
+          messages={wire}
+          tasks={allTasks}
+          onClose={() => setOpenAgent(null)}
+          onOpenMessage={(m) => { setOpenAgent(null); setOpenMessage(m); }}
+          onOpenTask={(tk) => { setOpenAgent(null); setOpenTask(tk); }}
+        />
+      )}
+      {openTask && <TaskDetailDialog task={openTask} onClose={() => setOpenTask(null)} />}
+      {openMessage && <MessageDetailDialog message={openMessage} onClose={() => setOpenMessage(null)} />}
     </VStack>
   );
 }
