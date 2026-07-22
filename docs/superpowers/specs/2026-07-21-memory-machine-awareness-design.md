@@ -2,7 +2,24 @@
 
 - Durum: Onaylandı (tasarım)
 - Tarih: 2026-07-21
-- Branch: `feature/memory-machine-state`
+- Branch: `feature/memory-machine-state` (master `ab066df` üzerine rebase edildi)
+
+## Bağlam güncellemesi (2026-07-21, ikinci tur)
+
+Tasarımın ilk yazımından sonra master ilerledi ve iki ADR merge oldu:
+
+- **ADR-005 (change_log)** — sync teslimat watermark'ı artık trigger tabanlı
+  merkezi `change_log` + `SYNC_TABLES` dizisi. Bu tasarımın beklediği bağımlılık
+  **karşılandı**; birleştirme-sırası endişesi ortadan kalktı.
+- **ADR-006 (hafıza yaşam döngüsü)** — `memories`'e `is_current`, `valid_to`,
+  `supersedes_uid`, `invalidated_reason`, `verified_at`, `review_after` eklendi;
+  okuma yolu artık varsayılan `is_current = 1` filtreliyor. Bu tasarımla
+  **dikey olarak diktir** ama okuma yolunda birlikte çalışmalı (§3, §11).
+
+Not: ADR-006 tam olarak bu tasarımı motive eden 24/52 numaralı SSH hafızalarını
+ve Tailscale örneğini kullanıyor. İki eksen ayrıdır: ADR-006 **zaman** eksenidir
+(bir iddia ne zaman doğru/yanlış), bu tasarım **uzay** eksenidir (bir çözüm hangi
+cihazda geçerli). SSH kaydı ikisine de tabidir — hem uçucu hem cihaza bağlı.
 
 ## Problem
 
@@ -51,6 +68,14 @@ CREATE INDEX IF NOT EXISTS idx_mms_memory ON memory_machine_state(memory_uid);
 ```
 
 Ayrıca mevcut `addColumn` desenine uyarak: `memories.machine_scope TEXT` (nullable).
+ADR-006 aynı desenle `memories`'e altı kolon ekledi (`src/core/db.ts:589-597`);
+`machine_scope` onların hemen ardına, aynı `addColumn` bloğunda eklenir.
+
+**`verified_at` çakışması değil, tamamlayıcı:** `memories.verified_at` (ADR-006)
+kaydın **global** son doğrulama zamanıdır ("kimse 37 gündür bakmadı"). Buradaki
+`memory_machine_state.verified_at` ise **o cihazda** en son ne zaman doğrulandığıdır.
+Farklı tablolar, farklı anlam; uçucu + cihaza bağlı bir kayıtta ikisi birlikte
+kullanılır (global "en son bakılan" + cihaz başına "burada uygulandı").
 
 ### Karar: `unknown` satır olarak YAZILMAZ
 
@@ -123,6 +148,13 @@ felsefesiyle aynı: kayıt her hâlükârda yazılır.
 "machine_warning": "⚠ ..." // yalnız uyarı gerektiğinde
 ```
 
+**ADR-006 ile birleşim (önce yaşam döngüsü):** okuma yolu zaten varsayılan
+`is_current = 1` filtreliyor. `is_current = 0` (geçersiz kılınmış) bir kayıt
+yalnız `include_superseded` ile döner ve o durumda **cihaz uyarısı gösterilmez** —
+supersession uyarısı önceliklidir; geçersiz bir kaydın "hangi cihazda uygulandı"
+sorusu anlamsızdır. Yani cihaz uyarısı yalnız `is_current = 1 AND
+machine_scope = 'machine_dependent'` kayıtlarda üretilir.
+
 Uyarı matrisi (`current` = bu cihazın durumu):
 
 | `current` | Uyarı |
@@ -173,27 +205,34 @@ REST karşılığı: `POST /api/memories/:uid/machine-state`.
 
 ## 5. Sync
 
-- `memory_machine_state` `SyncPayload`'a eklenir; `collectChanges` /
-  `applyChangesUnsafe` içinde LWW (`updated_at`) ile işlenir — mevcut tablo
-  desenini birebir izle.
-- Bir memory silindiğinde state satırları da silinir **ve her biri için
-  `deletions`'a tombstone yazılır** (`tbl='memory_machine_state'`).
-  ADR-005'in "tombstone'suz silme replike olmaz" invariant'ı gereği bu
-  atlanamaz; atlanırsa satırlar diğer cihazlarda yaşamaya devam eder.
+ADR-005 sonrası sync artık `SYNC_TABLES` dizisiyle sürülüyor (`src/core/db.ts:444`).
+Entegrasyon iki parçadır:
 
-### Bağımlılık: ADR-005
+1. **Trigger/seed/silme-koruması — tek satır.** `SYNC_TABLES` dizisine ekle:
 
-`feature/sync-change-log` master'a indiğinde `installChangeTriggers()` içine
-**tek satır** eklenecek:
+   ```ts
+   { tbl: "memory_machine_state", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+   ```
 
-```ts
-installChangeTrigger(database, "memory_machine_state", "new.uid");
-```
+   Bu tek girdi `installChangeTriggers` (change_log trigger'ları), `seedChangeLog`
+   (yükseltmede mevcut satırların bir kereye mahsus yayını) ve ADR-005 silme-koruma
+   trigger'ını otomatik bağlar. ADR-005 bu genişlemeyi açıkça öngörmüştü.
 
-ADR-005 bu genişlemeyi zaten öngörmüş. Bu branch master'dan açıldığı için
-sync.ts'te çakışma beklenir (iki branch de aynı fonksiyonlara tablo ekliyor) —
-küçük ve mekaniktir. **Birleştirme sırası: önce `feature/sync-change-log`,
-sonra bu branch rebase edilir.**
+2. **collect/apply — elle bölüm.** `collectChangesBySeq` ve `applyChangesUnsafe`
+   hâlâ tablo başına elle kod içeriyor (dizi güdümlü değil). `SyncPayload`'a
+   `memory_machine_state` alanı + LWW (`updated_at`) apply bloğu eklenir; deterministik
+   uid sayesinde INSERT/UPDATE upsert olur. Legacy peer alanı hiç göndermezse
+   `origin_machine`/ADR-006 için kurulan `COALESCE(@col, col)` desenini izle:
+   yokluğu boş dizi say, yerel satırı ezme.
+
+- **Silme:** bir memory silindiğinde state satırları da silinir. Silme-koruma
+  trigger'ı (`deleteGuard`) satır başına gözlem yapar; ayrıca `deletions`'a
+  `tbl='memory_machine_state'` tombstone'u yazılmalı — ADR-005'in "tombstone'suz
+  silme replike olmaz" invariant'ı. Cascade tercihi: state satırları memory silme
+  yolunda (memories.ts sil fonksiyonu) açıkça temizlenir, trigger'a bırakılmaz.
+
+**Bağımlılık durumu:** ADR-005 ve ADR-006 master'a indi; branch `ab066df` üzerine
+rebase edildi. Beklenen sync.ts çakışması artık yok — altyapı hazır.
 
 ## 6. Geçiş / backfill
 
@@ -255,5 +294,6 @@ kaybolur — bkz. hafıza id 63.
 | Alarm yorgunluğu (çok fazla uyarı) | Varsayılan `global`; uyarı yalnız `machine_dependent`'ta |
 | Defter dolmaz, boş kalır | Uyarı metni `memory_machine_mark`'ı adıyla söyler — kapatma yolu görünür |
 | Cihaz adı kayması | Ön koşul bölümü; üç cihazda da `.env`'e yazıldı |
-| `sync.ts` çakışması | Birleştirme sırası sabitlendi: önce ADR-005 |
+| `sync.ts` çakışması | ADR-005/006 merge oldu; branch rebase edildi — çakışma yok |
 | Agent alanı okumaz | Uyarı ayrı bir alan **ve** metin içinde; sessiz alan değil |
+| Geçersiz kılınmış kayıtta gereksiz uyarı | Cihaz uyarısı yalnız `is_current = 1`'de üretilir (§3) |
