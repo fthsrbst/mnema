@@ -96,9 +96,15 @@ interface MergedAgent {
   status: AgentCapability["status"];
   lastSeen: string | null;
   capabilities: string[];
+  /** YALNIZ canlı (active + stale olmayan) presence'tan gelir — bayat kayıt "şu an çalışıyor" demek değildir. */
   currentTask: string | null;
   currentProject: string | null;
   branch: string | null;
+  /** Bayat/kapanmış presence'tan gelen SON görev — "çalışıyor" değil, geçmiş bilgisi. */
+  lastTask: string | null;
+  lastTaskProject: string | null;
+  /** active kaydı var ama nabzı TTL'i geçmiş: agent muhtemelen düşmüş (checkout etmeden öldü). */
+  likelyDropped: boolean;
   registered: boolean;
   uid: string | null;
 }
@@ -116,6 +122,9 @@ function buildMergedAgents(agents: AgentCapability[], presence: AgentPresence[])
       currentTask: null,
       currentProject: null,
       branch: null,
+      lastTask: null,
+      lastTaskProject: null,
+      likelyDropped: false,
       registered: true,
       uid: a.uid,
     });
@@ -123,29 +132,39 @@ function buildMergedAgents(agents: AgentCapability[], presence: AgentPresence[])
   // Newest heartbeat first so the first presence record we see per agent name wins.
   const sortedPresence = [...presence].sort((a, b) => parseTs(b.heartbeat_at) - parseTs(a.heartbeat_at));
   for (const p of sortedPresence) {
+    // "Canlı" = checkin açık VE nabız TTL içinde. Bayat bir active kaydı, checkout
+    // etmeden ölmüş bir agent'tır (presence.ts: kilit değil, TTL ile bayatlar) —
+    // onu "şu an çalışıyor" diye göstermek ekranı yalan söyletir.
+    const live = p.status === "active" && !p.stale;
     const existing = byName.get(p.agent);
     if (existing) {
       if (!existing.machine) existing.machine = p.machine;
-      if (existing.currentTask === null && p.status === "active") {
+      if (existing.currentTask === null && live) {
         existing.currentTask = p.task;
         existing.currentProject = p.project;
         existing.branch = p.branch;
-        if (existing.status === "offline" && !p.stale) existing.status = "busy";
+        if (existing.status === "offline") existing.status = "busy";
+      } else if (existing.currentTask === null && existing.lastTask === null) {
+        existing.lastTask = p.task;
+        existing.lastTaskProject = p.project;
+        existing.likelyDropped = p.status === "active" && p.stale;
       }
-      // A registered agent that never reported presence but is checked in should
-      // still read as busy; also let presence refresh a stale "last seen".
+      // Presence, registry'nin bayat "last seen" değerini tazeleyebilir.
       if (parseTs(p.heartbeat_at) > parseTs(existing.lastSeen)) existing.lastSeen = p.heartbeat_at;
     } else {
       byName.set(p.agent, {
         key: p.agent,
         name: p.agent,
         machine: p.machine,
-        status: p.status === "active" && !p.stale ? "busy" : "offline",
+        status: live ? "busy" : "offline",
         lastSeen: p.heartbeat_at,
         capabilities: [],
-        currentTask: p.status === "active" ? p.task : null,
-        currentProject: p.status === "active" ? p.project : null,
-        branch: p.status === "active" ? p.branch : null,
+        currentTask: live ? p.task : null,
+        currentProject: live ? p.project : null,
+        branch: live ? p.branch : null,
+        lastTask: live ? null : p.task,
+        lastTaskProject: live ? null : p.project,
+        likelyDropped: p.status === "active" && p.stale,
         registered: false,
         uid: null,
       });
@@ -185,6 +204,14 @@ function AgentCard({ agent, onHeartbeat, onOpen }: { agent: MergedAgent; onHeart
             {t("agents.currentTask")}: {agent.currentTask}
             {agent.currentProject ? ` (${agent.currentProject})` : ""}
           </Text>
+        ) : agent.lastTask ? (
+          <VStack gap={1}>
+            <Text type="supporting" color="secondary" style={{ wordBreak: "break-word" }}>
+              {t("agents.lastTask")}: {agent.lastTask}
+              {agent.lastTaskProject ? ` (${agent.lastTaskProject})` : ""}
+            </Text>
+            {agent.likelyDropped && <Tag variant="warn">{t("agents.likelyDropped")}</Tag>}
+          </VStack>
         ) : (
           <Text type="supporting" color="secondary">{t("agents.noTask")}</Text>
         )}
@@ -230,8 +257,17 @@ function AgentDetailDialog({
         </HStack>
         <VStack gap={0}>
           <DetailRow label={t("agents.detailMachine")}>{agent.machine ?? "—"}</DetailRow>
-          <DetailRow label={t("agents.detailTask")}>{agent.currentTask ?? <Text color="secondary">{t("agents.noTask")}</Text>}</DetailRow>
-          <DetailRow label={t("agents.detailProject")}>{agent.currentProject ?? "—"}</DetailRow>
+          <DetailRow label={t("agents.detailTask")}>
+            {agent.currentTask ?? (
+              agent.lastTask
+                ? <VStack gap={1}>
+                    <Text color="secondary">{t("agents.lastTask")}: {agent.lastTask}</Text>
+                    {agent.likelyDropped && <Tag variant="warn">{t("agents.likelyDropped")}</Tag>}
+                  </VStack>
+                : <Text color="secondary">{t("agents.noTask")}</Text>
+            )}
+          </DetailRow>
+          <DetailRow label={t("agents.detailProject")}>{agent.currentProject ?? agent.lastTaskProject ?? "—"}</DetailRow>
           <DetailRow label={t("agents.detailBranch")}>{agent.branch ?? "—"}</DetailRow>
           <DetailRow label={t("agents.lastSeen")}>{timeAgo(agent.lastSeen)} · {fullTs(agent.lastSeen)}</DetailRow>
           <DetailRow label={t("agents.capabilities")}>
@@ -564,21 +600,17 @@ export function Agents() {
 
   const mergedAgents = useMemo(() => buildMergedAgents(agents, allPresence), [agents, allPresence]);
 
-  // Stats are presence-aware: they count the same roster shown below, not just
-  // the MCP-registered agents (an agent that only checked in via presence still
-  // counts). This keeps the headline numbers consistent with the list.
-  const stats = useMemo(() => {
-    const busy = mergedAgents.filter((a) => a.status === "busy" || !!a.currentTask).length;
-    const available = mergedAgents.filter((a) => a.status === "available").length;
-    const offline = mergedAgents.filter((a) => a.status === "offline" && !a.currentTask).length;
-    return {
-      total: mergedAgents.length,
-      available,
-      busy,
-      offline,
-      activeNow: activePresence.filter((a) => !a.stale).length,
-    };
-  }, [mergedAgents, activePresence]);
+  // Sayaçlar presence-ÖNCELİKLİ. Bu hub'daki agent'ların çoğu efemer (spawn olur,
+  // işi biter, ölür) — onlar için "Toplam/Çevrimdışı" registry sayımı yanıltıcıydı:
+  // ölmüş bir agent sonsuza dek "offline" olarak duruyordu. Anlamlı olan eksen
+  // ZAMAN: şu an çalışan / düşmüş / son 24s biten; registry ise ayrı bir kimlik
+  // listesidir ve öyle etiketlenir.
+  const stats = useMemo(() => ({
+    activeNow: activePresence.filter((a) => !a.stale).length,
+    dropped: activePresence.filter((a) => a.stale).length,
+    finished24h: recentPresence.length,
+    registered: agents.length,
+  }), [activePresence, recentPresence, agents]);
 
   const board = useMemo(() => {
     const pending = allTasks.filter((tk) => tk.status === "pending");
@@ -605,11 +637,10 @@ export function Agents() {
 
       {/* Fleet stats */}
       <HStack gap={4} wrap="wrap">
-        <FleetStat label={t("agents.statTotal")} value={stats.total} variant="neutral" />
-        <FleetStat label={t("agents.statAvailable")} value={stats.available} variant="success" />
-        <FleetStat label={t("agents.statBusy")} value={stats.busy} variant="warning" />
-        <FleetStat label={t("agents.statOffline")} value={stats.offline} variant="neutral" />
         <FleetStat label={t("agents.statActiveNow")} value={stats.activeNow} variant="success" />
+        <FleetStat label={t("agents.statDropped")} value={stats.dropped} variant="warning" />
+        <FleetStat label={t("agents.statFinished24h")} value={stats.finished24h} variant="neutral" />
+        <FleetStat label={t("agents.statRegistered")} value={stats.registered} variant="neutral" />
       </HStack>
 
       {/* 1. Ajanlar */}
