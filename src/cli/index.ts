@@ -105,7 +105,10 @@ program
       } catch {
         /* hub kapalıysa prompt'u bloklama */
       }
-      process.exit(0);
+      // fetch sonrası process.exit() Windows/Node 24'te libuv assertion'ına düşer
+      // (exit 127) ve Claude Code sıfır olmayan çıkışta stdout'u bağlama EKLEMEZ.
+      // Event loop zaten boş; doğal çıkış hem temiz hem anlık.
+      return;
     }
     if (!query) return console.log("kullanım: hub recall <metin>");
     try {
@@ -144,7 +147,8 @@ program
       } catch {
         /* hub kapalıysa oturumu bloklama */
       }
-      process.exit(0);
+      // recall --hook ile aynı sebep: fetch sonrası process.exit() çökmeye yol açıyor.
+      return;
     }
     try {
       const proj = project ? `&project=${encodeURIComponent(project)}` : "";
