@@ -33,6 +33,7 @@ import {
   listMemoryRelations,
   recall,
   recentSessionLogs,
+  maxLen,
   saveMemory,
   saveMemoryRelation,
   searchChunks,
@@ -795,7 +796,7 @@ export function buildMcpServer(): McpServer {
         "Create a new task for agent-to-agent work delegation. Tasks can have dependencies, priority, and tags. Use this to delegate work to other agents or track work items.",
       inputSchema: {
         title: z.string().min(1).max(300),
-        description: z.string().max(10000).optional(),
+        description: maxLen(z.string(), 10000).optional(),
         project: z.string().max(100).optional(),
         priority: z.number().int().min(0).max(100).optional(),
         created_by: z.string().max(100).optional(),
@@ -837,14 +838,14 @@ export function buildMcpServer(): McpServer {
         uid: z.string(),
         status: z.enum(["pending", "claimed", "in_progress", "blocked", "done", "cancelled"]).optional(),
         priority: z.number().int().min(0).max(100).optional(),
-        result: z.string().max(50000).optional(),
-        error: z.string().max(5000).optional(),
+        result: maxLen(z.string(), 50000).optional(),
+        error: maxLen(z.string(), 5000).optional(),
         verification: z
           .object({
             kind: z.enum(["tests", "build", "manual", "none"]),
             command: z.string().optional(),
             exit_code: z.number().int().optional(),
-            summary: z.string().max(2000).optional(),
+            summary: maxLen(z.string(), 2000).optional(),
           })
           .nullable()
           .optional(),
@@ -864,13 +865,13 @@ export function buildMcpServer(): McpServer {
         "Mark a task as done with an optional structured result and verification proof. Doğrulama kanıtı (verification) verilmezse görev yine done olur AMA yanıtta `uyari` alanı döner — sert kilit DEĞİL, advisory. kind:'none' bilinçli seçilirse uyarı verilmez.",
       inputSchema: {
         uid: z.string(),
-        result: z.string().max(50000).optional(),
+        result: maxLen(z.string(), 50000).optional(),
         verification: z
           .object({
             kind: z.enum(["tests", "build", "manual", "none"]),
             command: z.string().optional(),
             exit_code: z.number().int().optional(),
-            summary: z.string().max(2000).optional(),
+            summary: maxLen(z.string(), 2000).optional(),
           })
           .optional(),
       },
@@ -968,7 +969,7 @@ export function buildMcpServer(): McpServer {
         task_uid: z.string().optional(),
         kind: z.enum(["info", "request", "response", "handoff", "alert"]).optional(),
         subject: z.string().min(1).max(300),
-        body: z.string().min(1).max(50000),
+        body: maxLen(z.string().min(1), 50000),
         payload: z.record(z.unknown()).optional(),
       },
     },
@@ -1041,7 +1042,7 @@ export function buildMcpServer(): McpServer {
         from_agent: z.string().min(1).max(100),
         to_agent: z.string().min(1).max(100),
         project: z.string().min(1).max(100),
-        notes: z.string().max(5000).optional(),
+        notes: maxLen(z.string(), 5000).optional(),
       },
     },
     async ({ from_agent, to_agent, project, notes }) =>
@@ -1104,9 +1105,9 @@ export function buildMcpServer(): McpServer {
         project: z.string().max(100).optional(),
         agent: z.string().max(100).optional(),
         outcome: z.enum(["success", "partial", "failure"]),
-        what_worked: z.string().max(5000).optional(),
-        what_failed: z.string().max(5000).optional(),
-        lessons: z.string().max(10000).optional(),
+        what_worked: maxLen(z.string(), 5000).optional(),
+        what_failed: maxLen(z.string(), 5000).optional(),
+        lessons: maxLen(z.string(), 10000).optional(),
         duration_min: z.number().int().optional(),
       },
     },

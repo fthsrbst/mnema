@@ -12,6 +12,15 @@ export const projectNameSchema = z
     message: "project name may contain letters, numbers, dot, underscore, and dash",
   });
 
+// Uzun metin sınırları .refine() ile: .max() olsaydı JSON şemasına maxLength yazılır,
+// llama.cpp tabanlı istemciler (LM Studio) bunu GBNF'te `char{0,N}` repetition'a çevirir ve
+// N >= 2000 olduğunda MAX_REPETITION_THRESHOLD aşılır — tek bir alan yüzünden TÜM tool
+// grammar'ı parse edilemez ve her tool çağrısı 400 döner ("failed to parse grammar").
+// refine JSON şemasına maxLength yazmaz; sunucu tarafı doğrulama aynen korunur.
+// 2000 ALTINDAKİ sınırlar güvenli, onlar .max() ile kalabilir.
+export const maxLen = <T extends z.ZodString>(schema: T, max: number) =>
+  schema.refine((value) => value.length <= max, { message: `en fazla ${max} karakter` });
+
 export const memoryTypeSchema = z.enum(["fact", "preference", "decision", "howto", "context"]);
 export const documentKindSchema = z.enum([
   "reference",
@@ -50,7 +59,7 @@ const nullableTimestamp = z.string().trim().min(1).max(64).nullable();
 export const memoryInputBaseSchema = z
   .object({
     title: titleSchema,
-    body: z.string().trim().min(1).max(20_000),
+    body: maxLen(z.string().trim().min(1), 20_000),
     type: memoryTypeSchema.optional(),
     project: projectOptional,
     tags: tagsSchema.optional(),
@@ -76,7 +85,7 @@ export const memoryInputSchema = memoryInputBaseSchema.refine(
 export const memoryPatchBaseSchema = z
   .object({
     title: titleSchema.optional(),
-    body: z.string().trim().min(1).max(20_000).optional(),
+    body: maxLen(z.string().trim().min(1), 20_000).optional(),
     type: memoryTypeSchema.optional(),
     project: projectOptional,
     tags: tagsSchema.optional(),
@@ -101,7 +110,7 @@ export const memoryConsolidateBaseSchema = z.object({
   target_id: z.number().int().positive(),
   source_ids: z.array(z.number().int().positive()).min(1).max(100),
   /** Explicit merged content prevents silent information loss. */
-  body: z.string().trim().min(1).max(20_000),
+  body: maxLen(z.string().trim().min(1), 20_000),
   title: titleSchema.optional(),
   tags: tagsSchema.optional(),
   language: z.string().trim().min(2).max(35).optional(),
@@ -128,9 +137,9 @@ export const memoryInvalidateBaseSchema = z
     id: z.number().int().positive().optional(),
     uid: z.string().trim().min(1).max(200).optional(),
     /** Kısa gerekçe — zorunlu. */
-    reason: z.string().trim().min(1).max(2000),
+    reason: maxLen(z.string().trim().min(1), 2000),
     /** Bu iddiayı yanlışlayan komut çıktısı/gözlem — ZORUNLU (ADR-006: kanıtsız invalidation yasak). */
-    evidence: z.string().trim().min(1).max(4000),
+    evidence: maxLen(z.string().trim().min(1), 4000),
     /** Bu kaydın yerine geçen yeni kaydın yerel id'si (opsiyonel). */
     replaced_by_id: z.number().int().positive().optional(),
   })
@@ -159,9 +168,9 @@ export const memoryRevalidateSchema = memoryRevalidateBaseSchema.refine(
 export const documentInputSchema = z
   .object({
     title: titleSchema,
-    text: z.string().min(1).max(8_000_000),
+    text: maxLen(z.string().min(1), 8_000_000),
     source: sourceSchema.optional(),
-    uri: z.string().trim().min(1).max(2048).optional(),
+    uri: maxLen(z.string().trim().min(1), 2048).optional(),
     project: projectOptional,
     kind: documentKindSchema.optional(),
     version: z.string().trim().min(1).max(100).optional(),
@@ -202,7 +211,7 @@ export const documentMetaPatchSchema = documentMetaPatchBaseSchema.refine(
 
 export const contextGetSchema = z
   .object({
-    query: z.string().trim().min(1).max(10_000),
+    query: maxLen(z.string().trim().min(1), 10_000),
     project: projectOptional,
     cwd: z.string().max(4096).optional(),
     intent: contextIntentSchema.optional(),
@@ -215,7 +224,7 @@ export const contextGetSchema = z
 
 export const sessionInputSchema = z
   .object({
-    summary: z.string().trim().min(1).max(50_000),
+    summary: maxLen(z.string().trim().min(1), 50_000),
     project: projectOptional,
     source: sourceSchema.optional(),
     origin_machine: z.string().trim().min(1).max(100).optional(),
@@ -245,7 +254,7 @@ export const agentCheckoutSchema = z
 
 export const feedbackInputBaseSchema = z
   .object({
-    query: z.string().trim().min(1).max(10_000),
+    query: maxLen(z.string().trim().min(1), 10_000),
     verdict: z.enum(["noisy", "missing", "helpful"]),
     target_kind: z.enum(["memory", "chunk", "document", "context"]).optional(),
     target_id: z.number().int().positive().optional(),
@@ -256,7 +265,7 @@ export const feedbackInputBaseSchema = z
     delivery_id: z.string().trim().min(8).max(100).optional(),
     /** Deprecated compatibility alias; normalized to target_kind=memory. */
     memory_id: z.number().int().positive().optional(),
-    note: z.string().trim().min(1).max(2000).optional(),
+    note: maxLen(z.string().trim().min(1), 2000).optional(),
     source: sourceSchema.optional(),
   })
   .strict();

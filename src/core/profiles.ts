@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { addDocument, getDocument, listDocuments, updateDocumentMeta, type DocumentListItem } from "./documents.js";
+import { maxLen } from "./schemas.js";
 
 export const PROFESSIONAL_PROFILE_URI = "profiles/canonical";
 
@@ -22,7 +23,7 @@ export const PROFESSIONAL_PROFILE_SOURCE_PREFIXES = [
 
 export const professionalProfileInputSchema = z
   .object({
-    markdown: z.string().trim().min(100).max(100_000),
+    markdown: maxLen(z.string().trim().min(100), 100_000),
     title: z.string().trim().min(1).max(300).optional(),
     source: z.string().trim().min(1).max(200).optional(),
     language: z.string().trim().min(2).max(35).optional(),
