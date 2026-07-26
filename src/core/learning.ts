@@ -16,7 +16,7 @@ function rowToFeedback(row: Record<string, unknown>): TaskFeedback {
 }
 
 /** Record feedback for a completed task. */
-export function recordTaskFeedback(input: TaskFeedbackInput): TaskFeedback {
+export async function recordTaskFeedback(input: TaskFeedbackInput): Promise<TaskFeedback> {
   const uid = randomUUID().replaceAll("-", "");
   const db = getDb();
   db.prepare(
@@ -38,7 +38,7 @@ export function recordTaskFeedback(input: TaskFeedbackInput): TaskFeedback {
 
   // Auto-save significant lessons as howto memories
   if (input.lessons && input.lessons.length > 20) {
-    saveMemory({
+    await saveMemory({
       type: "howto",
       title: `Lesson: ${input.task_uid ? `Task ${input.task_uid.slice(0, 8)}` : "Task"} (${input.outcome})`,
       body: input.lessons,

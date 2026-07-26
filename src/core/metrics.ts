@@ -5,6 +5,7 @@
 import { getDb } from "./db.js";
 import { jobStats } from "./worker.js";
 import { candidateStats } from "./procedural.js";
+import { agentActive } from "./presence.js";
 import type { CoordinationMetrics, MetricsSnapshot } from "./types.js";
 
 interface Counter {
@@ -154,7 +155,9 @@ export function getMetricsSnapshot(): MetricsSnapshot {
   const documentCount = (db.prepare("SELECT COUNT(*) AS n FROM documents").get() as { n: number }).n;
   const taskCount = (db.prepare("SELECT COUNT(*) AS n FROM tasks").get() as { n: number }).n;
   const activeTasks = (db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE status IN ('pending', 'claimed', 'in_progress')").get() as { n: number }).n;
-  const agentCount = (db.prepare("SELECT COUNT(*) AS n FROM agent_capabilities WHERE status != 'offline'").get() as { n: number }).n;
+  // Presence, not the optional capability registry, is the source of truth for
+  // currently active agents. Stale advisory rows do not count as active load.
+  const agentCount = agentActive().filter((presence) => !presence.stale).length;
 
   const durations = getHistogram("http_request_duration_ms").values;
   const jobs = jobStats();

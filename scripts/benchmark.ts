@@ -3,6 +3,7 @@
  * Tüm yeni modüllerin performans ve doğruluk testleri.
  */
 process.env.HUB_DB_PATH = `./data/benchmark-${Date.now()}.db`;
+if (process.env.MNEMA_BENCHMARK_EMBEDDINGS !== "1") process.env.GEMINI_API_KEY = "";
 
 const startTime = Date.now();
 const results: { name: string; duration: number; passed: boolean; detail?: string }[] = [];
@@ -95,7 +96,8 @@ await bench("1.3 Bağımlılık zinciri (A→B→C)", () => {
   }
   
   // A'yı bitir → B claim edilebilmeli
-  completeTask(a.uid, "A bitti");
+  claimTask(a.uid, "agent-x");
+  completeTask(a.uid, "A bitti", undefined, "agent-x");
   const claimed = claimTask(b.uid, "agent-x");
   assert(claimed.status === "claimed", "B claim edilebilmeli");
 })();
@@ -106,10 +108,10 @@ await bench("1.4 Görev claim + complete döngüsü", () => {
   assert(claimed.claimed_by === "agent-1", "claimed_by agent-1 olmalı");
   assert(claimed.status === "claimed", "status claimed olmalı");
   
-  const updated = updateTask(task.uid, { status: "in_progress" });
+  const updated = updateTask(task.uid, { status: "in_progress" }, "agent-1");
   assert(updated.status === "in_progress", "status in_progress olmalı");
   
-  const completed = completeTask(task.uid, "Sonuç: başarılı");
+  const completed = completeTask(task.uid, "Sonuç: başarılı", undefined, "agent-1");
   assert(completed.status === "done", "status done olmalı");
   assert(completed.result === "Sonuç: başarılı", "result kaydedilmeli");
   assert(completed.finished_at !== null, "finished_at dolu olmalı");
@@ -266,9 +268,9 @@ await bench("4.2 Eskimiş kayıt tespiti (findStale)", async () => {
 // ═══════════════════════════════════════════════════════════
 console.log("\n── BÖLÜM 5: Öğrenme Döngüsü ──\n");
 
-await bench("5.1 Görev geri bildirimi (feedback)", () => {
+await bench("5.1 Görev geri bildirimi (feedback)", async () => {
   const task = createTask({ title: "Feedback test", project: "bench-learn", created_by: "bench" });
-  const fb = recordTaskFeedback({
+  const fb = await recordTaskFeedback({
     task_uid: task.uid,
     project: "bench-learn",
     agent: "claude-code",
@@ -281,10 +283,10 @@ await bench("5.1 Görev geri bildirimi (feedback)", () => {
   assert(fb.id > 0, "feedback id > 0 olmalı");
 })();
 
-await bench("5.2 Proje dersleri (projectLessons)", () => {
+await bench("5.2 Proje dersleri (projectLessons)", async () => {
   // Birkaç feedback daha ekle
-  recordTaskFeedback({ project: "bench-learn", agent: "cursor", outcome: "partial", lessons: "CSS grid daha iyi" });
-  recordTaskFeedback({ project: "bench-learn", agent: "windsurf", outcome: "failure", lessons: "Deploy öncesi test şart" });
+  await recordTaskFeedback({ project: "bench-learn", agent: "cursor", outcome: "partial", lessons: "CSS grid daha iyi" });
+  await recordTaskFeedback({ project: "bench-learn", agent: "windsurf", outcome: "failure", lessons: "Deploy öncesi test şart" });
   
   const lessons = projectLessons("bench-learn");
   assert(lessons.length >= 3, `En az 3 ders olmalı, gelen: ${lessons.length}`);

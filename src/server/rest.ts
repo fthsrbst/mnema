@@ -531,7 +531,8 @@ export function buildRestRouter(): Router {
     task ? res.json(task) : res.status(404).json({ error: "not found" });
   }));
   r.patch("/tasks/:uid", wrap((req, res) => {
-    const task = updateTask(req.params.uid, req.body);
+    const { agent, ...patch } = req.body ?? {};
+    const task = updateTask(req.params.uid, patch, agent);
     task ? res.json(task) : res.status(404).json({ error: "not found" });
   }));
   r.post("/tasks/:uid/claim", wrap((req, res) => {
@@ -541,11 +542,11 @@ export function buildRestRouter(): Router {
     task ? res.json(task) : res.status(404).json({ error: "not found or not claimable" });
   }));
   r.post("/tasks/:uid/complete", wrap((req, res) => {
-    const task = completeTask(req.params.uid, req.body?.result, req.body?.verification);
+    const task = completeTask(req.params.uid, req.body?.result, req.body?.verification, req.body?.agent);
     task ? res.json(task) : res.status(404).json({ error: "not found" });
   }));
   r.post("/tasks/:uid/cancel", wrap((req, res) => {
-    const task = cancelTask(req.params.uid, req.body?.error);
+    const task = cancelTask(req.params.uid, req.body?.error, req.body?.agent);
     task ? res.json(task) : res.status(404).json({ error: "not found" });
   }));
 
@@ -569,9 +570,11 @@ export function buildRestRouter(): Router {
   // Agent messaging
   r.post("/messages", wrap((req, res) => res.json(sendMessage(req.body))));
   r.get("/messages/inbox", wrap((req, res) => {
-    const { agent, limit, include_read } = req.query;
+    const { agent, project, kind, limit, include_read } = req.query;
     if (!agent) return res.status(400).json({ error: "agent required" });
     res.json(inbox(agent as string, {
+      project: project as string | undefined,
+      kind: kind as "info" | "request" | "response" | "handoff" | "alert" | undefined,
       limit: limit ? Number(limit) : undefined,
       includeRead: include_read === "1" || include_read === "true",
     }));
@@ -619,7 +622,7 @@ export function buildRestRouter(): Router {
     if (mode === "sessions") return res.json(await compactSessions(project));
     res.json(await distillProject(project));
   }));
-  r.post("/task-feedback", wrap((req, res) => res.json(recordTaskFeedback(req.body))));
+  r.post("/task-feedback", wrap(async (req, res) => res.json(await recordTaskFeedback(req.body))));
   r.get("/lessons/:project", wrap((req, res) => {
     const { limit } = req.query;
     res.json(projectLessons(req.params.project, limit ? Number(limit) : undefined));

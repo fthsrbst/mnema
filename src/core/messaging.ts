@@ -62,25 +62,45 @@ export function sendMessage(input: AgentMessageInput): AgentMessage {
  * Broadcasts (to_agent IS NULL) are read per-agent via agent_message_reads, so
  * one agent reading a broadcast does not mark it read for every other agent.
  */
-export function inbox(agent: string, opts: { includeRead?: boolean; limit?: number } = {}): AgentMessage[] {
+export function inbox(
+  agent: string,
+  opts: { includeRead?: boolean; project?: string; kind?: MessageKind; limit?: number } = {}
+): AgentMessage[] {
   const db = getDb();
   const limit = Math.min(opts.limit ?? 50, 200);
+  const filters: string[] = [];
+  const filterParams: unknown[] = [];
+  if (opts.project) {
+    filters.push("agent_messages.project = ?");
+    filterParams.push(opts.project);
+  }
+  if (opts.kind) {
+    filters.push("agent_messages.kind = ?");
+    filterParams.push(opts.kind);
+  }
+  const suffix = filters.length > 0 ? ` AND ${filters.join(" AND ")}` : "";
   if (opts.includeRead) {
     const rows = db
-      .prepare(`SELECT * FROM agent_messages WHERE (to_agent = ? OR to_agent IS NULL) ORDER BY created_at DESC LIMIT ?`)
-      .all(agent, limit) as Record<string, unknown>[];
+      .prepare(
+        `SELECT * FROM agent_messages
+         WHERE (to_agent = ? OR to_agent IS NULL)${suffix}
+         ORDER BY created_at DESC LIMIT ?`
+      )
+      .all(agent, ...filterParams, limit) as Record<string, unknown>[];
     return rows.map(rowToMessage);
   }
   const rows = db
     .prepare(
       `SELECT * FROM agent_messages
-       WHERE (to_agent = ? AND read_at IS NULL)
-          OR (to_agent IS NULL AND NOT EXISTS (
-                SELECT 1 FROM agent_message_reads r WHERE r.message_uid = agent_messages.uid AND r.agent = ?
-              ))
+       WHERE (
+         (to_agent = ? AND read_at IS NULL)
+         OR (to_agent IS NULL AND NOT EXISTS (
+           SELECT 1 FROM agent_message_reads r WHERE r.message_uid = agent_messages.uid AND r.agent = ?
+         ))
+       )${suffix}
        ORDER BY created_at DESC LIMIT ?`
     )
-    .all(agent, agent, limit) as Record<string, unknown>[];
+    .all(agent, agent, ...filterParams, limit) as Record<string, unknown>[];
   return rows.map(rowToMessage);
 }
 

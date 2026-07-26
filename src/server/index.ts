@@ -18,12 +18,14 @@ import {
   runDigest,
   seedAssetsFromDisk,
   syncWithPrimary,
+  reindex,
   vectorStore,
   vecError,
   // Agent Intelligence Platform
   startWorker,
   registerJobHandler,
   initWebhookDelivery,
+  deliverWebhook,
   runHygiene,
   compactSessions,
   distillProject,
@@ -37,6 +39,7 @@ import {
   recordRequest,
   backfillMissingEmbeddings,
   runConsistencyCheck,
+  type HubEvent,
 } from "../core/index.js";
 import { buildMcpServer } from "./mcp.js";
 import { buildRestRouter } from "./rest.js";
@@ -461,6 +464,32 @@ app.listen(config.port, config.host, () => {
     registerJobHandler("embed", async (payload) =>
       backfillMissingEmbeddings((payload.limit as number | undefined) ?? 100)
     );
+    registerJobHandler("reindex", async (payload) => {
+      const result = await reindex(Boolean(payload.force));
+      if (!result.ok) throw new Error(result.error ?? "reindex failed");
+      return result;
+    });
+    registerJobHandler("sync", async () => {
+      const result = await syncWithPrimary(config.primaryUrls, config.primaryToken);
+      if (!result.ok) throw new Error(result.error ?? "sync failed");
+      return result;
+    });
+    registerJobHandler("webhook", async (payload) => {
+      const candidate =
+        payload.event && typeof payload.event === "object" && !Array.isArray(payload.event)
+          ? payload.event as Record<string, unknown>
+          : payload;
+      if (
+        typeof candidate.type !== "string" ||
+        !candidate.payload ||
+        typeof candidate.payload !== "object" ||
+        Array.isArray(candidate.payload)
+      ) {
+        throw new Error("webhook job payload must contain { type, payload } event fields");
+      }
+      await deliverWebhook(candidate as unknown as HubEvent);
+      return { delivered: true, type: candidate.type };
+    });
     startWorker(config.workerIntervalMs);
 
     // Outbound webhook delivery: subscribes to the typed hub event bus.

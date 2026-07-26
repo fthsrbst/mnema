@@ -4,6 +4,9 @@
  */
 // ESM import hoisting'e takılmamak için: önce env, sonra dinamik import
 process.env.HUB_DB_PATH = `./data/smoke-${Date.now()}.db`;
+// Core smoke is deterministic and network-independent by default. Embedding
+// integration has dedicated smoke suites; opt in here only when explicitly needed.
+if (process.env.MNEMA_SMOKE_EMBEDDINGS !== "1") process.env.GEMINI_API_KEY = "";
 
 import fs from "node:fs";
 const {
@@ -522,6 +525,34 @@ check(
     untrustedContext.evidence.chunks.some((item) => item.instruction_like) &&
     untrustedContext.warnings.some((warning) => warning.includes("instruction-like"))
 );
+const compactDocumentationContext = await contextGet({
+  query: "Promptshield sentinel documentation",
+  project: "ai-hub",
+  intent: "documentation",
+  level: 1,
+  record_usage: false,
+});
+check(
+  "context_get level=1 documentation: kompakt modda RAG kanıtını sıfırlamaz",
+  compactDocumentationContext.evidence.chunks.some(
+    (item) => item.document_title === "Untrusted instruction fixture"
+  ),
+  `chunks=${compactDocumentationContext.evidence.chunks.length}`
+);
+const compactHistoryContext = await contextGet({
+  query: "Promptshield sentinel implementation history",
+  project: "ai-hub",
+  intent: "technical_history",
+  level: 1,
+  record_usage: false,
+});
+check(
+  "context_get level=1 technical_history: teknik geçmiş için belge kanıtı döner",
+  compactHistoryContext.evidence.chunks.some(
+    (item) => item.document_title === "Untrusted instruction fixture"
+  ),
+  `chunks=${compactHistoryContext.evidence.chunks.length}`
+);
 
 const emptyRec = formatRecall(await recall("xyzzy qqqwww zzzyyy"));
 check("recall boş sonuç → boş string", emptyRec === "");
@@ -992,6 +1023,7 @@ const {
   createTask,
   claimTask,
   completeTask,
+  updateTask,
   listTasks,
   getTask,
   taskQueue,
@@ -1009,6 +1041,8 @@ const {
   enqueueJob,
   getJob,
   listJobs,
+  registerJobHandler,
+  processJobs,
   emitHubEvent,
   getEventLog,
   getEventLogDb,
@@ -1038,13 +1072,13 @@ check("task_create with depends_on", task2.depends_on.includes(task1.uid));
 const claimed = claimTask(task1.uid, "smoke-agent");
 check("task_claim", claimed.status === "claimed" && claimed.claimed_by === "smoke-agent");
 
-const completed = completeTask(task1.uid, "Test tamamlandı");
+const completed = completeTask(task1.uid, "Test tamamlandı", undefined, "smoke-agent");
 check("task_complete", completed.status === "done" && completed.result === "Test tamamlandı");
 
 // --- Task quality gate: doğrulama kanıtı (advisory — sert kilit DEĞİL) ---
 const verifyTaskObj = createTask({ title: "Kanıtsız tamamlanacak görev", project: "ai-hub", created_by: "smoke" });
 claimTask(verifyTaskObj.uid, "smoke-agent");
-const completedNoProof = completeTask(verifyTaskObj.uid, "Kanıtsız bitti");
+const completedNoProof = completeTask(verifyTaskObj.uid, "Kanıtsız bitti", undefined, "smoke-agent");
 check(
   "task_complete: kanıt verilmedi → görev done olur AMA uyarı döner (sert kilit YOK)",
   completedNoProof.status === "done" &&
@@ -1059,7 +1093,7 @@ const completedWithProof = completeTask(proofTask.uid, "Kanıtla bitti", {
   command: "npm run smoke",
   exit_code: 0,
   summary: "Tüm smoke testleri geçti",
-});
+}, "smoke-agent");
 check(
   "task_complete: kanıt (kind!=none) verilince uyarı YOK",
   completedWithProof.status === "done" &&
@@ -1072,7 +1106,7 @@ check(
 
 const noneTask = createTask({ title: "kind:none bilinçli görev", project: "ai-hub", created_by: "smoke" });
 claimTask(noneTask.uid, "smoke-agent");
-const completedNone = completeTask(noneTask.uid, "Bilinçli kanıtsız", { kind: "none" });
+const completedNone = completeTask(noneTask.uid, "Bilinçli kanıtsız", { kind: "none" }, "smoke-agent");
 check(
   "task_complete: kind:'none' açıkça verilirse uyarı YOK (bilinçli tercih saygı)",
   completedNone.status === "done" &&
@@ -1093,7 +1127,20 @@ const queue = taskQueue("ai-hub");
 check("task_queue (bağımlılık çözülünce sıraya girer)", queue.some((t: { uid: string }) => t.uid === task2.uid));
 
 // --- Metrics coordination block (7 gün penceresi; tek SQL turu, ucuz) ---
+const metricsPresence = agentCheckin({
+  project: "ai-hub",
+  task: "metrics active presence source-of-truth",
+  machine: "smoke-metrics",
+  agent: "smoke",
+});
 const snapshot = getMetricsSnapshot();
+check(
+  "metrics_overview: agent_count aktif ve stale olmayan presence kaydından gelir",
+  snapshot.agent_count === agentActive().filter((item: { stale: boolean }) => !item.stale).length &&
+    snapshot.agent_count >= 1,
+  `agent_count=${snapshot.agent_count}`
+);
+agentCheckout({ uid: metricsPresence.uid });
 check(
   "metrics_overview: coordination bloğu döner (uygun tipler)",
   typeof snapshot.coordination === "object" &&
@@ -1151,6 +1198,47 @@ check("agent_inbox", inboxMsgs.length >= 1 && inboxMsgs.some((m: { uid: string }
 const readResult = markRead(msg1.uid);
 check("message_read", readResult !== null);
 
+const filteredTarget = sendMessage({
+  from_agent: "smoke-agent",
+  to_agent: "filter-agent",
+  project: "ai-hub",
+  kind: "info",
+  subject: "Exact inbox target",
+  body: "Bu mesaj iki filtreyi de karşılar",
+});
+sendMessage({
+  from_agent: "smoke-agent",
+  to_agent: "filter-agent",
+  project: "ai-hub",
+  kind: "alert",
+  subject: "Wrong kind",
+  body: "Kind filtresinden geçmemeli",
+});
+sendMessage({
+  from_agent: "smoke-agent",
+  to_agent: "filter-agent",
+  project: "learning",
+  kind: "info",
+  subject: "Wrong project",
+  body: "Project filtresinden geçmemeli",
+});
+const exactInbox = inbox("filter-agent", { project: "ai-hub", kind: "info" });
+check(
+  "agent_inbox project+kind filtrelerini gerçekten uygular",
+  exactInbox.length === 1 && exactInbox[0]?.uid === filteredTarget.uid,
+  `uids=${exactInbox.map((item: { uid: string }) => item.uid).join(",")}`
+);
+markRead(filteredTarget.uid);
+const exactInboxIncludingRead = inbox("filter-agent", {
+  project: "ai-hub",
+  kind: "info",
+  includeRead: true,
+});
+check(
+  "agent_inbox includeRead ile de project+kind filtrelerini korur",
+  exactInboxIncludingRead.length === 1 && exactInboxIncludingRead[0]?.uid === filteredTarget.uid
+);
+
 // --- Task 3.1: atomic claim (double-claim must lose the race, not silently succeed) ---
 const raceTask = createTask({ title: "Race görevi", project: "ai-hub", created_by: "smoke" });
 const firstClaim = claimTask(raceTask.uid, "agent-a");
@@ -1164,6 +1252,28 @@ try {
 check(
   "task_claim: ikinci talep (aynı görev, farklı agent) reddedilir",
   secondClaimRejected && getTask(raceTask.uid)?.claimed_by === "agent-a"
+);
+let wrongOwnerRejected = false;
+try {
+  updateTask(raceTask.uid, { status: "in_progress" }, "agent-b");
+} catch {
+  wrongOwnerRejected = true;
+}
+const ownerProgress = updateTask(raceTask.uid, { status: "in_progress" }, "agent-a");
+check(
+  "task_update: execution state yalnız owning agent tarafından değiştirilebilir",
+  wrongOwnerRejected && ownerProgress.status === "in_progress" && ownerProgress.claimed_by === "agent-a"
+);
+completeTask(raceTask.uid, "race complete", { kind: "tests", summary: "owner contract" }, "agent-a");
+let terminalReopenRejected = false;
+try {
+  updateTask(raceTask.uid, { status: "in_progress" }, "agent-a");
+} catch {
+  terminalReopenRejected = true;
+}
+check(
+  "task_update: terminal görev geçersiz geçişle yeniden açılamaz",
+  terminalReopenRejected && getTask(raceTask.uid)?.status === "done"
 );
 
 // --- Task 3.7: broadcast mesajlar için kişiye özel okuma izolasyonu ---
@@ -1229,7 +1339,12 @@ const webhooks = listWebhooks();
 check("webhook_list", webhooks.some((w: { uid: string }) => w.uid === webhook.uid));
 
 // --- Jobs ---
-const job = enqueueJob("test-job", { test: true });
+let atomicJobExecutions = 0;
+registerJobHandler("custom", async (payload) => {
+  if (payload.atomic_marker === true) atomicJobExecutions += 1;
+  return { ok: true };
+});
+const job = enqueueJob("custom", { test: true, atomic_marker: true });
 check("job_enqueue", job.uid.length > 0 && job.status === "queued");
 
 const fetchedJob = getJob(job.uid);
@@ -1237,6 +1352,13 @@ check("job_status", fetchedJob?.uid === job.uid);
 
 const jobs = listJobs({});
 check("job_list", jobs.length >= 1);
+await Promise.all([processJobs(), processJobs(), processJobs(), processJobs()]);
+const processedJob = getJob(job.uid);
+check(
+  "job worker atomik claim: paralel worker döngüleri işi yalnız bir kez çalıştırır",
+  atomicJobExecutions === 1 && processedJob?.status === "done" && processedJob.attempts === 1,
+  `executions=${atomicJobExecutions}, status=${processedJob?.status}, attempts=${processedJob?.attempts}`
+);
 
 // --- Event Bus ---
 emitHubEvent({ type: "memory_saved", payload: { memory_uid: "test-uid", project: "ai-hub" } });
@@ -1613,6 +1735,34 @@ check(
     victimRow.is_current === 1,
     `is_current=${victimRow.is_current}`
   );
+  const crossProjectReplacement = await saveMemory({
+    title: "kirmizidefter global replacement",
+    body: "Farkli proje kapsamindaki replacement",
+  });
+  let crossProjectRejected = false;
+  try {
+    await invalidateMemory({
+      id: victim.id,
+      reason: "cross-project replacement test",
+      evidence: "replacement global, victim ai-hub",
+      replaced_by_id: crossProjectReplacement.id,
+    });
+  } catch {
+    crossProjectRejected = true;
+  }
+  const victimAfterCrossProject = db
+    .prepare("SELECT is_current FROM memories WHERE id=?")
+    .get(victim.id) as { is_current: number };
+  const replacementAfterCrossProject = db
+    .prepare("SELECT supersedes_uid FROM memories WHERE id=?")
+    .get(crossProjectReplacement.id) as { supersedes_uid: string | null };
+  check(
+    "memory_invalidate: cross-project replacement atomik olarak reddedilir",
+    crossProjectRejected &&
+      victimAfterCrossProject.is_current === 1 &&
+      replacementAfterCrossProject.supersedes_uid === null,
+    `rejected=${crossProjectRejected}, victim_current=${victimAfterCrossProject.is_current}`
+  );
 
   // 5) revalidate geri getirir.
   await revalidateMemory({ id: stale.id });
@@ -1692,6 +1842,22 @@ check(
     "graf 1-hop: genişletilen kaydın hangi kenar üzerinden geldiği belli",
     expanded?.graph_expansion?.relation_type === "supersedes" && expanded?.graph_expansion?.anchor_uid === anchor.uid,
     `rel=${expanded?.graph_expansion?.relation_type}, anchor eslesme=${expanded?.graph_expansion?.anchor_uid === anchor.uid}`
+  );
+  await invalidateMemory({
+    id: superseder.id,
+    reason: "graph lifecycle regression fixture",
+    evidence: "smoke test invalidated neighbor must not return as current evidence",
+  });
+  const lifecycleBundle = await contextGet({
+    query: "mavikanarya",
+    project: "ai-hub",
+    record_usage: false,
+  });
+  check(
+    "graf 1-hop: invalidated komşu güncel kanıta geri sızmaz",
+    !lifecycleBundle.evidence.memories.some((item) => item.id === superseder.id) &&
+      lifecycleBundle.warnings.some((warning) => warning.includes("invalidated graph neighbor")),
+    `present=${lifecycleBundle.evidence.memories.some((item) => item.id === superseder.id)}, warnings=${lifecycleBundle.warnings.join(" | ")}`
   );
 
   // `related` zayif tipi genisletme TETIKLEMEMELI.
@@ -1971,7 +2137,7 @@ check(
 
   // assembleEpisode — mevcut satırlardan kaba iz + evidence
   const epTask = createTask({ title: "Faz2 episode görevi", description: "Tailscale timeout ayıklandı", project: "smoke-adr7-p2", created_by: "smoke" });
-  recordTaskFeedback({ task_uid: epTask.uid, project: "smoke-adr7-p2", agent: "smoke", outcome: "success", what_worked: "LAN alias işe yaradı", lessons: "Tailscale takılırsa LAN alias'ına geç" });
+  await recordTaskFeedback({ task_uid: epTask.uid, project: "smoke-adr7-p2", agent: "smoke", outcome: "success", what_worked: "LAN alias işe yaradı", lessons: "Tailscale takılırsa LAN alias'ına geç" });
   const asm = assembleEpisode(epTask.uid);
   check("ADR-007 faz2: assembleEpisode task+feedback'ten iz ve evidence kurar",
     asm !== null && asm.episode_key === epTask.uid && asm.evidence_refs.includes(`task:${epTask.uid}`) &&

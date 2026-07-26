@@ -42,8 +42,8 @@
       }
     },
     {
-      "id": "mnema-supabase-keys-history",
-      "query": "How do we use Supabase opaque secret keys in API requests?",
+      "id": "mnema-load-test-observability-history",
+      "query": "How did we diagnose the 429 observability blind spot in Hub load testing?",
       "project": "mnema",
       "intent": "auto",
       "max_tokens": 2000,
@@ -51,13 +51,13 @@
         "intent": "technical_history",
         "authority_project": "mnema",
         "memory_title_any": [
-          "Supabase opaque secret keys"
+          "Hub yük testi: servisler stabil, 429 observability kör noktası var"
         ]
       }
     },
     {
-      "id": "mnema-pi-deploy-history-turkish",
-      "query": "Raspberry Pi'ye canonical Mnema nasil deploy edilir, runtime veriyi tasimadan?",
+      "id": "mnema-claude-hook-windows-history-turkish",
+      "query": "Claude hook fetch ve process.exit Windows hatasi master ve Pi'de nasil duzeltildi?",
       "project": "mnema",
       "intent": "auto",
       "max_tokens": 3000,
@@ -65,7 +65,7 @@
         "intent": "technical_history",
         "authority_project": "mnema",
         "memory_title_any": [
-          "Deploy canonical Mnema"
+          "Claude hook fetch+process.exit Windows bug"
         ]
       }
     },

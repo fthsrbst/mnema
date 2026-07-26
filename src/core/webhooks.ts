@@ -123,15 +123,17 @@ export async function deliverWebhook(event: HubEvent): Promise<void> {
     .prepare("SELECT * FROM webhooks WHERE active = 1")
     .all() as Record<string, unknown>[];
 
+  const deliveries: Promise<number>[] = [];
   for (const row of webhooks) {
     const webhook = rowToWebhook(row);
     const events: string[] = webhook.events;
     if (!events.includes("*") && !events.includes(event.type)) continue;
-    // Fire and forget with error handling
-    deliverToWebhook(webhook, event).catch((err) => {
+    deliveries.push(deliverToWebhook(webhook, event).catch((err) => {
       console.error(`[hub:webhook] delivery error: ${(err as Error).message}`);
-    });
+      return -1;
+    }));
   }
+  await Promise.all(deliveries);
 }
 
 /** Initialize webhook delivery: subscribe to all hub events. */

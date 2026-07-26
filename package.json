@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc",
     "backup:copy": "tsx scripts/backup-copy.ts",
+    "cleanup:audit": "tsx scripts/cleanup-audit.ts",
     "benchmark:vector": "tsx scripts/vector-benchmark.ts",
     "benchmark:vector:smoke": "tsx scripts/vector-benchmark.ts --rows=2000 --queries=30 --projects=10 --dim=128 --gate",
     "dev": "tsx src/server/index.ts",

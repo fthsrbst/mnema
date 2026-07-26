@@ -25,6 +25,37 @@ function taskRow(uid: string): Task | null {
   return row ? rowToTask(row) : null;
 }
 
+const ALLOWED_STATUS_TRANSITIONS: Record<TaskStatus, ReadonlySet<TaskStatus>> = {
+  pending: new Set(["cancelled"]),
+  claimed: new Set(["in_progress", "blocked", "done", "cancelled"]),
+  in_progress: new Set(["blocked", "done", "cancelled"]),
+  blocked: new Set(["in_progress", "done", "cancelled"]),
+  done: new Set(),
+  cancelled: new Set(),
+};
+
+function assertTaskMutationAllowed(task: Task, patch: TaskPatch, actor?: string): void {
+  if (
+    patch.status !== undefined &&
+    patch.status !== task.status &&
+    !ALLOWED_STATUS_TRANSITIONS[task.status].has(patch.status)
+  ) {
+    throw new Error(`Invalid task status transition: ${task.status} -> ${patch.status}`);
+  }
+
+  const touchesExecution =
+    patch.status !== undefined ||
+    patch.result !== undefined ||
+    patch.error !== undefined ||
+    patch.verification !== undefined;
+  if (touchesExecution && task.claimed_by) {
+    if (!actor) throw new Error(`Task ${task.uid} mutation requires agent identity`);
+    if (actor !== task.claimed_by) {
+      throw new Error(`Task ${task.uid} is owned by ${task.claimed_by}, not ${actor}`);
+    }
+  }
+}
+
 /** Check if all dependencies of a task are completed. */
 function dependenciesMet(dependsOn: string[]): boolean {
   if (dependsOn.length === 0) return true;
@@ -91,10 +122,11 @@ export function claimTask(uid: string, agent: string): Task {
 }
 
 /** Update a task's mutable fields. */
-export function updateTask(uid: string, patch: TaskPatch): Task {
+export function updateTask(uid: string, patch: TaskPatch, actor?: string): Task {
   const db = getDb();
   const task = taskRow(uid);
   if (!task) throw new Error(`Task ${uid} not found`);
+  assertTaskMutationAllowed(task, patch, actor);
   const sets: string[] = [];
   const params: Record<string, unknown> = { uid };
   if (patch.status !== undefined) {
@@ -141,8 +173,13 @@ export function updateTask(uid: string, patch: TaskPatch): Task {
 }
 
 /** Mark a task as done with an optional result and verification proof. */
-export function completeTask(uid: string, result?: string, verification?: TaskVerification): TaskCompleteResult {
-  const task = updateTask(uid, { status: "done", result, verification });
+export function completeTask(
+  uid: string,
+  result?: string,
+  verification?: TaskVerification,
+  agent?: string
+): TaskCompleteResult {
+  const task = updateTask(uid, { status: "done", result, verification }, agent);
   // Advisory uyarı: kanıt verilmemişse (kind:"none" bilinçli seçilmediyse) agent'a
   // hatırlatma döner. Sert kilit DEĞİL — presence felsefesiyle tutarlı.
   const noneVerified = verification === undefined || verification === null;
@@ -157,8 +194,8 @@ export function completeTask(uid: string, result?: string, verification?: TaskVe
 }
 
 /** Mark a task as cancelled with an optional error reason. */
-export function cancelTask(uid: string, error?: string): Task {
-  return updateTask(uid, { status: "cancelled", error });
+export function cancelTask(uid: string, error?: string, agent?: string): Task {
+  return updateTask(uid, { status: "cancelled", error }, agent);
 }
 
 /** Get a single task by UID. */

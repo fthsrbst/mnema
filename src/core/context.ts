@@ -254,7 +254,12 @@ async function contextMemories(
     includeGlobal ? searchMemories(query, { type, limit: Math.max(limit, 12) }) : Promise.resolve([]),
   ]);
   const global = broad.filter((item) => item.project === null);
-  return uniqueMemories([...scoped, ...global]).slice(0, limit);
+  // Project scope is a filter, not an unconditional rank override. Previously all
+  // scoped hits were concatenated before global hits, so a highly relevant global
+  // runbook/decision was starved by a handful of weak project-local matches.
+  return uniqueMemories([...scoped, ...global])
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 function compactProject(project: ProjectMap | null): ContextProjectAuthority | null {
@@ -518,11 +523,23 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
 
   const includeGlobal = input.include_global ?? true;
   const type = intent === "decision" ? "decision" : intent === "preference" ? "preference" : undefined;
-  // Level 1: standard — last session + top 3 memories, no chunks/relations.
+  // Level 1 is compact, but evidence-driven intents must still return a small
+  // document slice. Otherwise `documentation`/`technical_history` silently
+  // degrade into memory-only retrieval even when the matching RAG source exists.
   // current_status must stay deterministic regardless of level: semantic/vector
   // evidence must never decide current truth, so memoryLimit stays 0 even at level 1.
   const memoryLimit = intent === "current_status" ? 0 : level === 1 ? 3 : intent === "documentation" ? 2 : 5;
-  const chunkLimit = level === 1 ? 0 : intent === "current_status" ? 2 : intent === "documentation" ? 6 : 3;
+  const evidenceDriven = intent === "documentation" || intent === "technical_history";
+  const chunkLimit =
+    level === 1
+      ? evidenceDriven
+        ? 2
+        : 0
+      : intent === "current_status"
+        ? 2
+        : intent === "documentation"
+          ? 6
+          : 3;
 
   const generatedAt = new Date().toISOString();
   const [memories, chunks] = await Promise.all([
@@ -582,6 +599,7 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
     expansionByMemoryId.set(missingId, { relation, anchorId });
   }
   const expandedEvidence: ContextMemoryEvidence[] = [];
+  let suppressedInvalidGraphMemories = 0;
   if (expansionByMemoryId.size > 0) {
     // Toplu getirme (N+1 yok).
     const expandedMemories = getMemoriesByIds([...expansionByMemoryId.keys()]);
@@ -589,6 +607,13 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
     for (const memory of expandedMemories) {
       const link = expansionByMemoryId.get(memory.id);
       if (!link) continue;
+      // `getMemoriesByIds` intentionally supports historical inspection, but a
+      // context bundle is current evidence. Never let graph expansion re-inject
+      // an invalidated/superseded memory that normal retrieval correctly hid.
+      if (!memory.is_current) {
+        suppressedInvalidGraphMemories += 1;
+        continue;
+      }
       const anchor = anchorByMemoryId.get(link.anchorId);
       rank += 1;
       expandedEvidence.push(
@@ -602,6 +627,11 @@ export async function contextGet(input: ContextGetInput): Promise<ContextBundle>
       // Bagi da pakete koy ki okuyan agent iliskiyi gorebilsin.
       relationMap.set(link.relation.id, link.relation);
     }
+  }
+  if (suppressedInvalidGraphMemories > 0) {
+    warnings.push(
+      `${suppressedInvalidGraphMemories} invalidated graph neighbor(s) suppressed from current evidence`
+    );
   }
 
   const [latestSession] = project ? recentSessionLogs({ project: project.name, limit: 1 }) : [];

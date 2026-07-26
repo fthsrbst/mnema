@@ -1,5 +1,12 @@
 import fs from "node:fs";
-import { closeDb, contextGet, embeddingsEnabled, type ContextGetInput } from "../src/core/index.js";
+import type { ContextGetInput } from "../src/core/index.js";
+
+const cliArgs = process.argv.slice(2);
+// Golden retrieval cases are deliberately required to pass in FTS-only mode.
+// `--embeddings` adds the online vector channel when an integration environment
+// is available, but a developer's ambient key must not make the default flaky.
+if (!cliArgs.includes("--embeddings")) process.env.GEMINI_API_KEY = "";
+const { closeDb, contextGet, embeddingsEnabled } = await import("../src/core/index.js");
 
 interface Expected {
   intent?: string;
@@ -53,7 +60,11 @@ function evaluate(item: EvalCase, actual: Awaited<ReturnType<typeof contextGet>>
   if (expected.max_chunks !== undefined && actual.evidence.chunks.length > expected.max_chunks)
     failures.push(`chunks expected<=${expected.max_chunks} actual=${actual.evidence.chunks.length}`);
   if (expected.memory_title_any && !includesAny(actual.evidence.memories.map((m) => m.title), expected.memory_title_any))
-    failures.push(`memory title missing one of: ${expected.memory_title_any.join(" | ")}`);
+    failures.push(
+      `memory title missing one of: ${expected.memory_title_any.join(" | ")}; actual: ${actual.evidence.memories
+        .map((memory) => memory.title)
+        .join(" | ")}`
+    );
   if (expected.chunk_title_any && !includesAny(actual.evidence.chunks.map((c) => c.document_title), expected.chunk_title_any))
     failures.push(`chunk title missing one of: ${expected.chunk_title_any.join(" | ")}`);
   if (expected.warning_any && !includesAny(actual.warnings, expected.warning_any))
@@ -68,7 +79,6 @@ function evaluate(item: EvalCase, actual: Awaited<ReturnType<typeof contextGet>>
   return failures;
 }
 
-const cliArgs = process.argv.slice(2);
 const releaseGate = cliArgs.includes("--release");
 const file = cliArgs.find((arg) => !arg.startsWith("--")) ?? "./evals/context-golden.json";
 const suite = JSON.parse(fs.readFileSync(file, "utf8")) as EvalSuite;

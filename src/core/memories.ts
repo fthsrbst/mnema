@@ -625,26 +625,33 @@ export async function invalidateMemory(input: InvalidateMemoryInput): Promise<Me
   if (parsed.replaced_by_id !== undefined && !replacement) {
     throw new Error(`replacement memory #${parsed.replaced_by_id} not found`);
   }
+  if (replacement && replacement.project !== existing.project) {
+    throw new Error(
+      `replacement memory must belong to the same project (${existing.project ?? "global"} != ${replacement.project ?? "global"})`
+    );
+  }
   const db = getDb();
   const reasonText = `${parsed.reason} — kanıt: ${parsed.evidence}`;
-  db.prepare(
-    `UPDATE memories SET is_current = 0, valid_to = ${NOW_MS}, invalidated_reason = ?, updated_at = ${NOW_MS} WHERE id = ?`
-  ).run(reasonText, id);
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE memories SET is_current = 0, valid_to = ${NOW_MS}, invalidated_reason = ?, updated_at = ${NOW_MS} WHERE id = ?`
+    ).run(reasonText, id);
+    if (replacement) {
+      db.prepare(`UPDATE memories SET supersedes_uid = ?, updated_at = ${NOW_MS} WHERE id = ?`).run(
+        existing.uid,
+        replacement.id
+      );
+      saveMemoryRelation({
+        from_id: replacement.id,
+        to_id: id,
+        relation_type: "supersedes",
+        source: "memory_invalidate",
+      });
+    }
+  })();
   if (vectorStore.available()) {
     const embedding = vectorStore.get("memory", id);
     if (embedding) vectorStore.putMemory(id, existing.project, false, embedding);
-  }
-  if (parsed.replaced_by_id !== undefined) {
-    db.prepare(`UPDATE memories SET supersedes_uid = ?, updated_at = ${NOW_MS} WHERE id = ?`).run(
-      existing.uid,
-      parsed.replaced_by_id
-    );
-    saveMemoryRelation({
-      from_id: parsed.replaced_by_id,
-      to_id: id,
-      relation_type: "supersedes",
-      source: "memory_invalidate",
-    });
   }
   notifyWrite();
   return getMemory(id);

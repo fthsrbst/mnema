@@ -854,6 +854,7 @@ export function buildMcpServer(): McpServer {
       description: "Update task status, priority, or other fields.",
       inputSchema: {
         uid: z.string(),
+        agent: z.string().min(1).max(100).optional(),
         status: z.enum(["pending", "claimed", "in_progress", "blocked", "done", "cancelled"]).optional(),
         priority: z.number().int().min(0).max(100).optional(),
         result: maxLen(z.string(), 50000).optional(),
@@ -869,8 +870,8 @@ export function buildMcpServer(): McpServer {
           .optional(),
       },
     },
-    async ({ uid, ...patch }) => {
-      const task = updateTask(uid, patch);
+    async ({ uid, agent, ...patch }) => {
+      const task = updateTask(uid, patch, agent);
       return task ? json(task) : json({ error: `Task not found: ${uid}` });
     }
   );
@@ -883,6 +884,7 @@ export function buildMcpServer(): McpServer {
         "Mark a task as done with an optional structured result and verification proof. Doğrulama kanıtı (verification) verilmezse görev yine done olur AMA yanıtta `uyari` alanı döner — sert kilit DEĞİL, advisory. kind:'none' bilinçli seçilirse uyarı verilmez.",
       inputSchema: {
         uid: z.string(),
+        agent: z.string().min(1).max(100),
         result: maxLen(z.string(), 50000).optional(),
         verification: z
           .object({
@@ -894,10 +896,24 @@ export function buildMcpServer(): McpServer {
           .optional(),
       },
     },
-    async ({ uid, result, verification }) => {
-      const task = completeTask(uid, result, verification);
+    async ({ uid, agent, result, verification }) => {
+      const task = completeTask(uid, result, verification, agent);
       return task ? json(task) : json({ error: `Task not found: ${uid}` });
     }
+  );
+
+  server.registerTool(
+    "task_cancel",
+    {
+      title: "Cancel a task",
+      description: "Cancel a task. A claimed task may only be cancelled by its owning agent.",
+      inputSchema: {
+        uid: z.string(),
+        agent: z.string().min(1).max(100).optional(),
+        error: maxLen(z.string(), 5000).optional(),
+      },
+    },
+    async ({ uid, agent, error }) => json(cancelTask(uid, error, agent))
   );
 
   server.registerTool(
@@ -1160,7 +1176,7 @@ export function buildMcpServer(): McpServer {
         duration_min: z.number().int().optional(),
       },
     },
-    async (args) => json(recordTaskFeedback(args))
+    async (args) => json(await recordTaskFeedback(args))
   );
 
   server.registerTool(
