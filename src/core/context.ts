@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { getProject, resolveProjectFromPath } from "./projects.js";
 import { recentSessionLogs } from "./sessions.js";
-import { getMemoriesByIds, recordMemoryAccess, searchMemories } from "./memories.js";
+import { getMemoriesByIds, recordMemoryAccess, searchMemories, enrichMachineStates, machineWarning } from "./memories.js";
+import { resolveMachineName } from "./machine.js";
 import { searchChunks } from "./documents.js";
 import { listMemoryRelationsForUids } from "./relations.js";
 import type { MemoryRelationType, MemoryType, ProjectMap, ScoredChunk, ScoredMemory, SessionLog } from "./types.js";
@@ -82,6 +83,14 @@ export interface ContextMemoryEvidence {
   };
   trust: "untrusted_evidence";
   instruction_like: boolean;
+  /**
+   * Cihaz-farkındalığı (spec §3): yalnız machine_dependent + is_current=1 kayıtlar için
+   * dolu. global/superseded kayıtlarda undefined. Bütçe kırpımı kayıtla birlikte düşünür —
+   * uyarı tek başına kırpılmaz (spec §3 token bütçesi kuralı).
+   */
+  machine_state?: import("./types.js").MachineStateView;
+  /** Cihaz uyarı metni (varsa); kapatma yolu her zaman memory_machine_mark'ı adıyla söyler. */
+  machine_warning?: string;
 }
 
 export interface ContextChunkEvidence {
@@ -306,6 +315,11 @@ function compactMemory(
     ...(graphExpansion ? { graph_expansion: graphExpansion } : {}),
     trust: "untrusted_evidence",
     instruction_like: flagged,
+    // Cihaz-farkındalığı (machine_dependent + is_current=1): searchMemories zaten
+    // zenginleştirdi; burada yalnız ilet. Graph genişletme kayıtları ScoredMemory değil
+    // ham Memory olduğu için machine_state taşımaz — tutarlı (kendisi de zaten git-gel).
+    ...(item.machine_state ? { machine_state: item.machine_state } : {}),
+    ...(item.machine_warning ? { machine_warning: item.machine_warning } : {}),
   };
 }
 

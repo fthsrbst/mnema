@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { config } from "./config.js";
 import { getDb, NOW_MS } from "./db.js";
 import { embedOne, toBuffer } from "./embeddings.js";
@@ -7,11 +7,25 @@ import { hybridSearch } from "./search.js";
 import { recordDeletion } from "./sync.js";
 import { assertProjectReference } from "./projects.js";
 import { resolveMachineName } from "./machine.js";
-import type { Memory, MemoryInput, RelatedRef, SavedMemory, ScoredMemory, SearchFilters, SimilarHit } from "./types.js";
+import type {
+  MachineScope,
+  MachineStateStatus,
+  MachineStateView,
+  Memory,
+  MemoryInput,
+  MemoryMachineMarkInput,
+  MemoryMachineState,
+  RelatedRef,
+  SavedMemory,
+  ScoredMemory,
+  SearchFilters,
+  SimilarHit,
+} from "./types.js";
 import {
   memoryConsolidateSchema,
   memoryInputSchema,
   memoryInvalidateSchema,
+  memoryMachineMarkSchema,
   memoryPatchSchema,
   memoryRevalidateSchema,
 } from "./schemas.js";
@@ -31,11 +45,14 @@ function clampImportance(v: number | undefined): number {
 }
 
 function rowToMemory(row: Record<string, unknown>): Memory {
-  return {
+  const mem = {
     ...(row as unknown as Memory),
     tags: JSON.parse((row.tags as string) ?? "[]"),
     related: JSON.parse((row.related as string) ?? "[]"),
   };
+  // machine_scope NULL ve "global" eş anlamlı; NULL olarak saklayıp okuma tarafında
+  // uyarı üretmemek için burada normalize etmiyoruz — alan gerçek DB değerini taşır.
+  return mem;
 }
 
 /**
@@ -117,11 +134,11 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
       `INSERT INTO memories(
          uid, type, title, body, project, tags, source, language, canonical_summary,
          normalizer_generation, importance, related, origin_machine, verified_at, review_after,
-         created_at, updated_at
+         machine_scope, created_at, updated_at
        ) VALUES (
          @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
          @normalizer_generation, @importance, @related, @origin_machine, @verified_at, @review_after,
-         ${NOW_MS}, ${NOW_MS}
+         @machine_scope, ${NOW_MS}, ${NOW_MS}
        )`
     )
     .run({
@@ -140,12 +157,18 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
       origin_machine: input.origin_machine ?? resolveMachineName(),
       verified_at: input.verified_at ?? null,
       review_after: input.review_after ?? null,
+      machine_scope: input.machine_scope ?? null,
     });
   const id = Number(info.lastInsertRowid);
   replaceLegacyRelatedRelations(id, relatedUids);
   const similar = await upsertVector(id, input.title, input.body, input.canonical_summary);
   notifyWrite();
   const mem = getMemory(id)!;
+  // Cihaz-farkındalığı advisory uyarısı (spec §2): howto/context tipinde ve machine_scope
+  // machine_dependent OLMAYAN bir kayıt yazıldığında, yazan agent'a "bu cihaza bağlı olabilir,
+  // öyleyse machine_dependent ver" hatırlatması yapılır. Kayıt HER HALÜKÂRDA yazılır — kilit değil,
+  // presence/task_complete felsefesiyle tutarlı. decision/preference/fact sessiz kalır.
+  const advisory = machineScopeAdvisory(mem.type, mem.machine_scope);
   if (similar && similar.length > 0) {
     return {
       ...mem,
@@ -155,9 +178,25 @@ export async function saveMemory(input: MemoryInput): Promise<SavedMemory> {
         "memory_invalidate(id, reason, evidence, replaced_by_id=" + String(mem.id) + ") çağır — " +
         "yoksa çelişkili iki kayıt yan yana durur ve okuyan agent hangisinin geçerli olduğunu bilemez. " +
         "Emin değilsen dokunma: kanıtsız geçersiz kılma bayat kayıttan daha kötüdür.",
+      ...(advisory ? { uyari: advisory } : {}),
     };
   }
-  return mem;
+  return advisory ? { ...mem, uyari: advisory } : mem;
+}
+
+/**
+ * Cihaz-farkındalığı advisory metni (kayıt tipine göre). `machine_dependent` kayıtlar
+ * ve decision/preference/fact tipleri sessizdir; yalnız howto/context + global/NULL'da uyarı.
+ * Spec §2: "Uyar, kilitleme." Kayıt her hâlükârda yazılır.
+ */
+function machineScopeAdvisory(type: Memory["type"], machineScope: MachineScope | null): string | undefined {
+  if (machineScope === "machine_dependent") return undefined;
+  if (type !== "howto" && type !== "context") return undefined;
+  return (
+    "Bu kayıt cihaza bağlı olabilir (" + type + "). Öyleyse " +
+    "machine_scope:\"machine_dependent\" ver — yoksa başka cihazdaki agent bu çözümü orada da " +
+    "uygulanmış sayabilir. Cihazlarda doğruladıkça memory_machine_mark ile işaretle."
+  );
 }
 
 export function getMemory(id: number): Memory | null {
@@ -204,6 +243,8 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
     // ADR-006 faz 2: null verilirse temizlenir (nullableTimestamp — memoryPatchSchema).
     verified_at: patch.verified_at === undefined ? existing.verified_at : patch.verified_at,
     review_after: patch.review_after === undefined ? existing.review_after : patch.review_after,
+    // Cihaz-farkındalığı: undefined = dokunma; null = global'e temizle; "machine_dependent"/"global".
+    machine_scope: patch.machine_scope === undefined ? existing.machine_scope : patch.machine_scope,
     id,
   };
   getDb()
@@ -212,7 +253,7 @@ export async function updateMemory(id: number, patch: Partial<MemoryInput>): Pro
        tags=@tags, language=@language, canonical_summary=@canonical_summary,
        normalizer_generation=@normalizer_generation, importance=@importance,
        related=@related, verified_at=@verified_at, review_after=@review_after,
-       updated_at=${NOW_MS} WHERE id=@id`
+       machine_scope=@machine_scope, updated_at=${NOW_MS} WHERE id=@id`
     )
     .run(merged);
   if (patch.related_ids !== undefined) replaceLegacyRelatedRelations(id, JSON.parse(merged.related) as string[]);
@@ -334,6 +375,11 @@ export function deleteMemory(id: number): boolean {
   const db = getDb();
   const row = db.prepare("SELECT uid FROM memories WHERE id = ?").get(id) as { uid: string } | undefined;
   if (row?.uid) deleteRelationsForMemoryUid(row.uid);
+  // Cihaz-farkındalığı: memory silinince state satırları da cascade temizlenir (spec §5).
+  // deleteGuard trigger'ı satır başına tetiklenir ama tombstone AYNI anda yazılmaz; bu yüzden
+  // burada her satır için recordDeletion('memory_machine_state', uid) çağrılır — silme-koruma
+  // invariant'ı (ADR-005: tombstone'suz silme replike olmaz) böylece korunur.
+  if (row?.uid) deleteMachineStatesForMemoryUid(row.uid);
   vectorStore.delete("memory", id);
   const deleted = db.prepare("DELETE FROM memories WHERE id = ?").run(id).changes > 0;
   if (deleted && row?.uid) recordDeletion("memories", row.uid);
@@ -348,6 +394,201 @@ function resolveMemoryIdFromRef(ref: { id?: number; uid?: string }): number | nu
     return row?.id ?? null;
   }
   return null;
+}
+
+// ============================================================================
+// Cihaz-farkındalığı (machine_machine_state defteri) — spec §4, §5, §3
+// ============================================================================
+
+/** Deterministik uid: sha256(memory_uid + ":" + machine) ilk 32 hex. Sync'te çakışmasız
+ *  birleşmenin temeli — iki cihaz aynı (memory,machine) için aynı uid üretir. */
+function machineStateUid(memoryUid: string, machine: string): string {
+  return createHash("sha256")
+    .update(`${memoryUid}:${machine}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+/**
+ * Bir kaydın bir cihazdaki durumunu upsert eder (spec §4). İlk işaret, kaydın
+ * `machine_scope`'u NULL/global ise `machine_dependent` yapar — cihaz bazında işaretlemek,
+ * cihaza bağlılığının itirafıdır. `memory_uid` ZORUNLU (id cihaz-yereldir, deftere id yazmak
+ * satırı diğer cihazlarda yanlış kayda bağlar). `verified_at` = sunucu saati.
+ */
+export function markMachineState(input: MemoryMachineMarkInput): MemoryMachineState {
+  const parsed = memoryMachineMarkSchema.parse(input);
+  const db = getDb();
+  const memoryUid = parsed.memory_uid;
+  const machine = (parsed.machine?.trim() || resolveMachineName()).trim();
+  if (!machine) throw new Error("machine could not be resolved (HUB_MACHINE_NAME/hostname)");
+  const uid = machineStateUid(memoryUid, machine);
+  const now = (db.prepare(`SELECT ${NOW_MS} AS n`).get() as { n: string }).n;
+  // Upsert (deterministik uid sayesinde ON CONFLICT(uid)). Mevcut satır varsa
+  // status/note/verified_at/verified_by/updated_at güncellenir; memory_uid/machine sabit.
+  db.prepare(
+    `INSERT INTO memory_machine_state(
+       uid, memory_uid, machine, status, note, verified_at, verified_by, updated_at
+     ) VALUES (
+       @uid, @memory_uid, @machine, @status, @note, @verified_at, @verified_by, @updated_at
+     )
+     ON CONFLICT(uid) DO UPDATE SET
+       status=excluded.status, note=excluded.note,
+       verified_at=excluded.verified_at, verified_by=excluded.verified_by,
+       updated_at=excluded.updated_at`
+  ).run({
+    uid,
+    memory_uid: memoryUid,
+    machine,
+    status: parsed.status,
+    note: parsed.note ?? null,
+    verified_at: now,
+    verified_by: parsed.verified_by ?? null,
+    updated_at: now,
+  });
+  // Yan etki (spec §4): kaydın machine_scope'u NULL/global ise machine_dependent yap.
+  // Ayrı bir UPDATE — bir kaydı cihaz bazında işaretlemek cihaza bağlılığının itirafıdır;
+  // ayrıca scope güncellemesi istemek gereksiz sürtünme yaratır.
+  db.prepare(
+    `UPDATE memories SET machine_scope = 'machine_dependent', updated_at = ${NOW_MS}
+      WHERE uid = ? AND (machine_scope IS NULL OR machine_scope = 'global' OR machine_scope = '')`
+  ).run(memoryUid);
+  notifyWrite();
+  return getMachineStateByUid(uid)!;
+}
+
+/** uid tekil sorgu. */
+export function getMachineStateByUid(uid: string): MemoryMachineState | null {
+  const row = getDb()
+    .prepare("SELECT uid, memory_uid, machine, status, note, verified_at, verified_by, updated_at FROM memory_machine_state WHERE uid = ?")
+    .get(uid) as MemoryMachineState | undefined;
+  return row ?? null;
+}
+
+/** Bir hafıza kaydının tüm cihaz durumu satırlarını döner. */
+export function listMachineStatesForMemory(memoryUid: string): MemoryMachineState[] {
+  return getDb()
+    .prepare("SELECT uid, memory_uid, machine, status, note, verified_at, verified_by, updated_at FROM memory_machine_state WHERE memory_uid = ? ORDER BY updated_at DESC")
+    .all(memoryUid) as MemoryMachineState[];
+}
+
+/**
+ * Memory silme yolunda state satırlarını cascade temizler + her biri için tombstone yazar
+ * (spec §5). `recordDeletion('memory_machine_state', uid)` — sync'ten gelen silme olmasa bile
+ * cihazlar arası tutarlılık için tombstone şart (ADR-005 invariant).
+ */
+export function deleteMachineStatesForMemoryUid(memoryUid: string): number {
+  const db = getDb();
+  const rows = db.prepare("SELECT uid FROM memory_machine_state WHERE memory_uid = ?").all(memoryUid) as { uid: string }[];
+  for (const r of rows) recordDeletion("memory_machine_state", r.uid);
+  if (rows.length === 0) return 0;
+  const n = db.prepare("DELETE FROM memory_machine_state WHERE memory_uid = ?").run(memoryUid).changes;
+  return n;
+}
+
+/**
+ * Okuma yolu için cihaz durumu görünümünü hesaplar (spec §3). `thisMachine` parametresi
+ * verilirse `current` = bu cihazın durumu (satır yoksa null = bilinmiyor), `others` = geri
+ * kalan tüm cihazlar. Verilmezse (trace'i olmayan çağırıcı) `current` null, `others` = tümü.
+ *
+ * Bu fonksiyon raw satır okur — zenginleştirme çağıranın sorumluluğunda (machine_warning
+ * için machineWarning() kullan). Sadece `machine_dependent` kayıtlar için çağrılmalı;
+ * global/NULL kayıtlar için uyarı üretilmez (çağıran filtreler).
+ */
+export function buildMachineStateView(memoryUid: string, thisMachine: string | null): MachineStateView {
+  const rows = listMachineStatesForMemory(memoryUid) as { machine: string; status: MachineStateStatus; verified_at: string | null }[];
+  let current: MachineStateStatus | null = null;
+  const others: { machine: string; status: MachineStateStatus; verified_at: string | null }[] = [];
+  for (const r of rows) {
+    if (thisMachine && r.machine === thisMachine) current = r.status;
+    else others.push({ machine: r.machine, status: r.status, verified_at: r.verified_at });
+  }
+  return { current, others };
+}
+
+/**
+ * Uyarı matrisine (spec §3) göre cihaz uyarı metni üretir. Her zaman kapatma yolunu söyler:
+ * "Doğruladıktan sonra memory_machine_mark ile işaretle." `null` = uyarı yok.
+ *
+ * - current=applied veya not_applicable → uyarı yok
+ * - current=not_applied → "bu cihazda UYGULANMADI olarak işaretli"
+ * - current=null (bu cihazda satır yok), başkasında applied var → "yalnız {liste}'de doğrulandı; burada BİLİNMİYOR"
+ * - current=null, hiç satır yok → "hiçbir cihazda doğrulanmamış"
+ */
+export function machineWarning(
+  memoryTitle: string,
+  view: MachineStateView,
+  thisMachine: string | null
+): string | undefined {
+  if (view.current === "applied" || view.current === "not_applicable") return undefined;
+  if (view.current === "not_applied") {
+    return (
+      `⚠ Cihaz durumu: bu çözüm bu cihazda (${thisMachine ?? "?"}) UYGULANMADI olarak işaretli ` +
+      `("${memoryTitle}"). uygulanmış varsayma. Doğruladıktan sonra ` +
+      `memory_machine_mark ile durumu güncelle.`
+    );
+  }
+  // current === null: bu cihazda satır yok
+  const applied = view.others.filter((o) => o.status === "applied");
+  if (applied.length > 0) {
+    const list = applied.map((a) => a.machine).join(", ");
+    const when = applied.find((a) => a.verified_at)?.verified_at;
+    const whenTxt = when ? ` (en son ${when.slice(0, 10)})` : "";
+    return (
+      `⚠ Cihaz durumu: bu çözüm yalnız ${list}'de doğrulandı${whenTxt}. Bu cihazda ` +
+      `(${thisMachine ?? "?"}) durum BİLİNMİYOR — uygulanmış varsayma. Doğruladıktan sonra ` +
+      `memory_machine_mark ile işaretle. ("${memoryTitle}")`
+    );
+  }
+  // Hiç satır yok ya da hepsi not_applied
+  return (
+    `⚠ Cihaz durumu: hiçbir cihazda doğrulanmamış ("${memoryTitle}"). Bu cihazda ` +
+    `(${thisMachine ?? "?"}) durum BİLİNMİYOR — uygulanmış varsayma. Doğruladıktan sonra ` +
+    `memory_machine_mark ile işaretle.`
+  );
+}
+
+/**
+ * Toplu zenginleştirme: `machine_dependent` ve `is_current=1` kayıtlara `machine_state`
+ * ve `machine_warning` yazar. global/NULL ve is_current=0 kayıtlar DOKUNULMAZ (spec §3 —
+ * supersession uyarısı önceliklidir; geçersiz kaydın "hangi cihazda uygulandı" sorusu
+ * anlamsızdır). N+1 önleme: tek sorgu ile tüm ilgili memory'lerin state satırlarını çeker.
+ */
+export function enrichMachineStates<T extends Memory & { machine_state?: MachineStateView; machine_warning?: string }>(
+  items: T[],
+  thisMachine: string | null
+): T[] {
+  const dependentUids = items
+    .filter((it) => it.machine_scope === "machine_dependent" && it.is_current === 1)
+    .map((it) => it.uid);
+  if (dependentUids.length === 0) return items;
+  const placeholders = dependentUids.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare(
+      `SELECT memory_uid, machine, status, verified_at
+         FROM memory_machine_state
+        WHERE memory_uid IN (${placeholders})
+        ORDER BY updated_at DESC`
+    )
+    .all(...dependentUids) as { memory_uid: string; machine: string; status: MachineStateStatus; verified_at: string | null }[];
+  const byMemory = new Map<string, { machine: string; status: MachineStateStatus; verified_at: string | null }[]>();
+  for (const r of rows) {
+    const arr = byMemory.get(r.memory_uid) ?? [];
+    arr.push({ machine: r.machine, status: r.status, verified_at: r.verified_at });
+    byMemory.set(r.memory_uid, arr);
+  }
+  return items.map((it) => {
+    if (it.machine_scope !== "machine_dependent" || it.is_current !== 1) return it;
+    const all = byMemory.get(it.uid) ?? [];
+    let current: MachineStateStatus | null = null;
+    const others: { machine: string; status: MachineStateStatus; verified_at: string | null }[] = [];
+    for (const r of all) {
+      if (thisMachine && r.machine === thisMachine) current = r.status;
+      else others.push({ machine: r.machine, status: r.status, verified_at: r.verified_at });
+    }
+    const view: MachineStateView = { current, others };
+    const warning = machineWarning(it.title, view, thisMachine);
+    return { ...it, machine_state: view, ...(warning ? { machine_warning: warning } : {}) };
+  });
 }
 
 export interface InvalidateMemoryInput {
@@ -506,7 +747,10 @@ export async function searchMemories(query: string, filters: SearchFilters = {})
     candidates.push({ ...mem, score: final, channels, channel_ranks });
   }
   candidates.sort((a, b) => b.score - a.score);
-  return candidates.slice(0, limit);
+  const sliced = candidates.slice(0, limit);
+  // Cihaz-farkındalığı zenginleştirmesi (spec §3): yalnız machine_dependent + is_current=1
+  // kayıtlar için machine_state/machine_warning eklenir. global/superseded kayıtlar dokunulmaz.
+  return enrichMachineStates(sliced, resolveMachineName());
 }
 
 export function listMemories(filters: SearchFilters = {}): Memory[] {

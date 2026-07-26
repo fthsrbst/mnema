@@ -73,6 +73,7 @@ import {
   listMemoryRelations,
   listProjects,
   migrateProjectReferences,
+  markMachineState,
   recall,
   recentSessionLogs,
   saveMemory,
@@ -95,6 +96,7 @@ import {
   memoryConsolidateSchema,
   memoryRelationPatchSchema,
   memoryRelationTypeSchema,
+  memoryMachineMarkSchema,
   sessionInputSchema,
   // Agent Intelligence Platform
   createTask,
@@ -224,6 +226,15 @@ export function buildRestRouter(): Router {
   }));
   r.post("/memory/consolidate", wrap(async (req, res) => {
     res.json(await consolidateMemories(memoryConsolidateSchema.parse(req.body)));
+  }));
+  // Cihaz-farkındalığı: bir hafızanın cihaz durumunu işaretle (spec §4).
+  // /api/memories/:uid/machine-state — uid burada memory_uid'dir (id cihaz-yereldir).
+  r.post("/memories/:uid/machine-state", wrap((req, res) => {
+    const input = memoryMachineMarkSchema.parse({
+      memory_uid: req.params.uid,
+      ...req.body,
+    });
+    res.json(markMachineState(input));
   }));
 
   r.post("/memory-relations", wrap((req, res) => {

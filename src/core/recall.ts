@@ -169,6 +169,10 @@ export function formatRecall(result: RecallResult): string {
     const normalized = m.canonical_summary ? " | canonical-summary" : "";
     const staleTag = reviewAfterWarning(m.review_after);
     lines.push(`- [memory #${m.id} | ${m.type}${m.project ? ` | ${m.project}` : ""}${normalized}] ${m.title}: ${body}${staleTag}`);
+    // Cihaz-farkındalığı (spec §3): machine_dependent + is_current=1 kayıtlar için zenginleştirme
+    // searchMemories tarafından yapıldı. Burada yalnız uyarı metnini (varsa) tek satır ekler;
+    // global/superseded kayıtlar sessiz. Uyarı her zaman kapatma yolunu söyler — kilit değil.
+    if (m.machine_warning) lines.push(`  ${m.machine_warning}`);
     // Bağlantılı kayıtlar tek satır başlık olarak gelir — agent derine inmek isterse id ile çeker.
     // Tek sorgu: listMemoryRelations, resolveRelated'ın (memories.related JSON alanı) ürettiği
     // 'related' tipli kenarları da içerir (legacy alan bu tabloya projekte edilir) — ayrı bir

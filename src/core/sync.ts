@@ -64,6 +64,9 @@ export interface SyncMemory {
   // ADR-006 faz 2: dogrulama yasi. Ayni geriye uyumluluk deseni.
   verified_at?: string | null;
   review_after?: string | null;
+  // Cihaz-farkındalığı kapsamı (NULL/global = sessiz, machine_dependent = uyarı olur).
+  // Eski peer göndermezse yokluğu null sayılır, UPDATE'te COALESCE ile yerel değer korunur.
+  machine_scope?: string | null;
   embedding?: string; // base64 float32
 }
 
@@ -196,6 +199,21 @@ export interface SyncPayload {
     created_at: string;
   }[];
   deletions: { uid: string; tbl: string; deleted_at: string }[];
+  /**
+   * Cihaz-farkındalığı defteri (spec §5). Eski peer göndermezse yokluğu boş dizi sayılır
+   * (applyChangesUnsafememory_machine_state bloğu) — yerel satırlar EZİLMEZ.
+   * Deterministik uid (sha256(memory_uid:machine)) sayesinde upsert + LWW sorunsuz.
+   */
+  memory_machine_state?: {
+    uid: string;
+    memory_uid: string;
+    machine: string;
+    status: "applied" | "not_applied" | "not_applicable";
+    note: string | null;
+    verified_at: string | null;
+    verified_by: string | null;
+    updated_at: string;
+  }[];
 }
 
 function b64(buf: Buffer | null | undefined): string | undefined {
@@ -295,6 +313,7 @@ function collectPayload(mode: CollectMode): SyncPayload {
     invalidated_reason: m.invalidated_reason ?? null,
     verified_at: m.verified_at ?? null,
     review_after: m.review_after ?? null,
+    machine_scope: m.machine_scope ?? null,
     // last_accessed/access_count kasıtlı olarak taşınmaz — cihaz-yerel istatistik
     embedding: b64(getVecBuffer("memories_vec", m.id)),
   }));
@@ -367,6 +386,14 @@ function collectPayload(mode: CollectMode): SyncPayload {
       "created_at",
       mode
     ) as SyncPayload["agent_messages"],
+    // Cihaz-farkındalığı defteri — deterministik uid (sha256(memory_uid:machine)) sayesinde
+    // iki cihaz aynı (memory,machine) için aynı uid üretir ve LWW ile çakışmasız birleşir.
+    memory_machine_state: rowsFor(
+      "memory_machine_state",
+      `uid, memory_uid, machine, status, note, verified_at, verified_by, updated_at`,
+      "updated_at",
+      mode
+    ) as SyncPayload["memory_machine_state"],
     deletions: rowsFor("deletions", "uid, tbl, deleted_at", "deleted_at", mode) as SyncPayload["deletions"],
   };
 }
@@ -446,6 +473,8 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       invalidated_reason: raw.invalidated_reason ?? null,
       verified_at: raw.verified_at ?? null,
       review_after: raw.review_after ?? null,
+      // machine_scope: eski peer göndermez → null, UPDATE'te COALESCE yereli korur.
+      machine_scope: raw.machine_scope ?? null,
     };
     // Bu uid bizde daha yeni silinmişse alma
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memories' AND uid = ?").get(m.uid) as { deleted_at: string } | undefined;
@@ -472,6 +501,7 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
          invalidated_reason=COALESCE(@invalidated_reason, invalidated_reason),
          verified_at=COALESCE(@verified_at, verified_at),
          review_after=COALESCE(@review_after, review_after),
+         machine_scope=COALESCE(@machine_scope, machine_scope),
          updated_at=@updated_at WHERE uid=@uid`
       ).run(m);
       const resolvedIsCurrent = m.is_current ?? local.is_current;
@@ -483,13 +513,13 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
            uid, type, title, body, project, tags, source, language, canonical_summary,
            normalizer_generation, importance, related, origin_machine,
            valid_from, valid_to, is_current, supersedes_uid, invalidated_reason,
-           verified_at, review_after,
+           verified_at, review_after, machine_scope,
            created_at, updated_at
          ) VALUES (
            @uid, @type, @title, @body, @project, @tags, @source, @language, @canonical_summary,
            @normalizer_generation, @importance, @related, @origin_machine,
            @valid_from, @valid_to, COALESCE(@is_current, 1), @supersedes_uid, @invalidated_reason,
-           @verified_at, @review_after,
+           @verified_at, @review_after, @machine_scope,
            @created_at, @updated_at
          )`
       ).run(m);
@@ -788,6 +818,32 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
     ).run(raw);
   }
 
+  // Cihaz-farkındalığı defteri (spec §5). Deterministik uid sayesinde iki cihaz aynı
+  // (memory,machine) satırı için aynı uid üretir → upsert çakışmasız birleşir. LWW
+  // (updated_at en yeni). Eski peerbu alanı hiç göndermez → boş dizi say, yerel satırları ezme.
+  // UNIQUE(memory_uid, machine) kısıtı, aynı çiftin iki kopyası olasılığını uygulamada kapatır;
+  // deterministik uid sayesinde zaten ON CONFLICT(uid) yoluna düşer. Tek sahibi olduğu için
+  // eşzamanlı yazımlar YAPISEL OLARAK çakışmaz (spec §1: "satırın tek sahibi vardır").
+  for (const raw of payload.memory_machine_state ?? []) {
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memory_machine_state' AND uid = ?").get(raw.uid) as { deleted_at: string } | undefined;
+    if (tomb && tomb.deleted_at >= raw.updated_at) continue;
+    const local = db.prepare("SELECT updated_at FROM memory_machine_state WHERE uid = ?").get(raw.uid) as { updated_at: string } | undefined;
+    if (local) {
+      const fp = (r: typeof raw) => contentFingerprint([r.memory_uid, r.machine, r.status, r.note, r.verified_by, r.verified_at]);
+      if (!remoteWins(local.updated_at, raw.updated_at, () => fp(local as never), () => fp(raw))) continue;
+      db.prepare(
+        `UPDATE memory_machine_state SET memory_uid=@memory_uid, machine=@machine, status=@status,
+         note=@note, verified_at=@verified_at, verified_by=@verified_by, updated_at=@updated_at
+         WHERE uid=@uid`
+      ).run(raw);
+    } else {
+      db.prepare(
+        `INSERT INTO memory_machine_state(uid, memory_uid, machine, status, note, verified_at, verified_by, updated_at)
+         VALUES (@uid, @memory_uid, @machine, @status, @note, @verified_at, @verified_by, @updated_at)`
+      ).run(raw);
+    }
+  }
+
   for (const del of payload.deletions ?? []) {
     // deleted_at donmasın: geç gelen silme daha yeni ise tombstone'u ilerlet (LWW)
     db.prepare(
@@ -841,6 +897,14 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       const row = db.prepare("SELECT id, updated_at FROM agent_presence WHERE uid = ?").get(del.uid) as { id: number; updated_at: string } | undefined;
       if (row && row.updated_at <= del.deleted_at) {
         db.prepare("DELETE FROM agent_presence WHERE id = ?").run(row.id);
+        result.deletions++;
+      }
+    } else if (del.tbl === "memory_machine_state") {
+      // Cihaz-farkındalığı: bir state satırı tombstone gelirse sil (memory silme
+      // yolunda deleteMachineStatesForMemoryUid her satır için tombstone yazar).
+      const row = db.prepare("SELECT updated_at FROM memory_machine_state WHERE uid = ?").get(del.uid) as { updated_at: string } | undefined;
+      if (row && row.updated_at <= del.deleted_at) {
+        db.prepare("DELETE FROM memory_machine_state WHERE uid = ?").run(del.uid);
         result.deletions++;
       }
     }

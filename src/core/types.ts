@@ -35,9 +35,19 @@ export interface Memory {
   verified_at: string | null;
   /** ADR-006 faz 2: bu tarihten sonra doğrulanmamışsa formatRecall görünür bir uyarı ekler (kaydı GİZLEMEZ). */
   review_after: string | null;
+  /**
+   * Cihaz-farkındalığı (uzay ekseni — ADR-006'nın zaman eksenine diktir). NULL/global =
+   * cihazdan bağımsız, hiç uyarı üretilmez (geriye dönük uyumluluk). `machine_dependent`
+   * = okuma yolunda memory_machine_state defteri kontrol edilir ve gerekirse cihaz uyarısı
+   * üretilir. Bir kaydı `memory_machine_mark` ile işaretlemek bu alanı machine_dependent yapar.
+   */
+  machine_scope: MachineScope | null;
   created_at: string;
   updated_at: string;
 }
+
+/** Cihaz-farkındalığı kapsamı. NULL ve "global" eş anlamlı (cihazdan bağımsız). */
+export type MachineScope = "global" | "machine_dependent";
 
 export interface MemoryInput {
   type?: MemoryType;
@@ -63,6 +73,8 @@ export interface MemoryInput {
   verified_at?: string | null;
   /** ADR-006 faz 2: bu tarihten sonra doğrulanmamışsa formatRecall uyarı ekler. */
   review_after?: string | null;
+  /** Cihaz-farkındalığı kapsamı. Verilmezse NULL (global) kabul edilir. */
+  machine_scope?: MachineScope | null;
 }
 
 /** Bağlantılı hafızanın yerel çözümü (uid → bu cihazdaki id + başlık). */
@@ -110,6 +122,13 @@ export interface ScoredMemory extends Memory {
   /** Hangi arama kanalları buldu ("fts"/"vec"). Recall'un anlamsal kanıt kapısı kullanır. */
   channels?: ("fts" | "vec")[];
   channel_ranks?: Partial<Record<"fts" | "vec", number>>;
+  /**
+   * Cihaz-farkındalığı: yalnız `machine_scope='machine_dependent'` ve `is_current=1`
+   * kayıtlar için doldurulur (bkz. enrichMachineState). `global`/NULL kayıtlarda undefined.
+   */
+  machine_state?: MachineStateView;
+  /** Cihaz uyarı metni (varsa); kapatma yolu her zaman `memory_machine_mark`'ı adıyla söyler. */
+  machine_warning?: string;
 }
 
 /** Kayıt anında bulunan olası benzer/tekrar (dedup) hafıza. */
@@ -125,9 +144,51 @@ export interface SavedMemory extends Memory {
   /**
    * ADR-006: benzer kayit bulundugunda YAZAN AGENT'a ne yapacagini soyler.
    * Sistem kendisi karar VERMEZ — yanlis bir gecersiz kilma, bayat kayittan kotudur.
-   * Bu yuzden karar cagirana birakilir ve yalnizca secenek hatirlatilir.
+   * Bu yuzden karar cagirana birakilir ve yalnizce secenek hatirlatilir.
    */
   similar_hint?: string;
+  /**
+   * Cihaz-farkındalığı advisory uyarısı: `howto`/`context` tipinde ve `machine_scope`
+   * `machine_dependent` değilse, kayıt yazılır ama yazan agent'a "bu cihaza bağlı olabilir,
+   * öyleyse machine_dependent ver" uyarısı döner (kilit değil — presence/task_complete ile aynı felsefe).
+   */
+  uyari?: string;
+}
+
+/** memory_machine_state satırı — bir (memory, machine) çifti için son cihaz durumu. */
+export interface MemoryMachineState {
+  uid: string;
+  memory_uid: string;
+  machine: string;
+  status: MachineStateStatus;
+  note: string | null;
+  verified_at: string | null;
+  verified_by: string | null;
+  updated_at: string;
+}
+
+/** Cihaz durumu kümesi. "unknown" satır YAZILMAZ — yokluk = bilinmiyor. */
+export type MachineStateStatus = "applied" | "not_applied" | "not_applicable";
+
+/** memory_machine_mark girdisi. memory_uid ZORUNLU (id cihaz-yereldir). */
+export interface MemoryMachineMarkInput {
+  memory_uid: string;
+  status: MachineStateStatus;
+  /** Verilmezse resolveMachineName(). */
+  machine?: string;
+  note?: string;
+  /** İşaretleyen agent adı (ör. "claude-code"). Sunucu çağıranı bilmez — açık parametre. */
+  verified_by?: string;
+}
+
+/**
+ * Okuma yolunda zenginleştirilmiş cihaz durumu görünümü (bkz. enrichMachineState).
+ * `current` = bu cihazın durumu (satır yoksa null = bilinmiyor). `others` =
+ * diğer tüm cihazların durum satırları (current hariç).
+ */
+export interface MachineStateView {
+  current: MachineStateStatus | null;
+  others: { machine: string; status: MachineStateStatus; verified_at: string | null }[];
 }
 
 export interface DocumentInput {
