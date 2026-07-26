@@ -339,6 +339,29 @@ CREATE TABLE IF NOT EXISTS task_feedback(
 CREATE INDEX IF NOT EXISTS idx_task_feedback_project ON task_feedback(project, created_at);
 CREATE INDEX IF NOT EXISTS idx_task_feedback_task ON task_feedback(task_uid);
 
+-- ADR-007: staged procedural-memory candidates distilled from agent trajectories.
+-- Device-local staging (NO change_log trigger, like recall_feedback/task_feedback):
+-- only PROMOTED candidates become howto memories, and those sync normally. A
+-- candidate becomes injectable only after corroboration by a second independent
+-- episode. episode_key groups candidates from one task/presence episode so a
+-- poisoned episode is bulk-revocable. evidence_refs is a JSON array of the row
+-- references the candidate was derived from; a candidate with none is refused.
+CREATE TABLE IF NOT EXISTS lesson_candidates(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL CHECK(kind IN ('strategy','recovery','optimization')),
+  situation TEXT NOT NULL,
+  guidance TEXT NOT NULL,
+  project TEXT,
+  episode_key TEXT NOT NULL,
+  evidence_refs TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL CHECK(status IN ('pending','promoted','rejected','held')) DEFAULT 'pending',
+  promoted_memory_uid TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_lesson_candidates_status ON lesson_candidates(status, kind);
+CREATE INDEX IF NOT EXISTS idx_lesson_candidates_episode ON lesson_candidates(episode_key);
+
 -- Webhook registrations: outbound HTTP callbacks on hub events.
 -- Auto-disabled after repeated failures.
 CREATE TABLE IF NOT EXISTS webhooks(

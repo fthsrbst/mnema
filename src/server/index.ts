@@ -27,6 +27,7 @@ import {
   runHygiene,
   compactSessions,
   distillProject,
+  distillEpisode,
   pruneOldTasks,
   pruneOldMessages,
   pruneOfflineAgents,
@@ -448,6 +449,10 @@ app.listen(config.port, config.host, () => {
       compactSessions(payload.project as string, payload.opts as { count?: number; archiveOld?: boolean } | undefined)
     );
     registerJobHandler("distill", async (payload) => distillProject(payload.project as string));
+    // ADR-007: distill one task episode's trajectory into procedural-memory candidates.
+    // Distinct from "distill" (project distillation). Runs on the local model, off the
+    // hot path; falls back cleanly when no local LLM is reachable.
+    registerJobHandler("distill_episode", async (payload) => distillEpisode(payload.task_uid as string));
     registerJobHandler("webhook_test", async () => ({ ok: true }));
     // Embedding backfill job handler: enqueue edilen 'embed' job'ları worker.ts'teki
     // sıra + exponential backoff çerçevesinde işlenir. Startup ve periyodik bakım

@@ -1,6 +1,7 @@
 # ADR-006: Memory validity, supersession, and verification age
 
-- Status: Proposed
+- Status: Accepted — implemented in two phases (lifecycle columns + read
+  filtering, then `memory_invalidate`/`revalidate` + verification age)
 - Date: 2026-07-21
 
 ## Context

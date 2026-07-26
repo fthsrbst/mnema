@@ -42,6 +42,7 @@ export * from "./messaging.js";
 export * from "./hygiene.js";
 export * from "./compaction.js";
 export * from "./learning.js";
+export * from "./procedural.js";
 export * from "./webhooks.js";
 export * from "./worker.js";
 export * from "./metrics.js";

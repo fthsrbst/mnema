@@ -146,6 +146,8 @@ const MCP_SCOPES: Record<string, HubScope> = {
   vector_projection_flush: "admin:write",
   graph_neighbors: "knowledge:read",
   graph_node: "knowledge:read",
+  lesson_candidates_list: "knowledge:read",
+  candidate_promote: "knowledge:write",
 };
 
 interface McpCall {

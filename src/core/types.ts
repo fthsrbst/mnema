@@ -520,7 +520,7 @@ export interface WebhookInput {
   secret?: string;
 }
 
-export type JobKind = "embed" | "compact" | "hygiene" | "webhook" | "webhook_test" | "sync" | "reindex" | "distill" | "custom";
+export type JobKind = "embed" | "compact" | "hygiene" | "webhook" | "webhook_test" | "sync" | "reindex" | "distill" | "distill_episode" | "custom";
 export type JobStatus = "queued" | "running" | "done" | "failed";
 
 /** SQLite-backed job queue item. */
@@ -589,6 +589,8 @@ export interface MetricsSnapshot {
   agent_count: number;
   jobs: { queued: number; running: number; done: number; failed: number };
   coordination: CoordinationMetrics;
+  /** ADR-007 procedural-memory pipeline: candidate counts by status + promotion rate. */
+  procedural: { pending: number; held: number; promoted: number; rejected: number; promotion_rate: number };
 }
 
 /**

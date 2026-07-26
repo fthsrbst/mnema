@@ -43,10 +43,20 @@ export interface DeleteReconcileResult {
 
 export function reconcileDeleteObservations(graceMs = DEFAULT_GRACE_MS): DeleteReconcileResult {
   const db = getDb();
-  const cutoff = new Date(Date.now() - graceMs).toISOString().replace("T", " ").replace("Z", "");
+  // Cutoff MUST be computed on the same clock that wrote created_at. hub_events.created_at
+  // is stamped by SQLite strftime('now'); comparing it against a JS Date.now() cutoff mixed
+  // two clocks and, at graceMs=0, a few ms of skew between them intermittently excluded an
+  // observation that was in fact already written (flaky "delete_without_tombstone" miss).
+  // Subtracting the grace in SQL keeps both sides on the SQLite clock. Grace is coarse
+  // (0 in tests, 5 min in prod), so integer-second resolution is sufficient.
+  const graceSeconds = Math.floor(graceMs / 1000);
   const rows = db
-    .prepare(`SELECT id, payload FROM hub_events WHERE type = ? AND created_at <= ? ORDER BY id LIMIT 500`)
-    .all(DELETE_OBSERVED, cutoff) as { id: number; payload: string }[];
+    .prepare(
+      `SELECT id, payload FROM hub_events WHERE type = ?
+         AND created_at <= strftime('%Y-%m-%d %H:%M:%f','now','-' || ? || ' seconds')
+       ORDER BY id LIMIT 500`
+    )
+    .all(DELETE_OBSERVED, graceSeconds) as { id: number; payload: string }[];
 
   const result: DeleteReconcileResult = { checked: rows.length, missing_tombstone: 0 };
   if (rows.length === 0) return result;
