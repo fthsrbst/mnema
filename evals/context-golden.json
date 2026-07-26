@@ -102,6 +102,7 @@
         "authority_project": null,
         "max_memories": 0,
         "max_chunks": 2,
+        "empty_evidence": true,
         "warning_any": [
           "Unknown project map"
         ]

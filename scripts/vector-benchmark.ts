@@ -74,7 +74,7 @@ try {
       for (let id = start; id <= end; id++) {
         const project = `bench-${id % projects}`;
         insert.run(`bench${String(id).padStart(24, "0")}`, `Benchmark memory ${id}`, `needle${id} synthetic corpus row`, project);
-        vectorStore.putMemory(id, project, seededVector(id));
+        vectorStore.putMemory(id, project, true, seededVector(id));
       }
     })();
   }

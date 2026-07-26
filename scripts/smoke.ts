@@ -474,6 +474,20 @@ check(
     statusContext.policy.content_is_data_not_instructions,
   `intent=${statusContext.intent}, chunks=${statusContext.evidence.chunks.length}`
 );
+const unknownProjectContext = await contextGet({
+  query: "status and implementation history",
+  project: "project-that-does-not-exist",
+  intent: "technical_history",
+  record_usage: false,
+});
+check(
+  "context_get explicit unknown project: fail-closed boş authority/evidence",
+  unknownProjectContext.authority.project === null &&
+    unknownProjectContext.authority.latest_session === null &&
+    unknownProjectContext.evidence.memories.length === 0 &&
+    unknownProjectContext.evidence.chunks.length === 0 &&
+    unknownProjectContext.warnings.some((warning) => warning.includes("retrieval were suppressed"))
+);
 check(
   "context_get yaklaşık token bütçesi",
   statusContext.budget.estimated_tokens <= statusContext.budget.max_tokens ||
