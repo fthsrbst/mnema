@@ -1,0 +1,463 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memory-bench:schema:agent-dataset:1",
+  "title": "Memory Bench normalized agent-memory dataset schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "name",
+    "version",
+    "license",
+    "track",
+    "language",
+    "description",
+    "source",
+    "scenarios"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "name": {
+      "const": "memory-bench-longmemeval"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "const": "MIT"
+    },
+    "track": {
+      "const": "agent"
+    },
+    "language": {
+      "const": "en"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "benchmark",
+        "revision",
+        "subset",
+        "uri",
+        "fileName",
+        "sha256",
+        "bytes"
+      ],
+      "properties": {
+        "benchmark": {
+          "const": "longmemeval"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subset": {
+          "enum": [
+            "oracle",
+            "small",
+            "medium"
+          ]
+        },
+        "uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "sourceQuestionType",
+          "ability",
+          "question",
+          "expectedAnswer",
+          "questionDate",
+          "expectedAbstention",
+          "evidenceSessionIds",
+          "sessions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceQuestionType": {
+            "enum": [
+              "single-session-user",
+              "single-session-assistant",
+              "single-session-preference",
+              "multi-session",
+              "knowledge-update",
+              "temporal-reasoning"
+            ]
+          },
+          "ability": {
+            "enum": [
+              "information-extraction",
+              "multi-session-reasoning",
+              "knowledge-update",
+              "temporal-reasoning",
+              "abstention"
+            ]
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedAnswer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "questionDate": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedAbstention": {
+            "type": "boolean"
+          },
+          "evidenceSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "sessions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "date",
+                "messages"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "date": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "messages": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "role",
+                      "content"
+                    ],
+                    "properties": {
+                      "role": {
+                        "enum": [
+                          "user",
+                          "assistant"
+                        ]
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "hasAnswer": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "ability": {
+                  "const": "abstention"
+                }
+              },
+              "required": [
+                "ability"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "expectedAbstention": {
+                  "const": true
+                }
+              },
+              "required": [
+                "expectedAbstention"
+              ]
+            },
+            "else": {
+              "type": "object",
+              "properties": {
+                "expectedAbstention": {
+                  "const": false
+                }
+              },
+              "required": [
+                "expectedAbstention"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "agentMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "content"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hasAnswer": {
+          "type": "boolean"
+        }
+      }
+    },
+    "agentSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "date",
+        "messages"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "date": {
+          "type": "string",
+          "minLength": 1
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "content"
+            ],
+            "properties": {
+              "role": {
+                "enum": [
+                  "user",
+                  "assistant"
+                ]
+              },
+              "content": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hasAnswer": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "agentScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceQuestionType",
+        "ability",
+        "question",
+        "expectedAnswer",
+        "questionDate",
+        "expectedAbstention",
+        "evidenceSessionIds",
+        "sessions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceQuestionType": {
+          "enum": [
+            "single-session-user",
+            "single-session-assistant",
+            "single-session-preference",
+            "multi-session",
+            "knowledge-update",
+            "temporal-reasoning"
+          ]
+        },
+        "ability": {
+          "enum": [
+            "information-extraction",
+            "multi-session-reasoning",
+            "knowledge-update",
+            "temporal-reasoning",
+            "abstention"
+          ]
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedAnswer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "questionDate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedAbstention": {
+          "type": "boolean"
+        },
+        "evidenceSessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "sessions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "date",
+              "messages"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "date": {
+                "type": "string",
+                "minLength": 1
+              },
+              "messages": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "role",
+                    "content"
+                  ],
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ]
+                    },
+                    "content": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "hasAnswer": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "ability": {
+                "const": "abstention"
+              }
+            },
+            "required": [
+              "ability"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "expectedAbstention": {
+                "const": true
+              }
+            },
+            "required": [
+              "expectedAbstention"
+            ]
+          },
+          "else": {
+            "type": "object",
+            "properties": {
+              "expectedAbstention": {
+                "const": false
+              }
+            },
+            "required": [
+              "expectedAbstention"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

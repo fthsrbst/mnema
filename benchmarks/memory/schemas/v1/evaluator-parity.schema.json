@@ -1,0 +1,1312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memory-bench:schema:evaluator-parity:1",
+  "title": "Memory Bench LongMemEval evaluator parity schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "parityId",
+    "createdAt",
+    "candidate",
+    "official",
+    "coverage",
+    "compatibility",
+    "metrics",
+    "policy",
+    "claim",
+    "mismatches"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "memory-bench-evaluator-parity"
+    },
+    "parityId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reportFile",
+        "reportSha256",
+        "runId",
+        "reportStatus",
+        "resultClass",
+        "dataset",
+        "judge"
+      ],
+      "properties": {
+        "reportFile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reportSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reportStatus": {
+          "enum": [
+            "completed",
+            "completed-with-errors",
+            "failed"
+          ]
+        },
+        "resultClass": {
+          "enum": [
+            "harness",
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "dataset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "subset",
+            "sourceRevision",
+            "sourceSha256",
+            "artifactSha256"
+          ],
+          "properties": {
+            "name": {
+              "const": "memory-bench-longmemeval"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "subset": {
+              "enum": [
+                "oracle",
+                "small",
+                "medium"
+              ]
+            },
+            "sourceRevision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sourceSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "artifactSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "judge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "model",
+            "promptRevision",
+            "apiSurface",
+            "decisionRule"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "promptRevision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "apiSurface": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "decisionRule": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "official": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resultsFile",
+        "resultsSha256",
+        "resultModels",
+        "evaluatorRevision",
+        "scriptUri",
+        "scriptSha256",
+        "apiSurface",
+        "decisionRule"
+      ],
+      "properties": {
+        "resultsFile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resultsSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "resultModels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evaluatorRevision": {
+          "const": "9e0b455f4ef0e2ab8f2e582289761153549043fc"
+        },
+        "scriptUri": {
+          "const": "https://github.com/xiaowu0162/LongMemEval/blob/9e0b455f4ef0e2ab8f2e582289761153549043fc/src/evaluation/evaluate_qa.py"
+        },
+        "scriptSha256": {
+          "const": "ecce9c4c79dc89d99534ac17b383a5cbb5b9f0c69ee98adaf0684742e3d95251"
+        },
+        "apiSurface": {
+          "const": "chat-completions"
+        },
+        "decisionRule": {
+          "const": "case-insensitive-yes-substring"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reportDecisions",
+        "officialDecisions",
+        "candidateOnlyIds",
+        "officialOnlyIds",
+        "hypothesisMismatchIds"
+      ],
+      "properties": {
+        "reportDecisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "officialDecisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidateOnlyIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "officialOnlyIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "hypothesisMismatchIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reportComplete",
+        "nonEmptyDecisionSet",
+        "completeCoverage",
+        "hypothesesExact",
+        "modelExact",
+        "promptRevisionPinned",
+        "comparable"
+      ],
+      "properties": {
+        "reportComplete": {
+          "type": "boolean"
+        },
+        "nonEmptyDecisionSet": {
+          "type": "boolean"
+        },
+        "completeCoverage": {
+          "type": "boolean"
+        },
+        "hypothesesExact": {
+          "type": "boolean"
+        },
+        "modelExact": {
+          "type": "boolean"
+        },
+        "promptRevisionPinned": {
+          "type": "boolean"
+        },
+        "comparable": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "comparable": {
+                "const": true
+              }
+            },
+            "required": [
+              "comparable"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "reportComplete": {
+                "const": true
+              },
+              "nonEmptyDecisionSet": {
+                "const": true
+              },
+              "completeCoverage": {
+                "const": true
+              },
+              "hypothesesExact": {
+                "const": true
+              },
+              "modelExact": {
+                "const": true
+              },
+              "promptRevisionPinned": {
+                "const": true
+              }
+            },
+            "required": [
+              "reportComplete",
+              "nonEmptyDecisionSet",
+              "completeCoverage",
+              "hypothesesExact",
+              "modelExact",
+              "promptRevisionPinned"
+            ]
+          }
+        }
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compared",
+        "labelMatches",
+        "labelMismatches",
+        "agreementRate",
+        "exactAgreement",
+        "confusion",
+        "slices"
+      ],
+      "properties": {
+        "compared": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "labelMatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "labelMismatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agreementRate": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exactAgreement": {
+          "type": "boolean"
+        },
+        "confusion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bothPass",
+            "candidateOnlyPass",
+            "officialOnlyPass",
+            "bothFail"
+          ],
+          "properties": {
+            "bothPass": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "candidateOnlyPass": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "officialOnlyPass": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bothFail": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "slices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byAbility",
+            "byQuestionType"
+          ],
+          "properties": {
+            "byAbility": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "information-extraction",
+                "multi-session-reasoning",
+                "knowledge-update",
+                "temporal-reasoning",
+                "abstention"
+              ],
+              "properties": {
+                "information-extraction": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "multi-session-reasoning": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "knowledge-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "temporal-reasoning": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "abstention": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "byQuestionType": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "single-session-user",
+                "single-session-assistant",
+                "single-session-preference",
+                "multi-session",
+                "knowledge-update",
+                "temporal-reasoning"
+              ],
+              "properties": {
+                "single-session-user": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "single-session-assistant": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "single-session-preference": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "multi-session": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "knowledge-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "temporal-reasoning": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "compared",
+                    "matches",
+                    "mismatches",
+                    "agreementRate"
+                  ],
+                  "properties": {
+                    "compared": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "matches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mismatches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agreementRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "labelMismatchAffectsCommandExit",
+        "requireExactAffectsCommandExit",
+        "rawQuestionsIncluded",
+        "rawExpectedAnswersIncluded",
+        "rawHypothesesIncluded",
+        "rawEvidenceIncluded"
+      ],
+      "properties": {
+        "labelMismatchAffectsCommandExit": {
+          "const": false
+        },
+        "requireExactAffectsCommandExit": {
+          "const": true
+        },
+        "rawQuestionsIncluded": {
+          "const": false
+        },
+        "rawExpectedAnswersIncluded": {
+          "const": false
+        },
+        "rawHypothesesIncluded": {
+          "const": false
+        },
+        "rawEvidenceIncluded": {
+          "const": false
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceClass",
+        "exactAgreement",
+        "publicationEligible",
+        "blockers"
+      ],
+      "properties": {
+        "evidenceClass": {
+          "enum": [
+            "harness",
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "exactAgreement": {
+          "type": "boolean"
+        },
+        "publicationEligible": {
+          "const": false
+        },
+        "blockers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "mismatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenarioId",
+          "sourceQuestionType",
+          "ability",
+          "hypothesisSha256",
+          "candidatePassed",
+          "officialPassed",
+          "officialModel"
+        ],
+        "properties": {
+          "scenarioId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceQuestionType": {
+            "enum": [
+              "single-session-user",
+              "single-session-assistant",
+              "single-session-preference",
+              "multi-session",
+              "knowledge-update",
+              "temporal-reasoning"
+            ]
+          },
+          "ability": {
+            "enum": [
+              "information-extraction",
+              "multi-session-reasoning",
+              "knowledge-update",
+              "temporal-reasoning",
+              "abstention"
+            ]
+          },
+          "hypothesisSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "candidatePassed": {
+            "type": "boolean"
+          },
+          "officialPassed": {
+            "type": "boolean"
+          },
+          "officialModel": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "object",
+            "properties": {
+              "resultClass": {
+                "const": "harness"
+              }
+            },
+            "required": [
+              "resultClass"
+            ]
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "object",
+            "properties": {
+              "evidenceClass": {
+                "const": "harness"
+              }
+            },
+            "required": [
+              "evidenceClass"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "object",
+            "properties": {
+              "resultClass": {
+                "const": "candidate"
+              }
+            },
+            "required": [
+              "resultClass"
+            ]
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "object",
+            "properties": {
+              "evidenceClass": {
+                "const": "candidate"
+              }
+            },
+            "required": [
+              "evidenceClass"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "object",
+            "properties": {
+              "resultClass": {
+                "const": "benchmark"
+              }
+            },
+            "required": [
+              "resultClass"
+            ]
+          }
+        },
+        "required": [
+          "candidate"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "object",
+            "properties": {
+              "evidenceClass": {
+                "const": "benchmark"
+              }
+            },
+            "required": [
+              "evidenceClass"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "exactAgreement": {
+                "const": true
+              }
+            },
+            "required": [
+              "exactAgreement"
+            ]
+          }
+        },
+        "required": [
+          "metrics"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "compatibility": {
+            "type": "object",
+            "properties": {
+              "comparable": {
+                "const": true
+              }
+            },
+            "required": [
+              "comparable"
+            ]
+          },
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "labelMismatches": {
+                "const": 0
+              },
+              "agreementRate": {
+                "const": 1
+              },
+              "compared": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "labelMismatches",
+              "agreementRate",
+              "compared"
+            ]
+          },
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "candidateOnlyIds": {
+                "type": "array",
+                "maxItems": 0
+              },
+              "officialOnlyIds": {
+                "type": "array",
+                "maxItems": 0
+              },
+              "hypothesisMismatchIds": {
+                "type": "array",
+                "maxItems": 0
+              }
+            },
+            "required": [
+              "candidateOnlyIds",
+              "officialOnlyIds",
+              "hypothesisMismatchIds"
+            ]
+          },
+          "claim": {
+            "type": "object",
+            "properties": {
+              "exactAgreement": {
+                "const": true
+              }
+            },
+            "required": [
+              "exactAgreement"
+            ]
+          },
+          "mismatches": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "object",
+            "properties": {
+              "exactAgreement": {
+                "const": true
+              }
+            },
+            "required": [
+              "exactAgreement"
+            ]
+          }
+        },
+        "required": [
+          "claim"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "exactAgreement": {
+                "const": true
+              }
+            },
+            "required": [
+              "exactAgreement"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "evaluatorParitySliceMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compared",
+        "matches",
+        "mismatches",
+        "agreementRate"
+      ],
+      "properties": {
+        "compared": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mismatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agreementRate": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "evaluatorParityMismatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "sourceQuestionType",
+        "ability",
+        "hypothesisSha256",
+        "candidatePassed",
+        "officialPassed",
+        "officialModel"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceQuestionType": {
+          "enum": [
+            "single-session-user",
+            "single-session-assistant",
+            "single-session-preference",
+            "multi-session",
+            "knowledge-update",
+            "temporal-reasoning"
+          ]
+        },
+        "ability": {
+          "enum": [
+            "information-extraction",
+            "multi-session-reasoning",
+            "knowledge-update",
+            "temporal-reasoning",
+            "abstention"
+          ]
+        },
+        "hypothesisSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "candidatePassed": {
+          "type": "boolean"
+        },
+        "officialPassed": {
+          "type": "boolean"
+        },
+        "officialModel": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

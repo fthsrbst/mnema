@@ -1,0 +1,2037 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memory-bench:schema:report:1",
+  "title": "Memory Bench normalized report schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "run",
+    "metrics",
+    "queries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "startedAt",
+        "durationMs",
+        "dataset",
+        "adapter",
+        "adapterTelemetry"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "dataset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "license",
+            "track",
+            "publicationStatus"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1
+            },
+            "track": {
+              "const": "core"
+            },
+            "publicationStatus": {
+              "enum": [
+                "harness",
+                "draft",
+                "reviewed"
+              ]
+            }
+          }
+        },
+        "adapter": {
+          "$ref": "#/$defs/adapterInfo"
+        },
+        "adapterTelemetry": {
+          "$ref": "#/$defs/adapterTelemetry"
+        }
+      }
+    },
+    "metrics": {
+      "$ref": "#/$defs/benchmarkMetrics"
+    },
+    "queries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/queryTrace"
+      }
+    }
+  },
+  "$defs": {
+    "latencySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "p50Ms",
+        "p95Ms",
+        "maxMs"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "p50Ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p95Ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "queryMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queries",
+        "queryPassRate",
+        "macroRecallAtK",
+        "macroPrecisionAtK",
+        "meanReciprocalRank",
+        "forbiddenHitRate",
+        "abstentionAccuracy",
+        "queryLatency"
+      ],
+      "properties": {
+        "queries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queryPassRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "macroRecallAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "macroPrecisionAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meanReciprocalRank": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "forbiddenHitRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "abstentionAccuracy": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "queryLatency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "count",
+            "p50Ms",
+            "p95Ms",
+            "maxMs"
+          ],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "p50Ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95Ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "maxMs": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "benchmarkMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queries",
+        "queryPassRate",
+        "macroRecallAtK",
+        "macroPrecisionAtK",
+        "meanReciprocalRank",
+        "forbiddenHitRate",
+        "abstentionAccuracy",
+        "queryLatency",
+        "operationLatency",
+        "slices"
+      ],
+      "properties": {
+        "queries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queryPassRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "macroRecallAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "macroPrecisionAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meanReciprocalRank": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "forbiddenHitRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "abstentionAccuracy": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "queryLatency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "count",
+            "p50Ms",
+            "p95Ms",
+            "maxMs"
+          ],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "p50Ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95Ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "maxMs": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "operationLatency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "write",
+            "update",
+            "delete",
+            "query"
+          ],
+          "properties": {
+            "write": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "update": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "delete": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "query": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "slices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byAbility",
+            "byLanguage",
+            "byDifficulty"
+          ],
+          "properties": {
+            "byAbility": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "single-memory-recall",
+                "multi-memory-recall",
+                "knowledge-update",
+                "temporal-recall",
+                "abstention",
+                "scope-isolation"
+              ],
+              "properties": {
+                "single-memory-recall": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "multi-memory-recall": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "knowledge-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "temporal-recall": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "abstention": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "scope-isolation": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "byLanguage": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "queries",
+                  "queryPassRate",
+                  "macroRecallAtK",
+                  "macroPrecisionAtK",
+                  "meanReciprocalRank",
+                  "forbiddenHitRate",
+                  "abstentionAccuracy",
+                  "queryLatency"
+                ],
+                "properties": {
+                  "queries": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "queryPassRate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "macroRecallAtK": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "macroPrecisionAtK": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "meanReciprocalRank": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "forbiddenHitRate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "abstentionAccuracy": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "queryLatency": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "count",
+                      "p50Ms",
+                      "p95Ms",
+                      "maxMs"
+                    ],
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "p50Ms": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "p95Ms": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "maxMs": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "byDifficulty": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "basic",
+                "intermediate",
+                "advanced"
+              ],
+              "properties": {
+                "basic": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "intermediate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                },
+                "advanced": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "queries",
+                    "queryPassRate",
+                    "macroRecallAtK",
+                    "macroPrecisionAtK",
+                    "meanReciprocalRank",
+                    "forbiddenHitRate",
+                    "abstentionAccuracy",
+                    "queryLatency"
+                  ],
+                  "properties": {
+                    "queries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "queryPassRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "macroPrecisionAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "forbiddenHitRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "abstentionAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queryLatency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "count",
+                        "p50Ms",
+                        "p95Ms",
+                        "maxMs"
+                      ],
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "p50Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "p95Ms": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "maxMs": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "adapterInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "mode",
+        "config"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "adapterTelemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestCount",
+        "retryCount",
+        "pollRequestCount",
+        "requestBytes",
+        "responseBytes",
+        "providerProcessingMs",
+        "providerCostUsd",
+        "costSource",
+        "cleanup"
+      ],
+      "properties": {
+        "requestCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retryCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pollRequestCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requestBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "responseBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "providerProcessingMs": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costSource": {
+          "enum": [
+            "not-applicable",
+            "not-exposed",
+            "provider-reported",
+            "estimated"
+          ]
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempted",
+            "succeeded",
+            "verified"
+          ],
+          "properties": {
+            "attempted": {
+              "type": "boolean"
+            },
+            "succeeded": {
+              "type": "boolean"
+            },
+            "verified": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "normalizedHit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordId",
+        "content",
+        "score",
+        "providerId"
+      ],
+      "properties": {
+        "recordId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "content": {
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "normalizedFeedback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "queryId",
+        "verdict",
+        "recordId",
+        "rank"
+      ],
+      "properties": {
+        "queryId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict": {
+          "enum": [
+            "helpful",
+            "noisy",
+            "missing"
+          ]
+        },
+        "recordId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "queryTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "queryId",
+        "ability",
+        "language",
+        "difficulty",
+        "scope",
+        "query",
+        "topK",
+        "latencyMs",
+        "relevantIds",
+        "retrievedIds",
+        "missingRelevantIds",
+        "forbiddenIdsFound",
+        "recallAtK",
+        "precisionAtK",
+        "reciprocalRank",
+        "contentChecksPassed",
+        "abstentionPassed",
+        "passed",
+        "hits",
+        "feedback"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "queryId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ability": {
+          "enum": [
+            "single-memory-recall",
+            "multi-memory-recall",
+            "knowledge-update",
+            "temporal-recall",
+            "abstention",
+            "scope-isolation"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1
+        },
+        "difficulty": {
+          "enum": [
+            "basic",
+            "intermediate",
+            "advanced"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1
+        },
+        "topK": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "latencyMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "relevantIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "retrievedIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "missingRelevantIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "forbiddenIdsFound": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "recallAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "precisionAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reciprocalRank": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contentChecksPassed": {
+          "type": "boolean"
+        },
+        "abstentionPassed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "hits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "recordId",
+              "content",
+              "score",
+              "providerId"
+            ],
+            "properties": {
+              "recordId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "content": {
+                "type": "string"
+              },
+              "score": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "providerId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "feedback": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "queryId",
+              "verdict",
+              "recordId",
+              "rank"
+            ],
+            "properties": {
+              "queryId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verdict": {
+                "enum": [
+                  "helpful",
+                  "noisy",
+                  "missing"
+                ]
+              },
+              "recordId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rank": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

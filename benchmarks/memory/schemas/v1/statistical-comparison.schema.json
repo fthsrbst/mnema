@@ -1,0 +1,947 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memory-bench:schema:statistical-comparison:1",
+  "title": "Memory Bench statistical comparison schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "analysisId",
+    "createdAt",
+    "track",
+    "comparison",
+    "method",
+    "reports",
+    "coverage",
+    "pairwise",
+    "policy",
+    "claim"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "memory-bench-statistical-comparison"
+    },
+    "analysisId": {
+      "type": "string",
+      "pattern": "^mbs-[a-f0-9]{32}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "track": {
+      "enum": [
+        "core",
+        "agent"
+      ]
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256",
+        "comparisonId",
+        "datasetSha256",
+        "evaluationSha256"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "comparisonId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "datasetSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "evaluationSha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "method": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "resamplingUnit",
+        "comparison",
+        "interval",
+        "rng",
+        "iterations",
+        "confidenceLevel",
+        "seed",
+        "multiplicityAdjustment"
+      ],
+      "properties": {
+        "name": {
+          "const": "paired-scenario-cluster-bootstrap-percentile"
+        },
+        "resamplingUnit": {
+          "const": "scenario"
+        },
+        "comparison": {
+          "const": "adapter-b-minus-adapter-a"
+        },
+        "interval": {
+          "const": "percentile"
+        },
+        "rng": {
+          "const": "xorshift32"
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1000000
+        },
+        "confidenceLevel": {
+          "type": "number",
+          "minimum": 0.8,
+          "maximum": 0.999
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "multiplicityAdjustment": {
+          "const": "none-descriptive-only"
+        }
+      }
+    },
+    "reports": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adapter",
+          "file",
+          "sha256",
+          "clusters",
+          "observations"
+        ],
+        "properties": {
+          "adapter": {
+            "enum": [
+              "literal",
+              "mnema",
+              "mem0",
+              "letta",
+              "zep"
+            ]
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "clusters": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "observations": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapters",
+        "pairs",
+        "clusterIdentityExact",
+        "observationIdentityExact",
+        "metricMissingnessExact"
+      ],
+      "properties": {
+        "adapters": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "pairs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "clusterIdentityExact": {
+          "const": true
+        },
+        "observationIdentityExact": {
+          "const": true
+        },
+        "metricMissingnessExact": {
+          "const": true
+        }
+      }
+    },
+    "pairwise": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adapterA",
+          "adapterB",
+          "sharedClusters",
+          "sharedObservations",
+          "metrics"
+        ],
+        "properties": {
+          "adapterA": {
+            "enum": [
+              "literal",
+              "mnema",
+              "mem0",
+              "letta",
+              "zep"
+            ]
+          },
+          "adapterB": {
+            "enum": [
+              "literal",
+              "mnema",
+              "mem0",
+              "letta",
+              "zep"
+            ]
+          },
+          "sharedClusters": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sharedObservations": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "metrics": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "direction",
+                "status",
+                "eligibleClusters",
+                "pairedObservations",
+                "pointEstimate",
+                "confidenceInterval"
+              ],
+              "properties": {
+                "name": {
+                  "enum": [
+                    "query-pass-rate",
+                    "qa-accuracy",
+                    "macro-recall-at-k",
+                    "macro-precision-at-k",
+                    "mean-reciprocal-rank",
+                    "forbidden-hit-rate",
+                    "abstention-accuracy",
+                    "cleanup-verification-rate"
+                  ]
+                },
+                "direction": {
+                  "enum": [
+                    "higher-is-better",
+                    "lower-is-better"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "estimated",
+                    "insufficient-data",
+                    "not-applicable"
+                  ]
+                },
+                "eligibleClusters": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pairedObservations": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pointEstimate": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "adapterA",
+                        "adapterB",
+                        "bMinusA"
+                      ],
+                      "properties": {
+                        "adapterA": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "adapterB": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "bMinusA": {
+                          "type": "number",
+                          "minimum": -1,
+                          "maximum": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "confidenceInterval": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "lower",
+                        "upper"
+                      ],
+                      "properties": {
+                        "lower": {
+                          "type": "number",
+                          "minimum": -1,
+                          "maximum": 1
+                        },
+                        "upper": {
+                          "type": "number",
+                          "minimum": -1,
+                          "maximum": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "estimated"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "then": {
+                    "type": "object",
+                    "properties": {
+                      "eligibleClusters": {
+                        "type": "integer",
+                        "minimum": 2
+                      },
+                      "pairedObservations": {
+                        "type": "integer",
+                        "minimum": 2
+                      },
+                      "pointEstimate": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "adapterA",
+                          "adapterB",
+                          "bMinusA"
+                        ],
+                        "properties": {
+                          "adapterA": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "adapterB": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "bMinusA": {
+                            "type": "number",
+                            "minimum": -1,
+                            "maximum": 1
+                          }
+                        }
+                      },
+                      "confidenceInterval": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "lower",
+                          "upper"
+                        ],
+                        "properties": {
+                          "lower": {
+                            "type": "number",
+                            "minimum": -1,
+                            "maximum": 1
+                          },
+                          "upper": {
+                            "type": "number",
+                            "minimum": -1,
+                            "maximum": 1
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "insufficient-data"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "then": {
+                    "type": "object",
+                    "properties": {
+                      "eligibleClusters": {
+                        "const": 1
+                      },
+                      "pairedObservations": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "pointEstimate": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "adapterA",
+                          "adapterB",
+                          "bMinusA"
+                        ],
+                        "properties": {
+                          "adapterA": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "adapterB": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1
+                          },
+                          "bMinusA": {
+                            "type": "number",
+                            "minimum": -1,
+                            "maximum": 1
+                          }
+                        }
+                      },
+                      "confidenceInterval": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not-applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "then": {
+                    "type": "object",
+                    "properties": {
+                      "eligibleClusters": {
+                        "const": 0
+                      },
+                      "pairedObservations": {
+                        "const": 0
+                      },
+                      "pointEstimate": {
+                        "type": "null"
+                      },
+                      "confidenceInterval": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "descriptiveOnly",
+        "rankingClaimed",
+        "statisticalSignificanceClaimed",
+        "rawQueriesIncluded",
+        "rawExpectedAnswersIncluded",
+        "rawHypothesesIncluded",
+        "rawEvidenceIncluded"
+      ],
+      "properties": {
+        "descriptiveOnly": {
+          "const": true
+        },
+        "rankingClaimed": {
+          "const": false
+        },
+        "statisticalSignificanceClaimed": {
+          "const": false
+        },
+        "rawQueriesIncluded": {
+          "const": false
+        },
+        "rawExpectedAnswersIncluded": {
+          "const": false
+        },
+        "rawHypothesesIncluded": {
+          "const": false
+        },
+        "rawEvidenceIncluded": {
+          "const": false
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allIntervalsAvailable",
+        "blockers"
+      ],
+      "properties": {
+        "allIntervalsAvailable": {
+          "type": "boolean"
+        },
+        "blockers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "object",
+            "properties": {
+              "allIntervalsAvailable": {
+                "const": true
+              }
+            },
+            "required": [
+              "allIntervalsAvailable"
+            ]
+          }
+        },
+        "required": [
+          "claim"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "object",
+            "properties": {
+              "blockers": {
+                "type": "array",
+                "maxItems": 0
+              }
+            },
+            "required": [
+              "blockers"
+            ]
+          }
+        }
+      },
+      "else": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "object",
+            "properties": {
+              "blockers": {
+                "type": "array",
+                "minItems": 1
+              }
+            },
+            "required": [
+              "blockers"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "statisticalMetricResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "direction",
+        "status",
+        "eligibleClusters",
+        "pairedObservations",
+        "pointEstimate",
+        "confidenceInterval"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "query-pass-rate",
+            "qa-accuracy",
+            "macro-recall-at-k",
+            "macro-precision-at-k",
+            "mean-reciprocal-rank",
+            "forbidden-hit-rate",
+            "abstention-accuracy",
+            "cleanup-verification-rate"
+          ]
+        },
+        "direction": {
+          "enum": [
+            "higher-is-better",
+            "lower-is-better"
+          ]
+        },
+        "status": {
+          "enum": [
+            "estimated",
+            "insufficient-data",
+            "not-applicable"
+          ]
+        },
+        "eligibleClusters": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pairedObservations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pointEstimate": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "adapterA",
+                "adapterB",
+                "bMinusA"
+              ],
+              "properties": {
+                "adapterA": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "adapterB": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "bMinusA": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidenceInterval": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lower",
+                "upper"
+              ],
+              "properties": {
+                "lower": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                },
+                "upper": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "estimated"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "eligibleClusters": {
+                "type": "integer",
+                "minimum": 2
+              },
+              "pairedObservations": {
+                "type": "integer",
+                "minimum": 2
+              },
+              "pointEstimate": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "adapterA",
+                  "adapterB",
+                  "bMinusA"
+                ],
+                "properties": {
+                  "adapterA": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "adapterB": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "bMinusA": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  }
+                }
+              },
+              "confidenceInterval": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "lower",
+                  "upper"
+                ],
+                "properties": {
+                  "lower": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  },
+                  "upper": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "insufficient-data"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "eligibleClusters": {
+                "const": 1
+              },
+              "pairedObservations": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "pointEstimate": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "adapterA",
+                  "adapterB",
+                  "bMinusA"
+                ],
+                "properties": {
+                  "adapterA": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "adapterB": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "bMinusA": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  }
+                }
+              },
+              "confidenceInterval": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "not-applicable"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "eligibleClusters": {
+                "const": 0
+              },
+              "pairedObservations": {
+                "const": 0
+              },
+              "pointEstimate": {
+                "type": "null"
+              },
+              "confidenceInterval": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "statisticalPointEstimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapterA",
+        "adapterB",
+        "bMinusA"
+      ],
+      "properties": {
+        "adapterA": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "adapterB": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "bMinusA": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      }
+    },
+    "statisticalConfidenceInterval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lower",
+        "upper"
+      ],
+      "properties": {
+        "lower": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "upper": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memory-bench:schema:agent-publication:1",
+  "title": "Memory Bench agent publication evidence schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "publicationId",
+    "status",
+    "assembledAt",
+    "finalizedAt",
+    "comparison",
+    "runs",
+    "qualifications",
+    "statistics",
+    "release",
+    "claim"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "memory-bench-agent-publication"
+    },
+    "publicationId": {
+      "type": "string",
+      "pattern": "^mbp-[a-f0-9]{32}$"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "final"
+      ]
+    },
+    "assembledAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finalizedAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256",
+        "comparisonId",
+        "datasetArtifactSha256",
+        "evaluationSha256",
+        "sourceCommit",
+        "sourceDirty"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "comparisonId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "datasetArtifactSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "evaluationSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sourceCommit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40,64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceDirty": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adapter",
+          "processId",
+          "reportFile",
+          "reportSha256",
+          "resultClass",
+          "componentSha256",
+          "evaluatorParityFile",
+          "evaluatorParitySha256"
+        ],
+        "properties": {
+          "adapter": {
+            "enum": [
+              "literal",
+              "mnema",
+              "mem0",
+              "letta",
+              "zep"
+            ]
+          },
+          "processId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reportFile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reportSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "resultClass": {
+            "enum": [
+              "harness",
+              "candidate",
+              "benchmark"
+            ]
+          },
+          "componentSha256": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "adapter",
+              "reader",
+              "judge"
+            ],
+            "properties": {
+              "adapter": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "reader": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "judge": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          },
+          "evaluatorParityFile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluatorParitySha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "qualifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "file",
+          "sha256",
+          "qualificationId",
+          "role",
+          "componentName",
+          "componentSha256",
+          "reviewerId",
+          "maintainerId"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "qualificationId": {
+            "type": "string",
+            "pattern": "^mbq-(adapter|reader|judge)-[a-f0-9]{32}$"
+          },
+          "role": {
+            "enum": [
+              "adapter",
+              "reader",
+              "judge"
+            ]
+          },
+          "componentName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "componentSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "reviewerId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maintainerId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "statistics": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "sha256",
+            "analysisId",
+            "comparisonSha256",
+            "iterations",
+            "confidenceLevel",
+            "seed",
+            "allIntervalsAvailable"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "analysisId": {
+              "type": "string",
+              "pattern": "^mbs-[a-f0-9]{32}$"
+            },
+            "comparisonSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "iterations": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 1000000
+            },
+            "confidenceLevel": {
+              "type": "number",
+              "minimum": 0.8,
+              "maximum": 0.999
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "allIntervalsAvailable": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "release": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "releasedAt",
+            "publisher",
+            "maintainer",
+            "evidenceBundleUri",
+            "releaseNotesUri",
+            "correctionsUri",
+            "providerAffiliations",
+            "sponsorships",
+            "knownLimitations",
+            "attestation"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "releasedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "publisher": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "type",
+                "affiliation"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "enum": [
+                    "human",
+                    "organization"
+                  ]
+                },
+                "affiliation": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "maintainer": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "type",
+                "affiliation"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "const": "human"
+                },
+                "affiliation": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "evidenceBundleUri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "releaseNotesUri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "correctionsUri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "providerAffiliations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "sponsorships": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "knownLimitations": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "attestation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "datasetRightsVerified",
+                "noQuerySpecificTuning",
+                "providerDisclosuresComplete",
+                "sponsorshipDisclosuresComplete",
+                "allEvidencePublished",
+                "independentAuditComplete",
+                "secretsExcluded",
+                "correctionsPolicyAccepted"
+              ],
+              "properties": {
+                "datasetRightsVerified": {
+                  "type": "boolean"
+                },
+                "noQuerySpecificTuning": {
+                  "type": "boolean"
+                },
+                "providerDisclosuresComplete": {
+                  "type": "boolean"
+                },
+                "sponsorshipDisclosuresComplete": {
+                  "type": "boolean"
+                },
+                "allEvidencePublished": {
+                  "type": "boolean"
+                },
+                "independentAuditComplete": {
+                  "type": "boolean"
+                },
+                "secretsExcluded": {
+                  "type": "boolean"
+                },
+                "correctionsPolicyAccepted": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resultClass",
+        "mechanicallyVerified",
+        "publicationEligible",
+        "blockers"
+      ],
+      "properties": {
+        "resultClass": {
+          "enum": [
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "mechanicallyVerified": {
+          "type": "boolean"
+        },
+        "publicationEligible": {
+          "type": "boolean"
+        },
+        "blockers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "draft"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "finalizedAt": {
+            "type": "null"
+          },
+          "claim": {
+            "type": "object",
+            "properties": {
+              "resultClass": {
+                "const": "candidate"
+              },
+              "publicationEligible": {
+                "const": false
+              },
+              "blockers": {
+                "type": "array",
+                "minItems": 1
+              }
+            },
+            "required": [
+              "resultClass",
+              "publicationEligible",
+              "blockers"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "final"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "finalizedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "comparison": {
+            "type": "object",
+            "properties": {
+              "sourceCommit": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40,64}$"
+              },
+              "sourceDirty": {
+                "const": false
+              }
+            },
+            "required": [
+              "sourceCommit",
+              "sourceDirty"
+            ]
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resultClass": {
+                  "enum": [
+                    "candidate",
+                    "benchmark"
+                  ]
+                },
+                "evaluatorParityFile": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "evaluatorParitySha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "resultClass",
+                "evaluatorParityFile",
+                "evaluatorParitySha256"
+              ]
+            }
+          },
+          "qualifications": {
+            "type": "array",
+            "minItems": 1
+          },
+          "statistics": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "file",
+              "sha256",
+              "analysisId",
+              "comparisonSha256",
+              "iterations",
+              "confidenceLevel",
+              "seed",
+              "allIntervalsAvailable"
+            ],
+            "properties": {
+              "file": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "analysisId": {
+                "type": "string",
+                "pattern": "^mbs-[a-f0-9]{32}$"
+              },
+              "comparisonSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "iterations": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 1000000
+              },
+              "confidenceLevel": {
+                "type": "number",
+                "minimum": 0.8,
+                "maximum": 0.999
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295
+              },
+              "allIntervalsAvailable": {
+                "const": true
+              }
+            }
+          },
+          "release": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "releasedAt",
+              "publisher",
+              "maintainer",
+              "evidenceBundleUri",
+              "releaseNotesUri",
+              "correctionsUri",
+              "providerAffiliations",
+              "sponsorships",
+              "knownLimitations",
+              "attestation"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "releasedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "publisher": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "type",
+                  "affiliation"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "type": {
+                    "enum": [
+                      "human",
+                      "organization"
+                    ]
+                  },
+                  "affiliation": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "maintainer": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "type",
+                  "affiliation"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "type": {
+                    "const": "human"
+                  },
+                  "affiliation": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "evidenceBundleUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "releaseNotesUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "correctionsUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "providerAffiliations": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "sponsorships": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "knownLimitations": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "attestation": {
+                "type": "object",
+                "properties": {
+                  "datasetRightsVerified": {
+                    "const": true
+                  },
+                  "noQuerySpecificTuning": {
+                    "const": true
+                  },
+                  "providerDisclosuresComplete": {
+                    "const": true
+                  },
+                  "sponsorshipDisclosuresComplete": {
+                    "const": true
+                  },
+                  "allEvidencePublished": {
+                    "const": true
+                  },
+                  "independentAuditComplete": {
+                    "const": true
+                  },
+                  "secretsExcluded": {
+                    "const": true
+                  },
+                  "correctionsPolicyAccepted": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "datasetRightsVerified",
+                  "noQuerySpecificTuning",
+                  "providerDisclosuresComplete",
+                  "sponsorshipDisclosuresComplete",
+                  "allEvidencePublished",
+                  "independentAuditComplete",
+                  "secretsExcluded",
+                  "correctionsPolicyAccepted"
+                ]
+              }
+            }
+          },
+          "claim": {
+            "type": "object",
+            "properties": {
+              "resultClass": {
+                "const": "benchmark"
+              },
+              "mechanicallyVerified": {
+                "const": true
+              },
+              "publicationEligible": {
+                "const": true
+              },
+              "blockers": {
+                "type": "array",
+                "maxItems": 0
+              }
+            },
+            "required": [
+              "resultClass",
+              "mechanicallyVerified",
+              "publicationEligible",
+              "blockers"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "agentPublicationRelease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "releasedAt",
+        "publisher",
+        "maintainer",
+        "evidenceBundleUri",
+        "releaseNotesUri",
+        "correctionsUri",
+        "providerAffiliations",
+        "sponsorships",
+        "knownLimitations",
+        "attestation"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "releasedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "publisher": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "affiliation"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "enum": [
+                "human",
+                "organization"
+              ]
+            },
+            "affiliation": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "maintainer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "affiliation"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "human"
+            },
+            "affiliation": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "evidenceBundleUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "releaseNotesUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "correctionsUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "providerAffiliations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "sponsorships": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "knownLimitations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "attestation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "datasetRightsVerified",
+            "noQuerySpecificTuning",
+            "providerDisclosuresComplete",
+            "sponsorshipDisclosuresComplete",
+            "allEvidencePublished",
+            "independentAuditComplete",
+            "secretsExcluded",
+            "correctionsPolicyAccepted"
+          ],
+          "properties": {
+            "datasetRightsVerified": {
+              "type": "boolean"
+            },
+            "noQuerySpecificTuning": {
+              "type": "boolean"
+            },
+            "providerDisclosuresComplete": {
+              "type": "boolean"
+            },
+            "sponsorshipDisclosuresComplete": {
+              "type": "boolean"
+            },
+            "allEvidencePublished": {
+              "type": "boolean"
+            },
+            "independentAuditComplete": {
+              "type": "boolean"
+            },
+            "secretsExcluded": {
+              "type": "boolean"
+            },
+            "correctionsPolicyAccepted": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "agentPublicationRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter",
+        "processId",
+        "reportFile",
+        "reportSha256",
+        "resultClass",
+        "componentSha256",
+        "evaluatorParityFile",
+        "evaluatorParitySha256"
+      ],
+      "properties": {
+        "adapter": {
+          "enum": [
+            "literal",
+            "mnema",
+            "mem0",
+            "letta",
+            "zep"
+          ]
+        },
+        "processId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reportFile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reportSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "resultClass": {
+          "enum": [
+            "harness",
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "componentSha256": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapter",
+            "reader",
+            "judge"
+          ],
+          "properties": {
+            "adapter": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "reader": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "judge": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "evaluatorParityFile": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evaluatorParitySha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "agentPublicationQualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256",
+        "qualificationId",
+        "role",
+        "componentName",
+        "componentSha256",
+        "reviewerId",
+        "maintainerId"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "qualificationId": {
+          "type": "string",
+          "pattern": "^mbq-(adapter|reader|judge)-[a-f0-9]{32}$"
+        },
+        "role": {
+          "enum": [
+            "adapter",
+            "reader",
+            "judge"
+          ]
+        },
+        "componentName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "componentSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "reviewerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maintainerId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "agentPublicationStatistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256",
+        "analysisId",
+        "comparisonSha256",
+        "iterations",
+        "confidenceLevel",
+        "seed",
+        "allIntervalsAvailable"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "analysisId": {
+          "type": "string",
+          "pattern": "^mbs-[a-f0-9]{32}$"
+        },
+        "comparisonSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "iterations": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1000000
+        },
+        "confidenceLevel": {
+          "type": "number",
+          "minimum": 0.8,
+          "maximum": 0.999
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "allIntervalsAvailable": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

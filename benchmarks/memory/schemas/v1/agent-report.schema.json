@@ -1,0 +1,5253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memory-bench:schema:agent-report:1",
+  "title": "Memory Bench agent-memory report schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "run",
+    "metrics",
+    "scenarios",
+    "failures"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "startedAt",
+        "durationMs",
+        "status",
+        "resultClass",
+        "dataset",
+        "topK",
+        "maxScenarios",
+        "components",
+        "telemetry"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "completed-with-errors",
+            "failed"
+          ]
+        },
+        "resultClass": {
+          "enum": [
+            "harness",
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "dataset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "license",
+            "track",
+            "language",
+            "subset",
+            "sourceRevision",
+            "sourceSha256",
+            "artifactSha256",
+            "artifactBytes",
+            "readPasses"
+          ],
+          "properties": {
+            "name": {
+              "const": "memory-bench-longmemeval"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "license": {
+              "const": "MIT"
+            },
+            "track": {
+              "const": "agent"
+            },
+            "language": {
+              "const": "en"
+            },
+            "subset": {
+              "enum": [
+                "oracle",
+                "small",
+                "medium"
+              ]
+            },
+            "sourceRevision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sourceSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "artifactSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "artifactBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "readPasses": {
+              "const": 2
+            }
+          }
+        },
+        "topK": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxScenarios": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "components": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapter",
+            "reader",
+            "judge"
+          ],
+          "properties": {
+            "adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "version",
+                "mode",
+                "classification",
+                "config"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mode": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "classification": {
+                  "enum": [
+                    "harness",
+                    "candidate",
+                    "benchmark"
+                  ]
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "reader": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "version",
+                "mode",
+                "classification",
+                "config"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mode": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "classification": {
+                  "enum": [
+                    "harness",
+                    "candidate",
+                    "benchmark"
+                  ]
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "judge": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "version",
+                "mode",
+                "classification",
+                "config"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mode": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "classification": {
+                  "enum": [
+                    "harness",
+                    "candidate",
+                    "benchmark"
+                  ]
+                },
+                "config": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapter",
+            "reader",
+            "judge"
+          ],
+          "properties": {
+            "adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "requestCount",
+                "retryCount",
+                "requestBytes",
+                "responseBytes",
+                "inputTokens",
+                "outputTokens",
+                "providerProcessingMs",
+                "providerCostUsd",
+                "costSource"
+              ],
+              "properties": {
+                "requestCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "retryCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "requestBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "responseBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "outputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProcessingMs": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerCostUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "costSource": {
+                  "enum": [
+                    "not-applicable",
+                    "not-exposed",
+                    "provider-reported",
+                    "estimated"
+                  ]
+                }
+              }
+            },
+            "reader": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "requestCount",
+                "retryCount",
+                "requestBytes",
+                "responseBytes",
+                "inputTokens",
+                "outputTokens",
+                "providerProcessingMs",
+                "providerCostUsd",
+                "costSource"
+              ],
+              "properties": {
+                "requestCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "retryCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "requestBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "responseBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "outputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProcessingMs": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerCostUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "costSource": {
+                  "enum": [
+                    "not-applicable",
+                    "not-exposed",
+                    "provider-reported",
+                    "estimated"
+                  ]
+                }
+              }
+            },
+            "judge": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "requestCount",
+                "retryCount",
+                "requestBytes",
+                "responseBytes",
+                "inputTokens",
+                "outputTokens",
+                "providerProcessingMs",
+                "providerCostUsd",
+                "costSource"
+              ],
+              "properties": {
+                "requestCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "retryCount": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "requestBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "responseBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "outputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerProcessingMs": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "providerCostUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "costSource": {
+                  "enum": [
+                    "not-applicable",
+                    "not-exposed",
+                    "provider-reported",
+                    "estimated"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarios",
+        "completed",
+        "failed",
+        "qaAccuracy",
+        "retrievalQueries",
+        "macroRecallAtK",
+        "meanReciprocalRank",
+        "cleanupVerificationRate",
+        "latency",
+        "runtimeFailures",
+        "slices"
+      ],
+      "properties": {
+        "scenarios": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "qaAccuracy": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retrievalQueries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "macroRecallAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meanReciprocalRank": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleanupVerificationRate": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ingestion",
+            "query",
+            "reader",
+            "judge",
+            "total"
+          ],
+          "properties": {
+            "ingestion": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "query": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "reader": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "judge": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "total": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "runtimeFailures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "slices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byAbility"
+          ],
+          "properties": {
+            "byAbility": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "information-extraction",
+                "multi-session-reasoning",
+                "knowledge-update",
+                "temporal-reasoning",
+                "abstention"
+              ],
+              "properties": {
+                "information-extraction": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "multi-session-reasoning": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "knowledge-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "temporal-reasoning": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "abstention": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenarioId",
+          "sourceQuestionType",
+          "ability",
+          "expectedAbstention",
+          "status",
+          "sessionCount",
+          "turnCount",
+          "topK",
+          "expectedEvidenceSessionIds",
+          "retrievedSessionIds",
+          "missingEvidenceSessionIds",
+          "retrievalEvaluated",
+          "recallAtK",
+          "reciprocalRank",
+          "hypothesis",
+          "judgeLabel",
+          "qaPassed",
+          "latencyMs",
+          "cleanup",
+          "evidence"
+        ],
+        "properties": {
+          "scenarioId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceQuestionType": {
+            "enum": [
+              "single-session-user",
+              "single-session-assistant",
+              "single-session-preference",
+              "multi-session",
+              "knowledge-update",
+              "temporal-reasoning"
+            ]
+          },
+          "ability": {
+            "enum": [
+              "information-extraction",
+              "multi-session-reasoning",
+              "knowledge-update",
+              "temporal-reasoning",
+              "abstention"
+            ]
+          },
+          "expectedAbstention": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "failed"
+            ]
+          },
+          "sessionCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "turnCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "topK": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "expectedEvidenceSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "retrievedSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "missingEvidenceSessionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "retrievalEvaluated": {
+            "type": "boolean"
+          },
+          "recallAtK": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reciprocalRank": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hypothesis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judgeLabel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qaPassed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latencyMs": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ingestion",
+              "query",
+              "reader",
+              "judge",
+              "total"
+            ],
+            "properties": {
+              "ingestion": {
+                "type": "number",
+                "minimum": 0
+              },
+              "query": {
+                "type": "number",
+                "minimum": 0
+              },
+              "reader": {
+                "type": "number",
+                "minimum": 0
+              },
+              "judge": {
+                "type": "number",
+                "minimum": 0
+              },
+              "total": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          },
+          "cleanup": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attempted",
+              "succeeded",
+              "verified"
+            ],
+            "properties": {
+              "attempted": {
+                "type": "boolean"
+              },
+              "succeeded": {
+                "type": "boolean"
+              },
+              "verified": {
+                "type": "boolean"
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "observedAt",
+                "sourceSessionId",
+                "score",
+                "valueSha256",
+                "valueBytes"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "text",
+                    "image"
+                  ]
+                },
+                "observedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sourceSessionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "score": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "valueSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "valueBytes": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "expectedAbstention": {
+                  "const": true
+                }
+              },
+              "required": [
+                "expectedAbstention"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "ability": {
+                  "const": "abstention"
+                },
+                "retrievalEvaluated": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "completed"
+                },
+                "expectedAbstention": {
+                  "const": false
+                }
+              },
+              "required": [
+                "status",
+                "expectedAbstention"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "retrievalEvaluated": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "retrievalEvaluated": {
+                  "const": true
+                }
+              },
+              "required": [
+                "retrievalEvaluated"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "expectedAbstention": {
+                  "const": false
+                },
+                "recallAtK": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "reciprocalRank": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            },
+            "else": {
+              "type": "object",
+              "properties": {
+                "recallAtK": {
+                  "type": "null"
+                },
+                "reciprocalRank": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "completed"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "hypothesis": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "judgeLabel": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "qaPassed": {
+                  "type": "boolean"
+                },
+                "cleanup": {
+                  "type": "object",
+                  "properties": {
+                    "attempted": {
+                      "const": true
+                    },
+                    "succeeded": {
+                      "const": true
+                    },
+                    "verified": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "attempted",
+                    "succeeded",
+                    "verified"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenarioId",
+          "ability",
+          "stage",
+          "component",
+          "message"
+        ],
+        "properties": {
+          "scenarioId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ability": {
+            "anyOf": [
+              {
+                "enum": [
+                  "information-extraction",
+                  "multi-session-reasoning",
+                  "knowledge-update",
+                  "temporal-reasoning",
+                  "abstention"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stage": {
+            "enum": [
+              "dataset",
+              "setup",
+              "begin-scenario",
+              "ingest",
+              "query",
+              "reader",
+              "judge",
+              "cleanup",
+              "teardown",
+              "telemetry"
+            ]
+          },
+          "component": {
+            "enum": [
+              "runner",
+              "adapter",
+              "reader",
+              "judge"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "agentComponentInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "mode",
+        "classification",
+        "config"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "enum": [
+            "harness",
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "agentComponentTelemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestCount",
+        "retryCount",
+        "requestBytes",
+        "responseBytes",
+        "inputTokens",
+        "outputTokens",
+        "providerProcessingMs",
+        "providerCostUsd",
+        "costSource"
+      ],
+      "properties": {
+        "requestCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retryCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requestBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "responseBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerProcessingMs": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerCostUsd": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costSource": {
+          "enum": [
+            "not-applicable",
+            "not-exposed",
+            "provider-reported",
+            "estimated"
+          ]
+        }
+      }
+    },
+    "agentScenarioMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarios",
+        "completed",
+        "failed",
+        "qaAccuracy",
+        "retrievalQueries",
+        "macroRecallAtK",
+        "meanReciprocalRank",
+        "cleanupVerificationRate",
+        "latency"
+      ],
+      "properties": {
+        "scenarios": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "qaAccuracy": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retrievalQueries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "macroRecallAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meanReciprocalRank": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleanupVerificationRate": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ingestion",
+            "query",
+            "reader",
+            "judge",
+            "total"
+          ],
+          "properties": {
+            "ingestion": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "query": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "reader": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "judge": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "total": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "agentBenchmarkMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarios",
+        "completed",
+        "failed",
+        "qaAccuracy",
+        "retrievalQueries",
+        "macroRecallAtK",
+        "meanReciprocalRank",
+        "cleanupVerificationRate",
+        "latency",
+        "runtimeFailures",
+        "slices"
+      ],
+      "properties": {
+        "scenarios": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "qaAccuracy": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retrievalQueries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "macroRecallAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meanReciprocalRank": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleanupVerificationRate": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ingestion",
+            "query",
+            "reader",
+            "judge",
+            "total"
+          ],
+          "properties": {
+            "ingestion": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "query": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "reader": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "judge": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "total": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "count",
+                "p50Ms",
+                "p95Ms",
+                "maxMs"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "p50Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "p95Ms": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "runtimeFailures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "slices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "byAbility"
+          ],
+          "properties": {
+            "byAbility": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "information-extraction",
+                "multi-session-reasoning",
+                "knowledge-update",
+                "temporal-reasoning",
+                "abstention"
+              ],
+              "properties": {
+                "information-extraction": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "multi-session-reasoning": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "knowledge-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "temporal-reasoning": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "abstention": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "scenarios",
+                    "completed",
+                    "failed",
+                    "qaAccuracy",
+                    "retrievalQueries",
+                    "macroRecallAtK",
+                    "meanReciprocalRank",
+                    "cleanupVerificationRate",
+                    "latency"
+                  ],
+                  "properties": {
+                    "scenarios": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "qaAccuracy": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retrievalQueries": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "macroRecallAtK": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "meanReciprocalRank": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanupVerificationRate": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "latency": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ingestion",
+                        "query",
+                        "reader",
+                        "judge",
+                        "total"
+                      ],
+                      "properties": {
+                        "ingestion": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "query": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "reader": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "judge": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        },
+                        "total": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "count",
+                            "p50Ms",
+                            "p95Ms",
+                            "maxMs"
+                          ],
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "p50Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "p95Ms": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "maxMs": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "agentEvidenceDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "observedAt",
+        "sourceSessionId",
+        "score",
+        "valueSha256",
+        "valueBytes"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "text",
+            "image"
+          ]
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceSessionId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valueSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "valueBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "agentScenarioTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "sourceQuestionType",
+        "ability",
+        "expectedAbstention",
+        "status",
+        "sessionCount",
+        "turnCount",
+        "topK",
+        "expectedEvidenceSessionIds",
+        "retrievedSessionIds",
+        "missingEvidenceSessionIds",
+        "retrievalEvaluated",
+        "recallAtK",
+        "reciprocalRank",
+        "hypothesis",
+        "judgeLabel",
+        "qaPassed",
+        "latencyMs",
+        "cleanup",
+        "evidence"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceQuestionType": {
+          "enum": [
+            "single-session-user",
+            "single-session-assistant",
+            "single-session-preference",
+            "multi-session",
+            "knowledge-update",
+            "temporal-reasoning"
+          ]
+        },
+        "ability": {
+          "enum": [
+            "information-extraction",
+            "multi-session-reasoning",
+            "knowledge-update",
+            "temporal-reasoning",
+            "abstention"
+          ]
+        },
+        "expectedAbstention": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed"
+          ]
+        },
+        "sessionCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "turnCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "topK": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "expectedEvidenceSessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "retrievedSessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "missingEvidenceSessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "retrievalEvaluated": {
+          "type": "boolean"
+        },
+        "recallAtK": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reciprocalRank": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hypothesis": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "judgeLabel": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qaPassed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latencyMs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ingestion",
+            "query",
+            "reader",
+            "judge",
+            "total"
+          ],
+          "properties": {
+            "ingestion": {
+              "type": "number",
+              "minimum": 0
+            },
+            "query": {
+              "type": "number",
+              "minimum": 0
+            },
+            "reader": {
+              "type": "number",
+              "minimum": 0
+            },
+            "judge": {
+              "type": "number",
+              "minimum": 0
+            },
+            "total": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempted",
+            "succeeded",
+            "verified"
+          ],
+          "properties": {
+            "attempted": {
+              "type": "boolean"
+            },
+            "succeeded": {
+              "type": "boolean"
+            },
+            "verified": {
+              "type": "boolean"
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "observedAt",
+              "sourceSessionId",
+              "score",
+              "valueSha256",
+              "valueBytes"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "text",
+                  "image"
+                ]
+              },
+              "observedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sourceSessionId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "score": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "valueSha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "valueBytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "expectedAbstention": {
+                "const": true
+              }
+            },
+            "required": [
+              "expectedAbstention"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "ability": {
+                "const": "abstention"
+              },
+              "retrievalEvaluated": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "completed"
+              },
+              "expectedAbstention": {
+                "const": false
+              }
+            },
+            "required": [
+              "status",
+              "expectedAbstention"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "retrievalEvaluated": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "retrievalEvaluated": {
+                "const": true
+              }
+            },
+            "required": [
+              "retrievalEvaluated"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "expectedAbstention": {
+                "const": false
+              },
+              "recallAtK": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "reciprocalRank": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "else": {
+            "type": "object",
+            "properties": {
+              "recallAtK": {
+                "type": "null"
+              },
+              "reciprocalRank": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "hypothesis": {
+                "type": "string",
+                "minLength": 1
+              },
+              "judgeLabel": {
+                "type": "string",
+                "minLength": 1
+              },
+              "qaPassed": {
+                "type": "boolean"
+              },
+              "cleanup": {
+                "type": "object",
+                "properties": {
+                  "attempted": {
+                    "const": true
+                  },
+                  "succeeded": {
+                    "const": true
+                  },
+                  "verified": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "attempted",
+                  "succeeded",
+                  "verified"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "agentRuntimeFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "ability",
+        "stage",
+        "component",
+        "message"
+      ],
+      "properties": {
+        "scenarioId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ability": {
+          "anyOf": [
+            {
+              "enum": [
+                "information-extraction",
+                "multi-session-reasoning",
+                "knowledge-update",
+                "temporal-reasoning",
+                "abstention"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stage": {
+          "enum": [
+            "dataset",
+            "setup",
+            "begin-scenario",
+            "ingest",
+            "query",
+            "reader",
+            "judge",
+            "cleanup",
+            "teardown",
+            "telemetry"
+          ]
+        },
+        "component": {
+          "enum": [
+            "runner",
+            "adapter",
+            "reader",
+            "judge"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "agentComponents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter",
+        "reader",
+        "judge"
+      ],
+      "properties": {
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "mode",
+            "classification",
+            "config"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "classification": {
+              "enum": [
+                "harness",
+                "candidate",
+                "benchmark"
+              ]
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "reader": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "mode",
+            "classification",
+            "config"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "classification": {
+              "enum": [
+                "harness",
+                "candidate",
+                "benchmark"
+              ]
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "judge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "mode",
+            "classification",
+            "config"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "classification": {
+              "enum": [
+                "harness",
+                "candidate",
+                "benchmark"
+              ]
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "agentTelemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter",
+        "reader",
+        "judge"
+      ],
+      "properties": {
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requestCount",
+            "retryCount",
+            "requestBytes",
+            "responseBytes",
+            "inputTokens",
+            "outputTokens",
+            "providerProcessingMs",
+            "providerCostUsd",
+            "costSource"
+          ],
+          "properties": {
+            "requestCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retryCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requestBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "responseBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProcessingMs": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerCostUsd": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costSource": {
+              "enum": [
+                "not-applicable",
+                "not-exposed",
+                "provider-reported",
+                "estimated"
+              ]
+            }
+          }
+        },
+        "reader": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requestCount",
+            "retryCount",
+            "requestBytes",
+            "responseBytes",
+            "inputTokens",
+            "outputTokens",
+            "providerProcessingMs",
+            "providerCostUsd",
+            "costSource"
+          ],
+          "properties": {
+            "requestCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retryCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requestBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "responseBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProcessingMs": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerCostUsd": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costSource": {
+              "enum": [
+                "not-applicable",
+                "not-exposed",
+                "provider-reported",
+                "estimated"
+              ]
+            }
+          }
+        },
+        "judge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requestCount",
+            "retryCount",
+            "requestBytes",
+            "responseBytes",
+            "inputTokens",
+            "outputTokens",
+            "providerProcessingMs",
+            "providerCostUsd",
+            "costSource"
+          ],
+          "properties": {
+            "requestCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retryCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requestBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "responseBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outputTokens": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerProcessingMs": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "providerCostUsd": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "costSource": {
+              "enum": [
+                "not-applicable",
+                "not-exposed",
+                "provider-reported",
+                "estimated"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

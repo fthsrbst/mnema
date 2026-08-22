@@ -1,0 +1,61 @@
+[
+  {
+    "question_id": "fixture_single_001",
+    "question_type": "single-session-user",
+    "question": "Which color did the user choose?",
+    "answer": "green",
+    "question_date": "2026/07/01 (Wed) 09:30",
+    "haystack_dates": [
+      "2026/06/30 (Tue) 08:00"
+    ],
+    "haystack_session_ids": [
+      "fixture_session_001"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "Use green for the synthetic fixture.",
+          "has_answer": true
+        },
+        {
+          "role": "assistant",
+          "content": "Understood.",
+          "has_answer": false
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "fixture_session_001"
+    ]
+  },
+  {
+    "question_id": "fixture_temporal_002_abs",
+    "question_type": "temporal-reasoning",
+    "question": "Which event happened first?",
+    "answer": 0,
+    "question_date": "2026/07/02 (Thu) 10:00",
+    "haystack_dates": [
+      "2026/07/01 (Wed) 10:00"
+    ],
+    "haystack_session_ids": [
+      "fixture_session_002"
+    ],
+    "haystack_sessions": [
+      [
+        {
+          "role": "user",
+          "content": "Only one of the two events was observed.",
+          "has_answer": true
+        },
+        {
+          "role": "assistant",
+          "content": "There is not enough information."
+        }
+      ]
+    ],
+    "answer_session_ids": [
+      "fixture_session_002"
+    ]
+  }
+]
