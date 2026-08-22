@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getDb, NOW_MS } from "./db.js";
@@ -260,6 +261,13 @@ export async function generateImage(opts: {
   for (const [key, value] of Object.entries(inputs)) {
     if (!key.endsWith("_path") || typeof value !== "string") continue;
     if (!fs.existsSync(value)) throw new Error(`${key}: dosya yok: ${value}`);
+    // Keyfi dosya okuma kapısını daralt: /etc/passwd, ~/.ssh gibi hedefler yüklenemesin.
+    // Meşru akışlar repo (cwd) veya sistem tmp altındaki dosyaları kullanır.
+    const resolved = path.resolve(value);
+    const allowedRoots = [process.cwd() + path.sep, os.tmpdir() + path.sep];
+    if (!allowedRoots.some((root) => (resolved + path.sep).startsWith(root))) {
+      throw new Error(`${key}: yol izin verilen köklerin dışında (repo veya tmp olmalı): ${value}`);
+    }
     const form = new FormData();
     form.append("image", new Blob([fs.readFileSync(value)]), path.basename(value));
     form.append("overwrite", "true");
@@ -334,7 +342,11 @@ export async function generateImage(opts: {
         try {
           const res = await fetch(`${base}/view?${params}`, { signal: controller.signal });
           if (!res.ok) continue;
-          const name = `${Date.now()}-${f.filename}`;
+          // Uzak makine /history yanıtındaki dosya adına güvenme: "../../x" tarzı bir
+          // ad, OUTPUT_DIR dışına yazma (path traversal) demek olurdu. Yalnız düz ad kabul.
+          const safeBase = path.basename(f.filename);
+          if (!/^[\w.-]+$/.test(safeBase)) continue;
+          const name = `${Date.now()}-${safeBase}`;
           const dest = path.join(OUTPUT_DIR, name);
           fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
           files.push(path.resolve(dest));

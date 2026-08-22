@@ -171,7 +171,10 @@ kuyruk işleyicisi.
 | `HUB_TASK_PRUNE_DAYS` | `30` | Bu kadar günden eski tamamlanmış/iptal görevler otomatik temizlenir. |
 
 (Presence'e özgü `HUB_PRESENCE_TTL_MIN` bu platformun değil, `agent_checkin`/
-`agent_active` advisory presence katmanının ayarıdır — bkz. kök `CLAUDE.md`.)
+`agent_active` advisory presence katmanının ayarıdır — bkz. kök `CLAUDE.md`. Presence
+heartbeat'i artık capability kaydının `last_seen_at`'ını da besler: aktif çalışan agent,
+presence TTL'i dolmadan hatalı `offline`a düşmez. Zombi presence kayıtları 2×TTL'de
+otomatik kapanır; `agent_purge_stale` ile anında temizlenebilir.)
 
 ## Benchmark sonuçları (2026-07-20, Windows/Node 24, geçici DB, embedding kapalı)
 

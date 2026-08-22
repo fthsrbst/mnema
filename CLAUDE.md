@@ -30,6 +30,10 @@ koordinasyonu. Raspberry Pi 5'te systemd servisi olarak çalışır; istemciler 
   SEED'idir; sonraki yazımlar (`skill_save`) DB'ye düşer ve sync ile yayılır — git gerekmez.
 - Agent presence (`agent_presence` tablosu, `src/core/presence.ts`) — advisory koordinasyon,
   KİLİT DEĞİL. Aşağıdaki "Agent koordinasyon protokolü"ne bak.
+- Ortak MCP sunucu kayıt defteri (`mcp_servers` tablosu, `src/core/mcp-registry.ts`) — hangi
+  MCP sunucuların kullanılacağı hub'dan yönetilir; yazımlar sync ile tüm cihazlara yayılır.
+  `hub mcp-servers` listeler; MCP `mcp_server_register/list/get/delete` veya REST
+  `/api/mcp-servers` yazar. env/headers düz metin senkronlanır — secret koymayın.
 - `evals/` — context_get golden suite; kanonik canlı bilgi durumuna (proje: mnema) karşı yazılır.
 - `deploy/` — Pi kurulum/güncelleme/yedek scriptleri + systemd unit; `deploy/cloud/` hosted compose.
 - Agent Intelligence Platform (`src/core/tasks.ts`, `capabilities.ts`, `messaging.ts`, `hygiene.ts`,
@@ -47,7 +51,11 @@ Bu hub'ı kullanan HER agent (Claude Code, Codex, opencode, cursor…) şu proto
    `agent_active(project)` ile detay çek, aynı dosyalara dokunacaksan görev/branch ayrıştır.
 5. Bu bir mutual-exclusion kilidi DEĞİLDİR: aktif kayıt görsen de devam edebilirsin; crash eden
    agent kilit bırakmaz — TTL (`HUB_PRESENCE_TTL_MIN`, varsayılan 30 dk) sonrası kayıt `stale`
-   işaretlenir ve "muhtemelen düşmüş" diye görünür. Stale kayıtları yok say.
+   işaretlenir ve "muhtemelen düşmüş" diye görünür. Stale kayıtları yok say. Bakım döngüsü
+   2×TTL'i aşan canlı kayıtları otomatik `abandoned` kapatır (crash temizliği); zombiler
+   birikmişse `agent_purge_stale(project?)` (MCP), `POST /api/agents/purge-stale` veya
+   `hub presence-purge [project]` ile tüm cihazlarda eşzamanlı temizle. Kapalı kayıt
+   heartbeat ile diriltilmez: uid'niz hata verirse uid'siz yeni checkin açın.
 6. Görev almadan önce `task_queue(project)` ile bağımlılığı çözülmüş, önceliğe göre sıralı
    bekleyen işleri kontrol et; uygun olanı `task_claim` ile al.
 7. İş bitince `task_complete` + `task_feedback` (outcome, ne işe yaradı/yaramadı, dersler) —

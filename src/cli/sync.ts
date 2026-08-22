@@ -19,7 +19,7 @@ Tüm cihazlarda ortak bir hafıza/RAG/proje sunucusu var: **hub** MCP server'ı.
 - Bir projede çalışıyorsan ve bridge gelmediyse \`project_get(name)\` — özet, kararlar, odak, sıradaki adımlar.
 - "Bunu daha önce nasıl çözmüştük / neden X kullanıyoruz" → \`memory_search\`; doküman/not arşivi → \`rag_search\`; "nerede kalmıştım" → \`session_recent\`.
 - Ciddi mühendislik işinde \`prompt_get\` ile role uygun promptu çek (\`prompt_list\`: architect, code-reviewer, debugging, security, frontend, devops, ml). Alt modele iş devrederken (\`local_llm\` dahil) bunu system prompt yap.
-- Bir projede çalışmaya başlarken \`agent_checkin(project, task, branch?)\` çağır; işin bitince aynı uid ile \`agent_checkout(uid)\`. \`agent_active(project)\`/bridge çıktısındaki "aktif agent var" uyarısı bir KİLİT DEĞİLDİR — sadece koordinasyon sinyali; stale (bayat, ~30dk+) kayıt muhtemelen düşmüş bir agent'tır.
+- Bir projede çalışmaya başlarken \`agent_checkin(project, task, branch?)\` çağır; işin bitince aynı uid ile \`agent_checkout(uid)\`. \`agent_active(project)\`/bridge çıktısındaki "aktif agent var" uyarısı bir KİLİT DEĞİLDİR — sadece koordinasyon sinyali; stale (bayat, ~30dk+) kayıt muhtemelen düşmüş bir agent'tır (2×TTL'de bakım otomatik kapatır; birikmişse \`agent_purge_stale\` ile temizle). Kapalı kayıt heartbeat ile diriltilmez — uid hata verirse uid'siz yeni checkin aç.
 
 **3. Çalışırken yaz (kalite kuralları):**
 - Kaydet: teknik karar + GEREKÇE (\`memory_save\` type=decision), zor bug'ın kök nedeni (type=howto), kullanıcı tercihi (type=preference). Ölçüt: "başka cihazdaki agent 2 hafta sonra bundan faydalanır mı?"
@@ -108,6 +108,10 @@ function upsertManagedBlock(filePath: string, block: string): void {
   const end = content.indexOf(BLOCK_END);
   if (start !== -1 && end !== -1) {
     content = content.slice(0, start) + block + content.slice(end + BLOCK_END.length);
+  } else if (start !== -1) {
+    // Son işareti elle silinmiş yarım blok: üzerine YENİ blok eklemek her sync'te
+    // çoğaltıyordu (dosya süresiz büyüyordu). Yetim kısmı baştan kes.
+    content = content.slice(0, start).trimEnd() + "\n\n" + block + "\n";
   } else {
     content = content.trimEnd() + (content.trim() ? "\n\n" : "") + block + "\n";
   }

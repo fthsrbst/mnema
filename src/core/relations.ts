@@ -208,11 +208,14 @@ export function updateMemoryRelation(
 }
 
 export function deleteMemoryRelation(uid: string): boolean {
-  const deleted = getDb().prepare("DELETE FROM memory_relations WHERE uid = ?").run(uid).changes > 0;
-  if (deleted) {
-    recordDeletion("memory_relations", uid);
-    notifyWrite();
-  }
+  const db = getDb();
+  // Silme + tombstone TEK işlemde — crash penceresinde kenar peer'lardan dirilirdi.
+  const deleted = db.transaction(() => {
+    const ok = db.prepare("DELETE FROM memory_relations WHERE uid = ?").run(uid).changes > 0;
+    if (ok) recordDeletion("memory_relations", uid);
+    return ok;
+  })();
+  if (deleted) notifyWrite();
   return deleted;
 }
 

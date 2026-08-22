@@ -18,8 +18,10 @@ export function loadCliConfig(): CliConfig {
   } catch {
     /* yok sayılır */
   }
+  const url = process.env.HUB_URL ?? file.url ?? "http://127.0.0.1:8033";
   return {
-    url: process.env.HUB_URL ?? file.url ?? "http://127.0.0.1:8033",
+    // Sonundaki "/" çift slash üretirdi (…:8033//api/…) ve istek /api mount'una düşmezdi.
+    url: url.replace(/\/+$/, ""),
     token: process.env.HUB_TOKEN ?? file.token ?? "",
     repoPath: file.repoPath ?? "",
   };

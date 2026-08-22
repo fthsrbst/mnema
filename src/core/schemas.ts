@@ -276,6 +276,28 @@ export const agentCheckoutSchema = z
   })
   .strict();
 
+/** Bayat aktif presence kayıtlarını kapatma (purge) — project verilirse o projeyle sınırlanır. */
+export const agentPurgeStaleSchema = z
+  .object({
+    project: projectOptional,
+  })
+  .strict();
+
+/** Ortak MCP sunucu kayıt defteri girdisi (ad route'tan gelir; gövde kısmi yama). */
+export const mcpServerInputSchema = z
+  .object({
+    transport: z.enum(["stdio", "http"]).optional(),
+    url: z.string().trim().min(1).max(2048).optional(),
+    command: z.string().trim().min(1).max(1000).optional(),
+    args: z.array(z.string().min(1).max(1000)).max(64).optional(),
+    env: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),
+    headers: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),
+    scope: projectNameSchema.nullable().optional(),
+    description: z.string().max(2000).nullable().optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+
 export const feedbackInputBaseSchema = z
   .object({
     query: maxLen(z.string().trim().min(1), 10_000),
@@ -565,12 +587,28 @@ export const syncPayloadSchema = z.object({
     verified_by: z.string().max(100).nullable(),
     updated_at: syncTimestamp,
   }).strict()).max(100_000).optional(),
+  // Ortak MCP sunucu kayıt defteri — eski peer göndermezse yokluğu boş dizi sayılır.
+  mcp_servers: z.array(z.object({
+    uid: syncUid,
+    name: z.string().min(1).max(100),
+    transport: z.enum(["stdio", "http"]),
+    url: z.string().max(2048).nullable(),
+    command: z.string().max(1000).nullable(),
+    args: z.string().max(10_000),
+    env: z.string().max(20_000),
+    headers: z.string().max(20_000),
+    scope: projectNameSchema.nullable(),
+    description: z.string().max(2000).nullable(),
+    enabled: z.number().int().min(0).max(1),
+    created_at: syncTimestamp,
+    updated_at: syncTimestamp,
+  }).strict()).max(10_000).optional(),
   deletions: z.array(z.object({
     uid: syncUid,
     tbl: z.enum([
       "memories", "documents", "memory_relations", "projects", "session_logs",
       "machines", "assets", "agent_presence", "tasks", "agent_capabilities", "agent_messages",
-      "memory_machine_state",
+      "memory_machine_state", "mcp_servers",
     ]),
     deleted_at: syncTimestamp,
   }).strict()).max(500_000),

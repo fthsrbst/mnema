@@ -208,10 +208,14 @@ export async function addDocument(input: DocumentInput): Promise<AddDocumentResu
 export function deleteDocument(id: number): boolean {
   const db = getDb();
   const row = db.prepare("SELECT uid FROM documents WHERE id = ?").get(id) as { uid: string } | undefined;
-  vectorStore.deleteDocumentChunks(id);
-  db.prepare("DELETE FROM chunks WHERE document_id = ?").run(id);
-  const deleted = db.prepare("DELETE FROM documents WHERE id = ?").run(id).changes > 0;
-  if (deleted && row?.uid) recordDeletion("documents", row.uid);
+  // Silme + tombstone TEK işlemde — araya crash girerse kayıt peer'lardan dirilirdi.
+  const deleted = db.transaction(() => {
+    vectorStore.deleteDocumentChunks(id);
+    db.prepare("DELETE FROM chunks WHERE document_id = ?").run(id);
+    const ok = db.prepare("DELETE FROM documents WHERE id = ?").run(id).changes > 0;
+    if (ok && row?.uid) recordDeletion("documents", row.uid);
+    return ok;
+  })();
   if (deleted) notifyWrite();
   return deleted;
 }
@@ -274,8 +278,12 @@ export interface DocumentListItem {
 }
 
 /** project verilirse sadece o projeye ait dokümanları döner (frontend "learning" görünümü için). */
-export function listDocuments(project?: string, limit = 100): DocumentListItem[] {
+export function listDocuments(project?: string, limitInput = 100): DocumentListItem[] {
   const db = getDb();
+  // REST "?limit=abc" → NaN → SQLite LIMIT NULL sınırsız okurdu; sıkıştır.
+  const rawLimit = Number(limitInput);
+  const limit =
+    limitInput === undefined || !Number.isFinite(rawLimit) ? 100 : Math.min(Math.max(Math.trunc(rawLimit), 1), 1000);
   const vecJoin = hasVec()
     ? "(SELECT COUNT(*) FROM chunks_vec v WHERE v.rowid IN (SELECT id FROM chunks WHERE document_id = d.id))"
     : "0";
@@ -336,7 +344,18 @@ export function updateDocumentMeta(
       .prepare(`UPDATE documents SET ${sets.join(", ")}, updated_at = ${NOW_MS} WHERE id = ?`)
       .run(...params, id).changes > 0;
   if (changed) notifyWrite();
-  if (changed && (patch.enabled !== undefined || patch.project !== undefined || patch.is_current !== undefined)) {
+  // kind/valid_from/valid_to da vektör metadata'sında filtrelenir (sqlite-vec KNN
+  // kind=?, Qdrant payload valid_to_ms) — bunlar değişince metadata tazelenmeli,
+  // yoksa vec kanalı eski kind/pencereyle filtrelemeye devam ediyordu.
+  if (
+    changed &&
+    (patch.enabled !== undefined ||
+      patch.project !== undefined ||
+      patch.is_current !== undefined ||
+      patch.kind !== undefined ||
+      patch.valid_from !== undefined ||
+      patch.valid_to !== undefined)
+  ) {
     refreshDocumentVectorMetadata(id);
   }
   return changed;

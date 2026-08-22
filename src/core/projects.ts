@@ -53,11 +53,14 @@ export function listProjects(): ProjectMap[] {
 }
 
 export function deleteProject(name: string): boolean {
-  const deleted = getDb().prepare("DELETE FROM projects WHERE name = ?").run(name).changes > 0;
-  if (deleted) {
-    recordDeletion("projects", name);
-    notifyWrite();
-  }
+  const db = getDb();
+  // Silme + tombstone TEK işlemde — crash penceresinde map peer'lardan dirilirdi.
+  const deleted = db.transaction(() => {
+    const ok = db.prepare("DELETE FROM projects WHERE name = ?").run(name).changes > 0;
+    if (ok) recordDeletion("projects", name);
+    return ok;
+  })();
+  if (deleted) notifyWrite();
   return deleted;
 }
 

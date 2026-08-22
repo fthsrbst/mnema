@@ -10,6 +10,7 @@ import {
   agentCheckin,
   agentCheckout,
   agentRecent,
+  purgeStalePresence,
   feedbackSummary,
   feedbackQualityBreakdown,
   listRecallFeedback,
@@ -45,6 +46,10 @@ import {
   detachProjectReferences,
   deleteSessionLog,
   deleteSkill,
+  getMcpServer,
+  listMcpServers,
+  saveMcpServer,
+  deleteMcpServer,
   getDocument,
   getMemory,
   getMemoryRelation,
@@ -89,6 +94,7 @@ import {
   type FeedbackVerdict,
   type MemoryType,
   type ProjectMap,
+  type JobKind,
   contextGetSchema,
   professionalProfileInputSchema,
   documentMetaPatchSchema,
@@ -325,7 +331,8 @@ export function buildRestRouter(): Router {
 
   // --- projects ---
   r.post("/projects/migrate-references", wrap((req, res) => {
-    res.json(migrateProjectReferences(String(req.body.from ?? ""), String(req.body.to ?? "")));
+    const body = (req.body ?? {}) as { from?: unknown; to?: unknown };
+    res.json(migrateProjectReferences(String(body.from ?? ""), String(body.to ?? "")));
   }));
   r.post("/projects/:name/detach-references", wrap((req, res) => {
     res.json(detachProjectReferences(req.params.name));
@@ -395,6 +402,11 @@ export function buildRestRouter(): Router {
     const { hours } = req.query;
     res.json(agentRecent(hours !== undefined ? Number(hours) : undefined));
   }));
+  // Bayat aktif kayıtları kapat (ortak ağda eşitleme): {project?} gövdesi opsiyonel.
+  r.post("/agents/purge-stale", wrap((req, res) => {
+    const body = (req.body ?? {}) as { project?: string };
+    res.json(purgeStalePresence(body.project));
+  }));
 
   // --- compute (yerel AI orkestrasyonu) ---
   r.get("/machines", wrap((_req, res) => res.json(listMachines())));
@@ -430,6 +442,18 @@ export function buildRestRouter(): Router {
     res.json({ ok: true, note: "DB'ye yazıldı, diğer cihazlara sync ile otomatik yayılır. Yerel dosyaya materyalize etmek için o cihazda: hub sync" });
   }));
   r.delete("/skills/:name", wrap((req, res) => res.json({ deleted: deleteSkill(req.params.name) })));
+
+  // --- ortak MCP sunucu kayıt defteri (DB authority; yazımlar sync ile tüm cihazlara yayılır) ---
+  r.get("/mcp-servers", wrap((req, res) => {
+    const enabled = req.query.enabled === undefined ? undefined : req.query.enabled === "1" || req.query.enabled === "true";
+    res.json(listMcpServers(enabled === undefined ? {} : { enabled }));
+  }));
+  r.get("/mcp-servers/:name", wrap((req, res) => {
+    const server = getMcpServer(req.params.name);
+    server ? res.json(server) : res.status(404).json({ error: "bulunamadı" });
+  }));
+  r.put("/mcp-servers/:name", wrap((req, res) => res.json(saveMcpServer(req.params.name, req.body))));
+  r.delete("/mcp-servers/:name", wrap((req, res) => res.json({ deleted: deleteMcpServer(req.params.name) })));
 
   // --- prompts (rol bazlı master prompt kütüphanesi; DB authority — bkz. assets.ts/prompts.ts) ---
   r.get("/prompts", wrap((_req, res) => res.json(listPrompts())));
@@ -535,7 +559,7 @@ export function buildRestRouter(): Router {
     task ? res.json(task) : res.status(404).json({ error: "not found" });
   }));
   r.post("/tasks/:uid/claim", wrap((req, res) => {
-    const { agent } = req.body;
+    const { agent } = (req.body ?? {}) as { agent?: string };
     if (!agent) return res.status(400).json({ error: "agent required" });
     const task = claimTask(req.params.uid, agent);
     task ? res.json(task) : res.status(404).json({ error: "not found or not claimable" });
@@ -591,14 +615,14 @@ export function buildRestRouter(): Router {
     result ? res.json(result) : res.status(404).json({ error: "not found" });
   }));
   r.post("/messages/read-all", wrap((req, res) => {
-    const { agent } = req.body;
+    const { agent } = (req.body ?? {}) as { agent?: string };
     if (!agent) return res.status(400).json({ error: "agent required" });
     res.json({ marked: markAllRead(agent) });
   }));
 
   // Handoff
   r.post("/handoff", wrap(async (req, res) => {
-    const { from_agent, to_agent, project, notes } = req.body;
+    const { from_agent, to_agent, project, notes } = (req.body ?? {}) as { from_agent?: string; to_agent?: string; project?: string; notes?: string };
     if (!from_agent || !to_agent || !project) {
       return res.status(400).json({ error: "from_agent, to_agent, project required" });
     }
@@ -614,7 +638,7 @@ export function buildRestRouter(): Router {
     res.json(runHygiene(req.body?.project));
   }));
   r.post("/compact", wrap(async (req, res) => {
-    const { project, mode } = req.body;
+    const { project, mode } = (req.body ?? {}) as { project?: string; mode?: string };
     if (!project) return res.status(400).json({ error: "project required" });
     if (mode === "sessions") return res.json(await compactSessions(project));
     res.json(await distillProject(project));
@@ -638,7 +662,7 @@ export function buildRestRouter(): Router {
 
   // Jobs
   r.post("/jobs", wrap((req, res) => {
-    const { kind, payload } = req.body;
+    const { kind, payload } = (req.body ?? {}) as { kind?: JobKind; payload?: Record<string, unknown> };
     if (!kind) return res.status(400).json({ error: "kind required" });
     res.json(enqueueJob(kind, payload ?? {}));
   }));

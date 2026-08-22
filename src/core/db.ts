@@ -26,6 +26,59 @@ let vecErrorMsg: string | null = null;
  */
 export const NOW_MS = "strftime('%Y-%m-%d %H:%M:%f','now')";
 
+// --- HLC (hybrid logical clock) — presence yazımları için saat-kayması koruması ---
+// LWW eşitleme updated_at'i sözlüksel kıyaslar; makine saati ileride olan düğümün ESKİ
+// kaydı, doğru saatli düğümün YENİ kaydını sürekli ezer. HLC-lite çözümü: her düğüm
+// gördüğü en ileri damgayı highwater olarak ezberler ve kendi sonraki damgasını en az
+// ondan 1ms ileride üretir. Böylece gelecekte damgalanmış bir satırı GÖREN düğüm,
+// kendi sonraki yazımında onu mutlaka geçer (purge/auto-abandon ile yakınsama mümkün).
+const HLC_HIGHWATER_KEY = "presence_hlc_highwater";
+
+function hlcParseMs(ts: string): number {
+  return Date.parse(ts.replace(" ", "T") + "Z");
+}
+
+/** ms → "YYYY-MM-DD HH:MM:SS.mmm" (UTC, strftime %f ile aynı biçim). */
+function hlcFormatMs(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 23).replace("T", " ");
+}
+
+function hlcRead(): number {
+  const row = getDb().prepare("SELECT value FROM system_metadata WHERE key = ?").get(HLC_HIGHWATER_KEY) as
+    | { value: string }
+    | undefined;
+  const ms = row?.value ? Number(row.value) : 0;
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
+function hlcWrite(ms: number): void {
+  getDb()
+    .prepare(
+      `INSERT INTO system_metadata(key, value, updated_at) VALUES (?, ?, ${NOW_MS})
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=${NOW_MS}`
+    )
+    .run(HLC_HIGHWATER_KEY, String(ms));
+}
+
+/** Uzak damgayı özümse: bu düğümün sonraki hlcStamp()'ı bundan ileri olacak. */
+export function hlcAbsorb(remoteTs: string | null | undefined): void {
+  if (!remoteTs) return;
+  const ms = hlcParseMs(remoteTs);
+  if (!Number.isFinite(ms)) return;
+  if (ms > hlcRead()) hlcWrite(ms);
+}
+
+/**
+ * Monotonik UTC damgası ("YYYY-MM-DD HH:MM:SS.mmm"): duvar saati geriye gelse bile
+ * (NTP düzeltmesi) önceki damgadan, uzaktan görülen gelecek damgalardan ileride.
+ */
+export function hlcStamp(): string {
+  const wall = (getDb().prepare(`SELECT ${NOW_MS} AS t`).get() as { t: string }).t;
+  const ms = Math.max(hlcParseMs(wall), hlcRead() + 1);
+  hlcWrite(ms);
+  return hlcFormatMs(ms);
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories(
   id INTEGER PRIMARY KEY,
@@ -195,6 +248,28 @@ CREATE TABLE IF NOT EXISTS assets(
   UNIQUE(kind, name)
 );
 CREATE INDEX IF NOT EXISTS idx_assets_updated ON assets(updated_at);
+
+-- Ortak MCP sunucu kayıt defteri: agent'ların bağlanacağı MCP sunucuları hub'dan
+-- yönetme; yazımlar sync ile tüm cihazlara yayılır. uid deterministiktir
+-- (sha256("mcp-server:"+name)) — aynı adı iki cihaz kaydederse çakışmasız birleşir.
+-- GİZLİLİK: env/headers düz metin + senkronlanır; gizli değer koymayın.
+CREATE TABLE IF NOT EXISTS mcp_servers(
+  id INTEGER PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL UNIQUE,
+  transport TEXT NOT NULL CHECK(transport IN ('stdio', 'http')) DEFAULT 'http',
+  url TEXT,
+  command TEXT,
+  args TEXT NOT NULL DEFAULT '[]',
+  env TEXT NOT NULL DEFAULT '{}',
+  headers TEXT NOT NULL DEFAULT '{}',
+  scope TEXT,
+  description TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_updated ON mcp_servers(updated_at);
 
 -- Advisory agent-presence koordinasyonu: mutual-exclusion kilidi DEĞİL, "kim ne üzerinde
 -- çalışıyor" sinyali. Bayatlık heartbeat_at + HUB_PRESENCE_TTL_MIN ile ele alınır (bkz. presence.ts).
@@ -510,6 +585,8 @@ export const SYNC_TABLES: {
   { tbl: "agent_capabilities", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
   // Cihaz-farkındalığı defteri — deterministik uid sayesinde sync'te çakışmasız birleşir.
   { tbl: "memory_machine_state", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
+  // Ortak MCP sunucu defteri — deterministik uid sayesinde ad bazlı kayıtlar çakışmasız birleşir.
+  { tbl: "mcp_servers", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true },
   // agent_messages insert-only (ADR-005): read_at cihaz-yereldir, update trigger yok.
   { tbl: "agent_messages", rowKey: "uid", triggerRowKey: "new.uid", deleteGuard: true, update: false },
   // deletions PK birleşik (tbl, uid) — row_key tek başına uid olursa iki tablodaki
@@ -690,6 +767,27 @@ function migrate(database: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_uid ON session_logs(uid);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_uri_unique ON documents(uri) WHERE uri IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_documents_project_current ON documents(project, enabled, is_current);
+  `);
+  // Presence duplicate koruması: aynı (agent, machine, project) için yalnız en yeni
+  // 'active' satır kalır, diğerleri abandoned kapanır (uid'siz tekrarlı checkin'in
+  // açtığı çift canlı kayıtlar). Ardından partial UNIQUE index gelecekteki duplicate
+  // INSERT'i fiziksel olarak engeller — sync apply da bu index'i çakışma çözümünde kullanır.
+  // Trigger'lardan ÖNCE çalışır: tek seferlik veri düzeltmesi change_log'u şişirmesin.
+  database.exec(`
+    UPDATE agent_presence SET status = 'abandoned',
+      finished_at = COALESCE(finished_at, strftime('%Y-%m-%d %H:%M:%f','now')),
+      updated_at  = strftime('%Y-%m-%d %H:%M:%f','now')
+    WHERE status = 'active' AND uid NOT IN (
+      SELECT uid FROM (
+        SELECT uid, ROW_NUMBER() OVER (
+          PARTITION BY agent, machine, project
+          ORDER BY heartbeat_at DESC, uid DESC
+        ) AS rn
+        FROM agent_presence WHERE status = 'active'
+      ) WHERE rn = 1
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_presence_live
+      ON agent_presence(agent, machine, project) WHERE status = 'active';
   `);
   // ADR-005: teslimat watermark'i seq tabanli. Kolonlar nullable — NULL "henuz seq
   // modunda degil" demektir ve zaman-modu fallback'i bu sayede bozulmadan durur.

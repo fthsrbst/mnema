@@ -50,6 +50,14 @@ function loadPolicies(): TokenPolicy[] {
   for (const policy of policies) {
     if (ids.has(policy.id)) throw new Error(`duplicate HUB_AUTH_TOKENS id: ${policy.id}`);
     ids.add(policy.id);
+    // Sync tüm veritabanını taşır (collectChanges/applyChanges proje-filtresiz);
+    // daraltılmış projects listesiyle sync scope'u yanıltıcıdır — açılışta reddet,
+    // aksi halde tek projelik token tüm DB'yi çekebilir.
+    if (!policy.projects.includes("*") && policy.scopes.some((s) => s === "sync:read" || s === "sync:write")) {
+      throw new Error(
+        `HUB_AUTH_TOKENS[${policy.id}]: sync scopes replicate the whole database and cannot be combined with a restricted projects list — use projects:["*"] or drop the sync scopes`
+      );
+    }
   }
   return policies;
 }
@@ -148,6 +156,48 @@ const MCP_SCOPES: Record<string, HubScope> = {
   graph_node: "knowledge:read",
   lesson_candidates_list: "knowledge:read",
   candidate_promote: "knowledge:write",
+  // ADR-006 yaşam döngüsü + cihaz-farkındalığı
+  memory_invalidate: "knowledge:write",
+  memory_revalidate: "knowledge:write",
+  memory_machine_mark: "knowledge:write",
+  // Görev kuyruğu ve geri bildirim (koordinasyon protokolünün kalbi)
+  task_create: "session:write",
+  task_claim: "session:write",
+  task_update: "session:write",
+  task_complete: "session:write",
+  task_list: "session:read",
+  task_queue: "session:read",
+  task_feedback: "session:write",
+  project_lessons: "knowledge:read",
+  // Agent kayıt defteri ve mesajlaşma
+  agent_register: "session:write",
+  agent_find: "session:read",
+  agent_list: "session:read",
+  agent_message_send: "session:write",
+  agent_inbox: "session:read",
+  message_mark_read: "session:write",
+  message_mark_all_read: "session:write",
+  message_unread_count: "session:read",
+  agent_handoff: "session:write",
+  agent_purge_stale: "session:write",
+  // Ortak MCP sunucu kayıt defteri (altyapı config'i → admin)
+  mcp_server_register: "admin:write",
+  mcp_server_list: "admin:read",
+  mcp_server_get: "admin:read",
+  mcp_server_delete: "admin:write",
+  // Bakım/derleme/bilgi aktarımı
+  hygiene_report: "knowledge:read",
+  hygiene_run: "admin:write",
+  compact_project: "admin:write",
+  knowledge_transfer: "knowledge:read",
+  // Webhook ve async iş kuyruğu
+  webhook_register: "admin:write",
+  webhook_remove: "admin:write",
+  webhook_list: "admin:read",
+  job_enqueue: "admin:write",
+  job_status: "admin:read",
+  metrics_overview: "admin:read",
+  event_log: "admin:read",
 };
 
 interface McpCall {
@@ -232,6 +282,27 @@ export function authorizeMcp(principal: Principal, body: unknown): { ok: true } 
     if (project !== undefined && !hasProjectAccess(principal, project)) {
       return { ok: false, reason: `project access denied` };
     }
+    // Çift uçlu referanslar: yalnız bir uca bakmak diğer projedeki kayda
+    // okuma/merge/tombstone kapısı açıyordu — her referansın projesine ayrı bak.
+    if (!principal.projects.includes("*")) {
+      const referencedIds: number[] = [];
+      if (call.name === "memory_relation_add") {
+        for (const id of [call.args.from_id, call.args.to_id]) {
+          if (typeof id === "number") referencedIds.push(id);
+        }
+      }
+      if (call.name === "memory_consolidate" && Array.isArray(call.args.source_ids)) {
+        for (const id of call.args.source_ids) {
+          if (typeof id === "number") referencedIds.push(id);
+        }
+      }
+      for (const id of referencedIds) {
+        const refProject = getMemory(id)?.project;
+        if (refProject !== undefined && !hasProjectAccess(principal, refProject)) {
+          return { ok: false, reason: `project access denied` };
+        }
+      }
+    }
   }
   return { ok: true };
 }
@@ -259,6 +330,7 @@ export function restScope(method: string, path: string): HubScope {
   if (path.startsWith("/vector-projection/")) return "admin:write";
   if (path.startsWith("/audit")) return "admin:read";
   if (path.startsWith("/skills") || path.startsWith("/prompts")) return method === "GET" ? "admin:read" : "admin:write";
+  if (path.startsWith("/mcp-servers")) return method === "GET" ? "admin:read" : "admin:write";
   return "admin:write";
 }
 
@@ -271,7 +343,14 @@ export function requestProject(req: { body?: unknown; query?: unknown; path?: st
     return getMemory(body.target_id)?.project;
   }
   const match = req.path?.match(/^\/projects\/([^/]+)/);
-  if (match) return decodeURIComponent(match[1]);
+  if (match) {
+    // Bozuk percent-encoding (%zz) burada URIError fırlatıyordu — route öncesi 500.
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return undefined;
+    }
+  }
   const memoryMatch = req.path?.match(/^\/memory\/(\d+)/);
   if (memoryMatch) return getMemory(Number(memoryMatch[1]))?.project;
   if (req.path === "/memory-relations" && typeof body.from_id === "number") {

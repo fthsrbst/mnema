@@ -7,11 +7,13 @@ import {
   agentActive,
   agentCheckin,
   agentCheckout,
+  agentRecent,
   generateImage,
   listWorkflows,
   localLlm,
   machinesStatus,
   upsertMachine,
+  purgeStalePresence,
   appendToProject,
   composePrompt,
   consolidateMemories,
@@ -27,6 +29,10 @@ import {
   listAuditEvents,
   listSkills,
   saveSkill,
+  getMcpServer,
+  listMcpServers,
+  saveMcpServer,
+  deleteMcpServer,
   getProject,
   getProfessionalProfile,
   listProjects,
@@ -57,6 +63,8 @@ import {
   verifyVectorProjectionParity,
   agentCheckinSchema,
   agentCheckoutSchema,
+  agentPurgeStaleSchema,
+  mcpServerInputSchema,
   contextGetSchema,
   professionalProfileInputSchema,
   documentInputSchema,
@@ -688,7 +696,7 @@ export function buildMcpServer(): McpServer {
     {
       title: "Agent varlığını bildir (advisory, kilit değil)",
       description:
-        "Bir projede çalışmaya BAŞLARKEN çağır: hangi cihaz/branch'te ne yaptığını diğer agent'lara bildirir. Bu bir mutual-exclusion KİLİDİ DEĞİLDİR — sadece koordinasyon sinyalidir; başka bir agent aktif görünse bile çalışmaya devam edebilirsin, dikkatli ol. uid vermeden çağırırsan yeni kayıt açılır ve uid döner — işin sürerken periyodik (heartbeat) veya task değiştikçe aynı uid ile tekrar çağır. İş bitince agent_checkout ile kapat.",
+        "Bir projede çalışmaya BAŞLARKEN çağır: hangi cihaz/branch'te ne yaptığını diğer agent'lara bildirir. Bu bir mutual-exclusion KİLİDİ DEĞİLDİR — sadece koordinasyon sinyalidir; başka bir agent aktif görünse bile çalışmaya devam edebilirsin, dikkatli ol. uid vermeden çağırırsan yeni kayıt açılır ve uid döner — işin sürerken periyodik (heartbeat) veya task değiştikçe aynı uid ile tekrar çağır. Kapalı (done/abandoned) kayıt heartbeat ile diriltilmez; uid bulunamazsa/silinmişse uid'siz yeni checkin aç. Aynı cihaz+agent+projede canlı kayıt varsa o benimsenir (duplicate açılmaz). İş bitince agent_checkout ile kapat.",
       inputSchema: agentCheckinSchema.shape,
     },
     async (args) => json(agentCheckin(args))
@@ -698,7 +706,7 @@ export function buildMcpServer(): McpServer {
     "agent_checkout",
     {
       title: "Agent varlığını kapat",
-      description: "İş BİTİNCE çağır (agent_checkin'den dönen uid ile): durumu 'done' (varsayılan) veya 'abandoned' yapar. Çağırmayı unutursan kayıt kilitlenmez — heartbeat_at bayatlayınca diğer agent'lara 'muhtemelen düşmüş' olarak görünür.",
+      description: "İş BİTİNCE çağır (agent_checkin'den dönen uid ile): durumu 'done' (varsayılan) veya 'abandoned' yapar. Çağırmayı unutursan kayıt kilitlenmez — 2×TTL sonunda bakım döngüsü onu otomatik 'abandoned' kapatır; o zamana kadar 'muhtemelen düşmüş' görünür.",
       inputSchema: agentCheckoutSchema.shape,
     },
     async (args) => {
@@ -712,10 +720,70 @@ export function buildMcpServer(): McpServer {
     {
       title: "Bu projede aktif agent'ları listele",
       description:
-        "Bir projede şu an aktif (checkin yapılmış, henüz checkout edilmemiş) agent kayıtlarını döner. Stale (bayat) kayıtlar 'stale: true' işaretlenir — HUB_PRESENCE_TTL_MIN'den (varsayılan 30dk) eski heartbeat, muhtemelen agent düştü demektir. SONUÇ BİR KİLİT DEĞİLDİR: aktif kayıt görsen de kendi işine devam edebilirsin, sadece dikkatli koordine ol (aynı dosyaları eşzamanlı değiştirmek gibi çakışmalardan kaçın).",
+        "Bir projede şu an aktif (checkin yapılmış, henüz checkout edilmemiş) agent kayıtlarını döner. Stale (bayat) kayıtlar 'stale: true' işaretlenir — HUB_PRESENCE_TTL_MIN'den (varsayılan 30dk) eski heartbeat, muhtemelen agent düştü demektir. Bayat canlı kayıtlar ayrıca bakım döngüsünde 2×TTL sonunda otomatik 'abandoned' kapatılır. SONUÇ BİR KİLİT DEĞİLDİR: aktif kayıt görsen de kendi işine devam edebilirsin, sadece dikkatli koordine ol (aynı dosyaları eşzamanlı değiştirmek gibi çakışmalardan kaçın).",
       inputSchema: { project: z.string().optional() },
     },
     async ({ project }) => json(agentActive(project))
+  );
+
+  server.registerTool(
+    "agent_purge_stale",
+    {
+      title: "Bayat presence kayıtlarını kapat (eşitleme)",
+      description:
+        "HUB_PRESENCE_TTL_MIN'den (varsayılan 30dk) eski heartbeat'i olan TÜM aktif presence kayıtlarını hemen 'abandoned' yapar — crash eden agent'ların bıraktığı zombi kayıtları ortak ağda temizleme aracı. Yazım sync ile tüm cihazlara yayılır. project verilirse o projeyle sınırlar; verilmezse tümü. Kilit DEĞİLDİR: sadece koordinasyon hijyeni.",
+      inputSchema: agentPurgeStaleSchema.shape,
+    },
+    async ({ project }) => json(purgeStalePresence(project))
+  );
+
+  server.registerTool(
+    "mcp_server_register",
+    {
+      title: "Ortak MCP sunucu kaydet/güncelle",
+      description:
+        "Hub'ın ORTAK MCP sunucu kayıt defterine yazar: tüm cihazlardaki agent'lar hangi MCP sunuculara bağlanacağını buradan görür; yazım sync ile ağa yayılır. transport='http' → url zorunlu (uzak/merkezi sunucu); 'stdio' → command (+args) zorunlu, makine-yerel çalışır. Kısmi güncelleme: yalnız gönderdiğin alanlar değişir. GİZLİLİK: env/headers düz metin senkronlanır — secret koymayın, '${ENV_VAR}' referansı kullanın.",
+      inputSchema: { name: z.string().min(1).max(100), ...mcpServerInputSchema.shape },
+    },
+    async (args) => {
+      const { name, ...rest } = args as { name: string } & Record<string, unknown>;
+      return json(saveMcpServer(name, rest));
+    }
+  );
+
+  server.registerTool(
+    "mcp_server_list",
+    {
+      title: "Ortak MCP sunucularını listele",
+      description:
+        "Kayıt defterindeki tüm ortak MCP sunucularını döner: ad, transport (stdio/http), url/command+args, env/headers şablonu, scope, açıklama, enabled. enabled=true verilirse yalnız aktif olanlar.",
+      inputSchema: { enabled: z.boolean().optional() },
+    },
+    async ({ enabled }) => json(listMcpServers(enabled === undefined ? {} : { enabled }))
+  );
+
+  server.registerTool(
+    "mcp_server_get",
+    {
+      title: "Ortak MCP sunucu detayı",
+      description: "Adına göre tek bir ortak MCP sunucu kaydının tam detayını döner.",
+      inputSchema: { name: z.string().min(1).max(100) },
+    },
+    async ({ name }) => {
+      const server = getMcpServer(name);
+      return json(server ?? { error: `mcp_servers kaydı bulunamadı: ${name}` });
+    }
+  );
+
+  server.registerTool(
+    "mcp_server_delete",
+    {
+      title: "Ortak MCP sunucu kaydını sil",
+      description:
+        "Kayıt defterinden MCP sunucu kaydını siler (tombstone bırakır, silme tüm cihazlara sync olur). Yalnızca artık hiçbir cihazda kullanılmıyorsa silin; geçici devre dışı bırakma için mcp_server_register ile enabled=false yapın.",
+      inputSchema: { name: z.string().min(1).max(100) },
+    },
+    async ({ name }) => json({ deleted: deleteMcpServer(name) })
   );
 
   server.registerTool(

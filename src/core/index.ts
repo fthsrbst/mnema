@@ -8,6 +8,8 @@ export {
   embeddingGenerationState,
   vectorIndexReady,
   markEmbeddingGenerationReady,
+  hlcAbsorb,
+  hlcStamp,
 } from "./db.js";
 export { embed, embedOne, embeddingsEnabled, embeddingsDisabledReason } from "./embeddings.js";
 export { chunkMarkdown, CHUNKER_VERSION } from "./chunker.js";
@@ -34,6 +36,7 @@ export * from "./admin.js";
 export * from "./prompts.js";
 export * from "./skills.js";
 export * from "./assets.js";
+export * from "./mcp-registry.js";
 export * from "./presence.js";
 export * from "./digest.js";
 export * from "./tasks.js";

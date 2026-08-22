@@ -339,15 +339,17 @@ treated as the public API.
 
 | Tool | What it does |
 |---|---|
-| `agent_checkin` | Announces which device and branch an agent is working on. Advisory only — this is **not** a mutual-exclusion lock. |
-| `agent_checkout` | Closes a presence record as `done` or `abandoned`. Forgetting to call it never leaves a lock behind; stale heartbeats expire on their own. |
+| `agent_checkin` | Announces which device and branch an agent is working on. Advisory only — this is **not** a mutual-exclusion lock. Closed records are never resurrected by a late heartbeat; a live record for the same agent/machine/project is adopted instead of duplicated. |
+| `agent_checkout` | Closes a presence record as `done` or `abandoned`. Forgetting to call it is self-healing: maintenance auto-closes records whose heartbeat exceeds 2×TTL. |
 | `agent_active` | Lists agents currently checked in on a project, flagging records whose heartbeat has gone stale. |
+| `agent_purge_stale` | Immediately closes every stale active presence record (optionally scoped to a project). The write syncs to all devices — the shared-network cleanup tool for zombie records left by crashed agents. |
 
 ### Machines and local models
 
 | Tool | What it does |
 |---|---|
 | `machine_register` | Registers or updates a machine that runs local AI services. |
+| `mcp_server_register` / `mcp_server_list` / `mcp_server_get` / `mcp_server_delete` | Shared MCP server registry: agents manage which MCP servers every device should use from one place; writes sync to all peers via Mnema sync. `http` servers need a URL, `stdio` servers need a local command. Do not store secrets in env/headers — they replicate in plaintext. |
 | `machine_status` | Returns live status and loaded models for registered LM Studio, Ollama and ComfyUI services. |
 | `local_llm` | Runs a prompt against a registered local model (LM Studio or Ollama) at no API cost — suited to summarizing, classification, drafting and data conversion. |
 
@@ -496,6 +498,44 @@ sync; unsafe combinations fail at startup.
 See [`docs/operations/company-deployment.md`](docs/operations/company-deployment.md)
 for fail-closed configuration, rotation, SLOs, backup/restore, and rollout.
 
+## Memory Bench (experimental)
+
+`benchmarks/memory/` contains an incubating provider-neutral benchmark for
+explicit memory lifecycle, retrieval, updates, deletion, abstention, and scope
+isolation. It also contains a streaming LongMemEval agent-track runner that
+keeps memory retrieval, answer generation, and judging as separately reported
+components. The core track runs against a disposable Mnema database, a
+deterministic reference adapter, or managed Mem0, Letta, and Zep APIs:
+
+```bash
+npm run bench:memory:smoke
+npm run bench:memory:compare-smoke
+npm run bench:memory:review-packet
+npm run bench:memory -- --adapter=mnema
+npm run bench:memory -- --adapter=mem0
+npm run bench:memory -- --adapter=letta
+npm run bench:memory -- --adapter=zep
+npm run bench:memory:import-longmemeval -- --input=/path/to/longmemeval_oracle.json --output=artifacts/memory-bench/longmemeval-oracle.json
+npm run bench:memory:agent -- --dataset=artifacts/memory-bench/longmemeval-oracle.json
+npm run bench:memory:agent -- --dataset=artifacts/memory-bench/longmemeval-oracle.json --adapter=mnema --reader=openai --judge=openai
+npm run bench:memory:qualify -- --help
+npm run bench:memory:statistics -- --help
+npm run bench:memory:publish-agent -- --help
+```
+
+The included corpus only validates the harness; its numbers are not product or
+leaderboard claims. A separate deterministic 120-query English/Turkish draft
+corpus is included for independent review. Hash-bound review packets and
+`approve`/`revise`/`reject` overlays keep the generated source immutable, while
+the comparison CLI writes process-isolated reproducibility manifests. Benchmark
+quality deltas are recomputed from paired traces with deterministic
+scenario-cluster confidence intervals, and final agent publication binds that
+statistical artifact by checksum. Benchmark code is MIT licensed; original
+dataset artifacts use CC BY 4.0 with explicit reviewer, contribution, and
+release-evidence policies. See
+[`benchmarks/memory/README.md`](benchmarks/memory/README.md) and the
+[`Memory Bench architecture`](docs/architecture/memory-bench.md).
+
 ## Roadmap
 
 Major remaining product work:
@@ -507,8 +547,20 @@ Major remaining product work:
 - **Watch mode** — re-index a notes/docs folder automatically on change.
 - **`hub timeline <project>`** — chronological dump of a project's decisions
   and sessions.
-- **Human-labelled retrieval benchmark** — grow the seed regression suite to
-  at least 50 held-out cases before changing production ranking weights.
+- **Human-labelled product regression suite** — grow `eval:context` to at least
+  50 held-out cases before changing Mnema's production ranking weights.
+- **Open Memory Bench qualification** — live-qualify and version-pin the
+  implemented Mem0, Letta, and Zep core and agent-memory REST adapters, then use
+  the review-overlay workflow to independently review and revise the 120-query
+  portable draft corpus. The agent comparison orchestrator already enforces
+  per-adapter process isolation and one reader/judge configuration fingerprint;
+  the hash-pinned evaluator-parity artifact and strict agreement gate are also
+  implemented. Hash-bound component-qualification overlays and a fail-closed
+  post-run publication manifest now verify evidence without rewriting candidate
+  reports. Paired scenario-cluster bootstrap artifacts add reproducible
+  descriptive uncertainty and are required by final agent publication. Run
+  this pipeline against independently witnessed live provider and official
+  LongMemEval evaluator executions before publishing agent-track results.
 - **Server-authoritative multi-writer revisions** — current transactional LWW
   sync is appropriate for local-first devices, not simultaneous company writers.
 - **Qdrant production qualification** — the durable projection adapter exists;

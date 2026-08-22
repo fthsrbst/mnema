@@ -249,6 +249,7 @@ app.use("/api", (req, res, next) => {
   const requiresExplicitProject =
     req.path === "/context" ||
     req.path === "/timeline" ||
+    req.path === "/recall" ||
     req.path.startsWith("/memory") ||
     req.path.startsWith("/rag/search") ||
     req.path === "/rag/documents" ||

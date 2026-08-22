@@ -509,4 +509,43 @@ program
     }
   });
 
+program
+  .command("presence-purge [project]")
+  .description("Bayat aktif presence kayıtlarını kapat (crash eden agent zombileri; sync ile tüm cihazlara yayılır)")
+  .action(async (project?: string) => {
+    try {
+      const res = await api<{ closed: { uid: string; agent: string; machine: string; project: string }[] }>(
+        "POST",
+        "/api/agents/purge-stale",
+        project ? { project } : {}
+      );
+      if (res.closed.length === 0) return console.log("bayat aktif kayıt yok");
+      for (const p of res.closed) console.log(`kapatıldı: ${p.agent} @ ${p.machine} (${p.project}) — ${p.uid}`);
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+program
+  .command("mcp-servers")
+  .description("Ortak MCP sunucu kayıt defterini listele (yazım için: MCP mcp_server_register veya PUT /api/mcp-servers/:name)")
+  .option("-a, --all", "devre dışı olanları da göster (varsayılan: tümü)")
+  .action(async (opts: { all?: boolean }) => {
+    try {
+      const servers = await api<
+        { name: string; transport: string; url: string | null; command: string | null; args: string[]; scope: string | null; description: string | null; enabled: boolean }[]
+      >("GET", "/api/mcp-servers");
+      const visible = opts.all ? servers : servers.filter((s) => s.enabled);
+      if (visible.length === 0) return console.log("kayıtlı ortak MCP sunucusu yok");
+      for (const s of visible) {
+        const target = s.transport === "http" ? s.url : [s.command, ...s.args].join(" ");
+        console.log(
+          `${s.enabled ? "" : "[kapalı] "}${s.name} (${s.transport}) → ${target}${s.scope ? ` [${s.scope}]` : ""}${s.description ? ` — ${s.description}` : ""}`
+        );
+      }
+    } catch (err) {
+      fail(err);
+    }
+  });
+
 program.parseAsync(process.argv);
