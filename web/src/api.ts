@@ -140,6 +140,39 @@ export interface Skill {
   content: string;
 }
 
+// --- ortak MCP sunucu kayıt defteri ---
+
+export type McpTransport = "stdio" | "http";
+
+export interface McpServer {
+  id: number;
+  uid: string;
+  name: string;
+  transport: McpTransport;
+  url: string | null;
+  command: string | null;
+  args: string[];
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  scope: string | null;
+  description: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export function fetchMcpServers(all = false): Promise<McpServer[]> {
+  return api("GET", `/api/mcp-servers${all ? "?all=1" : ""}`);
+}
+
+export function saveMcpServer(name: string, patch: Partial<Omit<McpServer, "id" | "uid" | "name" | "created_at" | "updated_at">>): Promise<McpServer> {
+  return api("PUT", `/api/mcp-servers/${encodeURIComponent(name)}`, patch);
+}
+
+export function deleteMcpServer(name: string): Promise<{ deleted: boolean }> {
+  return api("DELETE", `/api/mcp-servers/${encodeURIComponent(name)}`);
+}
+
 // --- agent presence ("Agents" görünümü) ---
 
 export type AgentPresenceStatus = "active" | "done" | "abandoned";

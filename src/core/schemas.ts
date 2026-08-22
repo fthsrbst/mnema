@@ -283,12 +283,13 @@ export const agentPurgeStaleSchema = z
   })
   .strict();
 
-/** Ortak MCP sunucu kayıt defteri girdisi (ad route'tan gelir; gövde kısmi yama). */
+/** Ortak MCP sunucu kayıt defteri girdisi (ad route'tan gelir; gövde kısmi yama).
+ *  url/command nullable: seçilmeyen transport'un hedefini AÇIKÇA temizlemek içindir. */
 export const mcpServerInputSchema = z
   .object({
     transport: z.enum(["stdio", "http"]).optional(),
-    url: z.string().trim().min(1).max(2048).optional(),
-    command: z.string().trim().min(1).max(1000).optional(),
+    url: z.string().trim().min(1).max(2048).nullable().optional(),
+    command: z.string().trim().min(1).max(1000).nullable().optional(),
     args: z.array(z.string().min(1).max(1000)).max(64).optional(),
     env: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),
     headers: z.record(z.string().min(1).max(200), z.string().max(4000)).optional(),

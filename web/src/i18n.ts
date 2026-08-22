@@ -35,6 +35,7 @@ const dict = {
   "nav.learning": { tr: "Öğrenme Notları", en: "Learning Notes" },
   "nav.agents": { tr: "Agent'lar", en: "Agents" },
   "nav.machines": { tr: "Makineler", en: "Machines" },
+  "nav.mcpservers": { tr: "MCP Sunucuları", en: "MCP Servers" },
   "nav.media": { tr: "Medya", en: "Media" },
   "nav.skills": { tr: "Skiller", en: "Skills" },
   "nav.tasks": { tr: "Görevler", en: "Tasks" },
@@ -189,6 +190,39 @@ const dict = {
   "machines.models": { tr: "model", en: "models" },
   "machines.probing": { tr: "Servisler yoklanıyor...", en: "Probing services..." },
   "machines.newDialogTitle": { tr: "Yeni makine ekle", en: "Add new machine" },
+
+  // --- mcpServers: ortak MCP sunucu kayıt defteri ---
+  "mcpServers.title": { tr: "Ortak MCP Sunucuları", en: "Shared MCP Servers" },
+  "mcpServers.newServer": { tr: "Yeni sunucu", en: "New server" },
+  "mcpServers.empty": { tr: "Kayıtlı MCP sunucusu yok", en: "No MCP servers registered" },
+  "mcpServers.emptyDesc": {
+    tr: "Agentların ortak bağlanacağı MCP sunucularını buradan yönet; kayıtlar sync ile tüm cihazlara yayılır.",
+    en: "Manage the MCP servers agents connect to everywhere; records sync to all devices.",
+  },
+  "mcpServers.newDialogTitle": { tr: "Yeni MCP sunucusu", en: "New MCP server" },
+  "mcpServers.name": { tr: "Ad", en: "Name" },
+  "mcpServers.transport": { tr: "Taşıma", en: "Transport" },
+  "mcpServers.transportHttp": { tr: "HTTP (uzak/merkezi)", en: "HTTP (remote/central)" },
+  "mcpServers.transportStdio": { tr: "stdio (bu makinede çalışır)", en: "stdio (runs on this machine)" },
+  "mcpServers.url": { tr: "URL", en: "URL" },
+  "mcpServers.command": { tr: "Komut", en: "Command" },
+  "mcpServers.args": { tr: "Argümanlar (her satıra bir)", en: "Args (one per line)" },
+  "mcpServers.env": { tr: "Env (KEY=VALUE, her satıra bir)", en: "Env (KEY=VALUE, one per line)" },
+  "mcpServers.headers": { tr: "Header'lar (KEY=VALUE, her satıra bir)", en: "Headers (KEY=VALUE, one per line)" },
+  "mcpServers.scope": { tr: "Kapsam (proje, opsiyonel)", en: "Scope (project, optional)" },
+  "mcpServers.description": { tr: "Açıklama", en: "Description" },
+  "mcpServers.enabled": { tr: "Etkin", en: "Enabled" },
+  "mcpServers.badLine": { tr: "Satır biçimi hatalı (KEY=VALUE bekleniyor):", en: "Malformed line (expected KEY=VALUE):" },
+  "mcpServers.syncNote": {
+    tr: "Yazımlar Mnema sync ile tüm cihazlara yayılır — tek yerden yönetim.",
+    en: "Writes sync to all devices via Mnema sync — manage from one place.",
+  },
+  "mcpServers.secretWarn": {
+    tr: "env/header değerleri düz metin senkronlanır; gizli anahtar koymayın, ${ENV_VAR} referansı kullanın.",
+    en: "env/header values sync in plaintext; do not put secrets here — use ${ENV_VAR} references.",
+  },
+  "mcpServers.confirmDeleteDesc": { tr: "kayıt defterinden silinecek ve tüm cihazlardan kalkacak.", en: "will be removed from the registry and all devices." },
+  "mcpServers.deleteAction": { tr: "Sunucuyu sil", en: "Delete server" },
 
   // --- agents (canlı agent durumu) ---
   "agents.title": { tr: "Agent'lar", en: "Agents" },
