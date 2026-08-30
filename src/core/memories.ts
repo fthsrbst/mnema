@@ -374,15 +374,16 @@ export async function consolidateMemories(input: {
 export function deleteMemory(id: number): boolean {
   const db = getDb();
   const row = db.prepare("SELECT uid FROM memories WHERE id = ?").get(id) as { uid: string } | undefined;
-  if (row?.uid) deleteRelationsForMemoryUid(row.uid);
-  // Cihaz-farkındalığı: memory silinince state satırları da cascade temizlenir (spec §5).
-  // deleteGuard trigger'ı satır başına tetiklenir ama tombstone AYNI anda yazılmaz; bu yüzden
-  // burada her satır için recordDeletion('memory_machine_state', uid) çağrılır — silme-koruma
-  // invariant'ı (ADR-005: tombstone'suz silme replike olmaz) böylece korunur.
-  if (row?.uid) deleteMachineStatesForMemoryUid(row.uid);
-  vectorStore.delete("memory", id);
-  const deleted = db.prepare("DELETE FROM memories WHERE id = ?").run(id).changes > 0;
-  if (deleted && row?.uid) recordDeletion("memories", row.uid);
+  // Silme + tombstone + yan tablo temizliği TEK işlemde: araya crash girerse tombstone
+  // kaybolur ve silinen kayıt bir sonraki pull'da tüm cihazlara geri dirilirdi.
+  const deleted = db.transaction(() => {
+    if (row?.uid) deleteRelationsForMemoryUid(row.uid);
+    if (row?.uid) deleteMachineStatesForMemoryUid(row.uid);
+    vectorStore.delete("memory", id);
+    const ok = db.prepare("DELETE FROM memories WHERE id = ?").run(id).changes > 0;
+    if (ok && row?.uid) recordDeletion("memories", row.uid);
+    return ok;
+  })();
   if (deleted) notifyWrite();
   return deleted;
 }
@@ -421,6 +422,10 @@ export function markMachineState(input: MemoryMachineMarkInput): MemoryMachineSt
   const memoryUid = parsed.memory_uid;
   const machine = (parsed.machine?.trim() || resolveMachineName()).trim();
   if (!machine) throw new Error("machine could not be resolved (HUB_MACHINE_NAME/hostname)");
+  // Var olmayan uid için sessiz orphan satırı açma: defter satırı + scope yan etkisi
+  // hiçbir kayda bağlanmadan çoğaltılırdı (yalnız integrity_check fark ediyordu).
+  const memoryExists = db.prepare("SELECT 1 FROM memories WHERE uid = ?").get(memoryUid);
+  if (!memoryExists) throw new Error(`memory uid bulunamadı: ${memoryUid} — sync gecikmesi olabilir, önce memory'yi doğrula`);
   const uid = machineStateUid(memoryUid, machine);
   const now = (db.prepare(`SELECT ${NOW_MS} AS n`).get() as { n: string }).n;
   // Upsert (deterministik uid sayesinde ON CONFLICT(uid)). Mevcut satır varsa
@@ -625,9 +630,11 @@ export async function invalidateMemory(input: InvalidateMemoryInput): Promise<Me
   if (parsed.replaced_by_id !== undefined && !replacement) {
     throw new Error(`replacement memory #${parsed.replaced_by_id} not found`);
   }
+  // Çapraz-proje replacement: saveMemoryRelation ileride fırlatırdı ama kayıt O ZAMANA
+  // dek geçersizleştirilmiş olurdu (yarım durum + yanıltıcı hata). En başta reddet.
   if (replacement && replacement.project !== existing.project) {
     throw new Error(
-      `replacement memory must belong to the same project (${existing.project ?? "global"} != ${replacement.project ?? "global"})`
+      `cross-project memory relations are not allowed: #${id} (${existing.project ?? "global"}) → #${parsed.replaced_by_id} (${replacement.project ?? "global"})`
     );
   }
   const db = getDb();
@@ -636,6 +643,10 @@ export async function invalidateMemory(input: InvalidateMemoryInput): Promise<Me
     db.prepare(
       `UPDATE memories SET is_current = 0, valid_to = ${NOW_MS}, invalidated_reason = ?, updated_at = ${NOW_MS} WHERE id = ?`
     ).run(reasonText, id);
+    if (vectorStore.available()) {
+      const embedding = vectorStore.get("memory", id);
+      if (embedding) vectorStore.putMemory(id, existing.project, false, embedding);
+    }
     if (replacement) {
       db.prepare(`UPDATE memories SET supersedes_uid = ?, updated_at = ${NOW_MS} WHERE id = ?`).run(
         existing.uid,
@@ -649,10 +660,6 @@ export async function invalidateMemory(input: InvalidateMemoryInput): Promise<Me
       });
     }
   })();
-  if (vectorStore.available()) {
-    const embedding = vectorStore.get("memory", id);
-    if (embedding) vectorStore.putMemory(id, existing.project, false, embedding);
-  }
   notifyWrite();
   return getMemory(id);
 }
@@ -733,7 +740,9 @@ export async function searchMemories(query: string, filters: SearchFilters = {})
     .prepare(`SELECT * FROM memories WHERE id IN (${placeholders})`)
     .all(...ranked.map((r) => r.id)) as Record<string, unknown>[];
   const byId = new Map(rows.map((r) => [r.id as number, rowToMemory(r)]));
-  const limit = filters.limit ?? 8;
+  // NaN limit → slice(0,NaN)=[] sessiz boş sonuç döndürüyordu; güvenli varsayılana düş.
+  const rawLimit = Number(filters.limit);
+  const limit = filters.limit === undefined || !Number.isFinite(rawLimit) ? 8 : Math.min(Math.max(Math.trunc(rawLimit), 1), 100);
   const now = Date.now();
   const halflifeMs = Math.max(config.decayHalflifeDays, 1) * 86_400_000;
   const candidates: ScoredMemory[] = [];
@@ -766,8 +775,12 @@ export function listMemories(filters: SearchFilters = {}): Memory[] {
   if (filters.type) (conds.push("type = @type"), (params.type = filters.type));
   if (filters.project) (conds.push("project = @project"), (params.project = filters.project));
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  // NaN limit → SQLite LIMIT NULL tabloyu baştan sona okur; üst sınırı da sıkıştır.
+  const rawLimit = Number(filters.limit);
+  const safeLimit =
+    filters.limit === undefined || !Number.isFinite(rawLimit) ? 50 : Math.min(Math.max(Math.trunc(rawLimit), 1), 500);
   const rows = getDb()
     .prepare(`SELECT * FROM memories ${where} ORDER BY updated_at DESC LIMIT @limit`)
-    .all({ ...params, limit: filters.limit ?? 50 }) as Record<string, unknown>[];
+    .all({ ...params, limit: safeLimit }) as Record<string, unknown>[];
   return rows.map(rowToMemory);
 }

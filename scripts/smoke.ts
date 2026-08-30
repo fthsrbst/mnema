@@ -16,6 +16,16 @@ const {
   agentActive,
   agentCheckin,
   agentCheckout,
+  agentRecent,
+  autoAbandonStalePresence,
+  hlcAbsorb,
+  hlcStamp,
+  purgeStalePresence,
+  getMcpServer,
+  listMcpServers,
+  saveMcpServer,
+  deleteMcpServer,
+  listDocuments,
   extractFileText,
   applyChanges,
   bridge,
@@ -1016,6 +1026,200 @@ check(
     !getDb().prepare("SELECT 1 FROM agent_presence WHERE uid = ?").get(presenceCheckin.uid) &&
     Boolean(getDb().prepare("SELECT 1 FROM deletions WHERE tbl = 'agent_presence' AND uid = ?").get(presenceCheckin.uid))
 );
+
+// --- presence düzeltmeleri: diriltilme, tombstone, otomatik abandoned, purge, duplicate, HLC ---
+
+// 1) Kapalı kayıt heartbeat ile diriltilmez
+const resurrectVictim = agentCheckin({ project: "smoke-presence", task: "kapatılacak", machine: "smoke-machine", agent: "smoke-a" });
+agentCheckout({ uid: resurrectVictim.uid });
+let resurrectThrew = false;
+try {
+  agentCheckin({ project: "smoke-presence", task: "geç heartbeat", uid: resurrectVictim.uid });
+} catch {
+  resurrectThrew = true;
+}
+const resurrectRow = getDb().prepare("SELECT status FROM agent_presence WHERE uid = ?").get(resurrectVictim.uid) as
+  | { status: string }
+  | undefined;
+check(
+  "presence: kapalı (done) kayıt heartbeat ile diriltilmez — hata verir ve done kalır",
+  resurrectThrew && resurrectRow?.status === "done"
+);
+
+// 2) Tombstone'lu uid reddedilir (silme, yeniden checkin ile geri yayılamaz)
+const tombVictim = agentCheckin({ project: "smoke-presence", task: "tombstone kurbanı", machine: "smoke-machine", agent: "smoke-b" });
+getDb().prepare("DELETE FROM agent_presence WHERE uid = ?").run(tombVictim.uid);
+recordDeletion("agent_presence", tombVictim.uid);
+let tombThrew = false;
+try {
+  agentCheckin({ project: "smoke-presence", task: "aynı uid ile diriltme", uid: tombVictim.uid });
+} catch {
+  tombThrew = true;
+}
+check("presence: tombstone'lu uid checkin'de reddedilir", tombThrew);
+
+// 3) Otomatik abandoned: heartbeat 2×TTL'i aşan aktif kayıt bakımda kapanır, taze etkilenmez
+const zombie = agentCheckin({ project: "smoke-presence", task: "crash olmuş gibi", machine: "smoke-machine", agent: "smoke-c" });
+const freshLive = agentCheckin({ project: "smoke-presence", task: "canlı ve taze", machine: "smoke-machine", agent: "smoke-d" });
+getDb()
+  .prepare("UPDATE agent_presence SET heartbeat_at = strftime('%Y-%m-%d %H:%M:%f','now','-120 minutes') WHERE uid = ?")
+  .run(zombie.uid);
+autoAbandonStalePresence();
+const zombieRow = getDb().prepare("SELECT status, finished_at FROM agent_presence WHERE uid = ?").get(zombie.uid) as
+  | { status: string; finished_at: string | null }
+  | undefined;
+const freshRow = getDb().prepare("SELECT status FROM agent_presence WHERE uid = ?").get(freshLive.uid) as
+  | { status: string }
+  | undefined;
+check(
+  "presence: 2×TTL aşan aktif kayıt bakım döngüsünde otomatik abandoned olur",
+  zombieRow?.status === "abandoned" && Boolean(zombieRow.finished_at)
+);
+check("presence: taze aktif kayıt otomatik bakımdan etkilenmez", freshRow?.status === "active");
+
+// 4) purgeStalePresence: TTL dolmuşları hemen kapatır; project filtresi diğerini atlar
+getDb()
+  .prepare("UPDATE agent_presence SET heartbeat_at = strftime('%Y-%m-%d %H:%M:%f','now','-45 minutes') WHERE uid = ?")
+  .run(freshLive.uid); // TTL(30dk) aşılır ama 2×TTL(60dk) aşilmaz → yalnız purge yakalar
+const otherProject = agentCheckin({ project: "smoke-presence-other", task: "başka proje zombisi", machine: "smoke-machine", agent: "smoke-e" });
+getDb()
+  .prepare("UPDATE agent_presence SET heartbeat_at = strftime('%Y-%m-%d %H:%M:%f','now','-45 minutes') WHERE uid = ?")
+  .run(otherProject.uid);
+const purgedScoped = purgeStalePresence("smoke-presence");
+check(
+  "purgeStalePresence: TTL dolmuş canlıyı kapatır ve kapatılanları döner",
+  purgedScoped.closed.some((p: { uid: string }) => p.uid === freshLive.uid) &&
+    (getDb().prepare("SELECT status FROM agent_presence WHERE uid = ?").get(freshLive.uid) as { status: string }).status === "abandoned"
+);
+const purgedOtherScope = purgeStalePresence("smoke-presence");
+check("purgeStalePresence: project filtresi diğer projeye dokunmaz", !purgedOtherScope.closed.some((p: { uid: string }) => p.uid === otherProject.uid));
+const purgedAll = purgeStalePresence();
+check("purgeStalePresence: filtresiz çağrı kalan bayatı da kapatır", purgedAll.closed.some((p: { uid: string }) => p.uid === otherProject.uid));
+
+// 5) Duplicate koruma: aynı (agent,machine,project)'e ikinci checkin yeni satır açmaz, mevcudu benimser
+const dupFirst = agentCheckin({ project: "smoke-dup", task: "ilk checkin", machine: "dup-machine", agent: "dup-agent" });
+const dupSecond = agentCheckin({ project: "smoke-dup", task: "uid kayboldu, tekrar denedim", machine: "dup-machine", agent: "dup-agent" });
+const dupCount = (
+  getDb()
+    .prepare("SELECT COUNT(*) AS n FROM agent_presence WHERE status='active' AND agent='dup-agent' AND machine='dup-machine' AND project='smoke-dup'")
+    .get() as { n: number }
+).n;
+check(
+  "presence: duplicate koruma — ikinci checkin aynı canlı kaydı benimser (tek satır)",
+  dupFirst.uid === dupSecond.uid && dupCount === 1 && dupSecond.task === "uid kayboldu, tekrar denedim"
+);
+agentCheckout({ uid: dupFirst.uid });
+
+// 6) HLC: katı artan damga + gelecek damganın özümsenmesi
+const hlc1 = hlcStamp();
+const hlc2 = hlcStamp();
+check("hlcStamp: ardışık damgalar katı artar", hlc2 > hlc1);
+hlcAbsorb("2030-01-01 00:00:00.000");
+const hlc3 = hlcStamp();
+check("hlcAbsorb: özümsenen gelecek damgayı sonraki damga geçer", hlc3 > "2030-01-01 00:00:00.000");
+// highwater'ı sıfırla: sonraki testler gerçek duvar saatine dönsün
+getDb().prepare("UPDATE system_metadata SET value = '0' WHERE key = 'presence_hlc_highwater'").run();
+
+// 7) Checkin → capabilities köprüsü: tek canlılık kaynağı beslenir
+const capProbe = agentCheckin({ project: "smoke-cap", task: "capabilities köprüsü", machine: "cap-machine", agent: "cap-agent" });
+const capRow = getDb()
+  .prepare("SELECT status FROM agent_capabilities WHERE agent = 'cap-agent' AND machine = 'cap-machine'")
+  .get() as { status: string } | undefined;
+check("presence: checkin, capabilities last_seen'ini besler (satır yoksa açar)", capRow?.status === "available");
+
+// 8) agentRecent: kapanmış kayıt asla 'stale' çıkmaz (bayatlık yalnız canlılara ait)
+getDb()
+  .prepare("UPDATE agent_presence SET heartbeat_at = strftime('%Y-%m-%d %H:%M:%f','now','-90 minutes') WHERE uid = ?")
+  .run(capProbe.uid);
+agentCheckout({ uid: capProbe.uid });
+const recentClosed = agentRecent(24).filter((r: { uid: string }) => r.uid === capProbe.uid);
+check(
+  "agentRecent: temiz kapanmış uzun oturum stale:false döner",
+  recentClosed.length === 1 && recentClosed[0].stale === false
+);
+
+// --- ortak MCP sunucu kayıt defteri (mcp_servers, sync ile tüm cihazlara) ---
+
+// transport kuralları: http → url zorunlu, stdio → command zorunlu
+let httpNeedsUrl = false;
+try {
+  saveMcpServer("smoke-http-broken", { transport: "http" });
+} catch {
+  httpNeedsUrl = true;
+}
+check("mcp_registry: http transport url'siz reddedilir", httpNeedsUrl);
+
+const mcpStdio = saveMcpServer("smoke-fs-server", {
+  transport: "stdio",
+  command: "npx",
+  args: ["-y", "@smoke/mcp"],
+  description: "smoke test sunucusu",
+});
+check(
+  "mcp_registry: stdio kaydı açılır ve deterministic uid üretir",
+  mcpStdio.uid.length === 32 && mcpStdio.enabled === true && getMcpServer("smoke-fs-server")?.uid === mcpStdio.uid
+);
+const mcpResaved = saveMcpServer("smoke-fs-server", {}); // aynı ad → aynı satır (uid sabit)
+const mcpUpdated = saveMcpServer("smoke-fs-server", { enabled: false }); // kısmi güncelleme alanları korur
+check(
+  "mcp_registry: upsert uid korur, kısmi yama diğer alanlara dokunmaz",
+  mcpResaved.uid === mcpStdio.uid &&
+    mcpUpdated.uid === mcpStdio.uid &&
+    mcpUpdated.command === "npx" &&
+    mcpUpdated.args.includes("@smoke/mcp") &&
+    mcpUpdated.enabled === false
+);
+check(
+  "mcp_registry: enabled filtresi listeyi daraltır",
+  !listMcpServers({ enabled: true }).some((s) => s.name === "smoke-fs-server") &&
+    listMcpServers().some((s) => s.name === "smoke-fs-server")
+);
+saveMcpServer("smoke-fs-server", { enabled: true });
+
+// sync turu: başka bir "cihazdan" gelen payload uygulanmalı; tombstone silmeli
+applyChanges({
+  ...emptyPayload,
+  mcp_servers: [
+    {
+      uid: "0".repeat(32),
+      name: "smoke-remote-mcp",
+      transport: "http",
+      url: "https://remote.example/mcp",
+      command: null,
+      args: "[]",
+      env: "{}",
+      headers: "{}",
+      scope: null,
+      description: "uzak cihazdan geldi",
+      enabled: 1,
+      created_at: ts,
+      updated_at: ts,
+    },
+  ],
+});
+check(
+  "mcp_registry: uzak payload apply edilir",
+  getMcpServer("smoke-remote-mcp")?.url === "https://remote.example/mcp"
+);
+applyChanges({
+  ...emptyPayload,
+  deletions: [{ uid: "0".repeat(32), tbl: "mcp_servers", deleted_at: ts }],
+});
+check("mcp_registry: tombstone silmeyi uygular", getMcpServer("smoke-remote-mcp") === null);
+
+// temizlik
+deleteMcpServer("smoke-fs-server");
+check("mcp_registry: silme + tombstone", getMcpServer("smoke-fs-server") === null);
+
+// --- regresyon: NaN limit sınırsız okuma/boş sonuç vermemeli ---
+let nanLimitOk = false;
+try {
+  const docs = listDocuments(undefined, Number("abc") as never);
+  nanLimitOk = Array.isArray(docs) && docs.length <= 1000;
+} catch {
+  nanLimitOk = false;
+}
+check("limit: NaN parametre patlamaz ve sınırsız okumaz", nanLimitOk);
 
 // === Agent Intelligence Platform smoke tests ===
 

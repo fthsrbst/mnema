@@ -159,6 +159,14 @@ if (config.vectorBackend === "qdrant" && !config.qdrantUrl) {
 
 /** Fail closed when a shared/company profile is configured unsafely. */
 export function assertDeploymentSafety(): void {
+  // Tüm profillerde: HUB_TOKEN var ama legacy admin kapalı ve hiç policy yoksa
+  // authenticationEnabled() sessizce false döner ("sıkılaştırılmış" görünen config,
+  // ağa açık admin bırakır). Açılışı reddet — belirsizliğe düşme.
+  if (config.token && !config.allowLegacyAdmin && !process.env.HUB_AUTH_TOKENS?.trim()) {
+    throw new Error(
+      "authentication would be OFF: HUB_TOKEN is set but HUB_ALLOW_LEGACY_ADMIN=false and HUB_AUTH_TOKENS is empty — set HUB_AUTH_TOKENS, remove HUB_TOKEN, or explicitly enable HUB_ALLOW_LEGACY_ADMIN"
+    );
+  }
   if (config.deploymentProfile === "personal") return;
   const scopedPolicies = process.env.HUB_AUTH_TOKENS?.trim();
   if (!scopedPolicies) throw new Error(`${config.deploymentProfile} profile requires HUB_AUTH_TOKENS`);

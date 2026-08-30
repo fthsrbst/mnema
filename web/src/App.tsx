@@ -19,6 +19,7 @@ import { Timeline } from "./views/Timeline";
 import { Graph } from "./views/Graph";
 import { Learning } from "./views/Learning";
 import { Machines } from "./views/Machines";
+import { McpServers } from "./views/McpServers";
 import { Agents } from "./views/Agents";
 import { Media } from "./views/Media";
 import { Skills } from "./views/Skills";
@@ -99,6 +100,7 @@ const SECTIONS: { id: SectionId; labelKey: TKey; icon: RailItem["icon"]; tabs: T
     tabs: [
       { id: "agents", labelKey: "nav.agents" },
       { id: "machines", labelKey: "nav.machines" },
+      { id: "mcpservers", labelKey: "nav.mcpservers" },
       { id: "media", labelKey: "nav.media" },
       { id: "skills", labelKey: "nav.skills" },
       { id: "system", labelKey: "nav.system" },
@@ -324,6 +326,8 @@ function AppInner() {
         return <Agents />;
       case "machines":
         return <Machines />;
+      case "mcpservers":
+        return <McpServers />;
       case "media":
         return <Media />;
       case "skills":

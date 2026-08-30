@@ -224,7 +224,10 @@ export async function createHandoff(
   const recentSessions = recentSessionLogs({ project, limit: 3 });
   const activeTasks = listTasks({ project, status: "in_progress", limit: 20 });
   const pendingTasks = taskQueue(project, 10);
-  const activeAgents = agentActive(project);
+  // Bayat zombileri 'aktif' diye sunma: stale kayıtlar ayrı listede, 'muhtemelen düşmüş'.
+  const presence = agentActive(project);
+  const activeAgents = presence.filter((p) => !p.stale);
+  const staleAgents = presence.filter((p) => p.stale);
 
   // Get relevant memories for the project
   const relevantMemories = await searchMemories(project, { project, limit: 5 });
@@ -243,6 +246,7 @@ export async function createHandoff(
     active_tasks: activeTasks,
     pending_tasks: pendingTasks,
     active_agents: activeAgents,
+    stale_agents: staleAgents,
     relevant_memories: relevantMemories,
     blockers,
     notes,

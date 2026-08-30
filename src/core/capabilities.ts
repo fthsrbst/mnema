@@ -81,9 +81,34 @@ export function registerAgent(input: AgentCapabilityInput): AgentCapability {
   return capabilityRow(uid)!;
 }
 
-/** Update agent heartbeat (last_seen_at) and optionally status. */
-export function agentHeartbeat(uid: string, status?: AgentCapabilityStatus): AgentCapability | null {
+/**
+ * Presence heartbeat'ini registry'e köprüle: iki canlılık kaynağı yerine tek gerçek.
+ * Kayıt yoksa minimal 'available' satırı açar; varsa yalnız last_seen_at/updated_at
+ * tazeler — status'e DOKUNMAZ (meşguliyet registerAgent/agentHeartbeat'e aittir).
+ * Böylece aktif çalışan agent, presence TTL'i (30dk) dolmadan capabilities TTL'inden
+ * (60dk) ötürü hatalı 'offline'a düşüp görev yönlendirmesinden kaçmaz.
+ */
+export function touchAgentHeartbeat(agent: string, machine?: string | null): void {
   const db = getDb();
+  const m = machine?.trim() || resolveMachineName();
+  const existing = db.prepare("SELECT uid FROM agent_capabilities WHERE agent = ? AND machine IS ?").get(agent, m) as
+    | { uid: string }
+    | undefined;
+  if (existing) {
+    db.prepare(`UPDATE agent_capabilities SET last_seen_at=${NOW_MS}, updated_at=${NOW_MS} WHERE uid=?`).run(existing.uid);
+    notifyWrite();
+    return;
+  }
+  const uid = randomUUID().replaceAll("-", "");
+  db.prepare(
+    `INSERT INTO agent_capabilities(uid, agent, machine, capabilities, models, max_concurrent, status, metadata, last_seen_at, created_at, updated_at)
+     VALUES (@uid, @agent, @machine, '[]', '[]', 1, 'available', '{}', ${NOW_MS}, ${NOW_MS}, ${NOW_MS})`
+  ).run({ uid, agent, machine: m });
+  notifyWrite();
+}
+
+/** Update agent heartbeat (last_seen_at) and optionally status. */
+export function agentHeartbeat(uid: string, status?: AgentCapabilityStatus): AgentCapability | null {  const db = getDb();
   const existing = capabilityRow(uid);
   if (!existing) return null;
   const sets = [`last_seen_at=${NOW_MS}`, `updated_at=${NOW_MS}`];

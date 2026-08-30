@@ -36,7 +36,7 @@ Hub, tüm cihazlardaki tüm agentların paylaştığı hafızadır. Sen kapanın
 - Yanlışlanan bilgiyi gördüğün an düzelt (`memory_update`) veya sil (`memory_delete`). Çelişkili hafıza, hafızasızlıktan kötüdür.
 
 ## Eş zamanlı çalışma (agent presence — tavsiye niteliğinde, kilit DEĞİL)
-Bir projede çalışmaya BAŞLARKEN `agent_checkin(project, task, branch?)` çağır; iş bitince aynı uid ile `agent_checkout(uid)`. Bridge çıktısındaki "aktif agent var" uyarısı veya `agent_active(project)` sonucu bir mutual-exclusion kilidi DEĞİLDİR — agent'lar crash edebilir, bu yüzden sert kilit yerine sadece koordinasyon sinyali kullanılır. Aktif bir kayıt görsen bile işine devam edebilirsin; sadece aynı dosyalarda çakışma riskine karşı dikkatli ol. "Muhtemelen düşmüş" notlu (stale, ~30dk+ nabızsız) kayıtları yok say.
+Bir projede çalışmaya BAŞLARKEN `agent_checkin(project, task, branch?)` çağır; iş bitince aynı uid ile `agent_checkout(uid)`. Bridge çıktısındaki "aktif agent var" uyarısı veya `agent_active(project)` sonucu bir mutual-exclusion kilidi DEĞİLDİR — agent'lar crash edebilir, bu yüzden sert kilit yerine sadece koordinasyon sinyali kullanılır. Aktif bir kayıt görsen bile işine devam edebilirsin; sadece aynı dosyalarda çakışma riskine karşı dikkatli ol. "Muhtemelen düşmüş" notlu (stale, ~30dk+ nabızsız) kayıtları yok say — bakım döngüsü 2×TTL'i aşan canlı kayıtları zaten otomatik `abandoned` kapatır. Zombiler birikmişse `agent_purge_stale(project?)` ile tüm cihazlarda eşzamanlı temizle (sync ile yayılır). Kapalı kayıt heartbeat ile diriltilmez: uid hata verirse uid'siz yeni checkin aç.
 
 ## Oturum sonunda
 1. `session_log`: yapılanlar, yarım kalanlar, sıradaki adım — project alanına kanonik adı ver ("proje map'i yok" uyarısı dönerse adı düzelt veya map aç).

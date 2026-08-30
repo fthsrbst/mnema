@@ -324,6 +324,29 @@ export interface AssetRecord {
   updated_at: string;
 }
 
+/**
+ * Ortak MCP sunucu kayıt defteri girdisi (bkz. src/core/mcp-registry.ts).
+ * stdio → command+args (makine-yerel çalıştırılır); http → url (hub/uzak).
+ * env/headers DB'de düz metindir ve cihazlar arası senkronlanır — gizli değer koymayın.
+ */
+export interface McpServer {
+  id: number;
+  uid: string;
+  name: string;
+  transport: "stdio" | "http";
+  url: string | null;
+  command: string | null;
+  args: string[];
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  /** Opsiyonel proje daraltma — hangi proje bağlamında anlamlı olduğu. */
+  scope: string | null;
+  description: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type AgentPresenceStatus = "active" | "done" | "abandoned";
 
 /** Advisory agent-presence kaydı — mutual-exclusion kilidi DEĞİL, koordinasyon sinyali. */
@@ -500,6 +523,8 @@ export interface HandoffPackage {
   active_tasks: Task[];
   pending_tasks: Task[];
   active_agents: AgentPresenceView[];
+  /** Bayat (heartbeat TTL aşımı) kayıtlar — 'muhtemelen düşmüş', planlamada sayılMAZ. */
+  stale_agents: AgentPresenceView[];
   relevant_memories: ScoredMemory[];
   blockers: string[];
   notes: string;

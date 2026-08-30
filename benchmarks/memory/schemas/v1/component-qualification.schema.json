@@ -1,0 +1,1837 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:memory-bench:schema:component-qualification:1",
+  "title": "Memory Bench component qualification schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "qualificationId",
+    "subject",
+    "evidence",
+    "submitter",
+    "reviewer",
+    "maintainer",
+    "attestation",
+    "decision",
+    "decisionNote"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "memory-bench-component-qualification"
+    },
+    "qualificationId": {
+      "type": "string",
+      "pattern": "^mbq-(adapter|reader|judge)-[a-f0-9]{32}$"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "component",
+        "componentSha256"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "adapter",
+            "reader",
+            "judge"
+          ]
+        },
+        "component": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "mode",
+            "classification",
+            "config"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "classification": {
+              "enum": [
+                "harness",
+                "candidate",
+                "benchmark"
+              ]
+            },
+            "config": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "componentSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentReport",
+        "coreReport",
+        "evaluatorParity"
+      ],
+      "properties": {
+        "agentReport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "sha256",
+            "runId",
+            "reportStatus",
+            "resultClass",
+            "datasetArtifactSha256",
+            "scenarios",
+            "runtimeFailures",
+            "cleanupVerificationRate"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "runId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reportStatus": {
+              "enum": [
+                "completed",
+                "completed-with-errors",
+                "failed"
+              ]
+            },
+            "resultClass": {
+              "enum": [
+                "harness",
+                "candidate",
+                "benchmark"
+              ]
+            },
+            "datasetArtifactSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "scenarios": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "runtimeFailures": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cleanupVerificationRate": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "coreReport": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "file",
+                "sha256",
+                "runId",
+                "datasetName",
+                "datasetVersion",
+                "datasetPublicationStatus",
+                "adapterName",
+                "adapterVersion",
+                "adapterInfoSha256",
+                "queries",
+                "queryFailures",
+                "cleanupVerified",
+                "operationCounts"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "runId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "datasetName": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "datasetVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "datasetPublicationStatus": {
+                  "enum": [
+                    "harness",
+                    "draft",
+                    "reviewed"
+                  ]
+                },
+                "adapterName": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "adapterVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "adapterInfoSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "queries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "queryFailures": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cleanupVerified": {
+                  "type": "boolean"
+                },
+                "operationCounts": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "write",
+                    "update",
+                    "delete",
+                    "query"
+                  ],
+                  "properties": {
+                    "write": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "update": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "delete": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "query": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evaluatorParity": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "file",
+                "sha256",
+                "candidateReportSha256",
+                "comparable",
+                "exactAgreement",
+                "labelMismatches",
+                "evaluatorRevision",
+                "evaluatorScriptSha256"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "candidateReportSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "comparable": {
+                  "type": "boolean"
+                },
+                "exactAgreement": {
+                  "type": "boolean"
+                },
+                "labelMismatches": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "evaluatorRevision": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "evaluatorScriptSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "submitter": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "affiliation"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "enum": [
+                "human",
+                "organization",
+                "automation"
+              ]
+            },
+            "affiliation": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reviewer": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "affiliation",
+            "conflicts",
+            "reviewedAt"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "human"
+            },
+            "affiliation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "conflicts": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "reviewedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "maintainer": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "verifiedAt",
+            "reviewerIdentityVerified",
+            "conflictsReviewed",
+            "disposition"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "const": "human"
+            },
+            "verifiedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "reviewerIdentityVerified": {
+              "type": "boolean"
+            },
+            "conflictsReviewed": {
+              "type": "boolean"
+            },
+            "disposition": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attestation": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "evidenceAuthentic",
+            "realServiceOrImplementation",
+            "noContractOrFakeServer",
+            "configurationPinned",
+            "credentialsExcluded",
+            "evidencePublished",
+            "independentReproduction",
+            "authenticationFailureObserved",
+            "lifecycleOperationsObserved",
+            "disposableIsolationObserved",
+            "cleanupVerified",
+            "apiContractObserved",
+            "requestPolicyVerified",
+            "officialEvaluatorParityVerified"
+          ],
+          "properties": {
+            "evidenceAuthentic": {
+              "type": "boolean"
+            },
+            "realServiceOrImplementation": {
+              "type": "boolean"
+            },
+            "noContractOrFakeServer": {
+              "type": "boolean"
+            },
+            "configurationPinned": {
+              "type": "boolean"
+            },
+            "credentialsExcluded": {
+              "type": "boolean"
+            },
+            "evidencePublished": {
+              "type": "boolean"
+            },
+            "independentReproduction": {
+              "type": "boolean"
+            },
+            "authenticationFailureObserved": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lifecycleOperationsObserved": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disposableIsolationObserved": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cleanupVerified": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "apiContractObserved": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "requestPolicyVerified": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "officialEvaluatorParityVerified": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decision": {
+      "enum": [
+        "pending",
+        "qualified",
+        "rejected"
+      ]
+    },
+    "decisionNote": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "coreReport": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "file",
+                  "sha256",
+                  "runId",
+                  "datasetName",
+                  "datasetVersion",
+                  "datasetPublicationStatus",
+                  "adapterName",
+                  "adapterVersion",
+                  "adapterInfoSha256",
+                  "queries",
+                  "queryFailures",
+                  "cleanupVerified",
+                  "operationCounts"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "runId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "datasetName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "datasetVersion": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "datasetPublicationStatus": {
+                    "enum": [
+                      "harness",
+                      "draft",
+                      "reviewed"
+                    ]
+                  },
+                  "adapterName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adapterVersion": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adapterInfoSha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "queries": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "queryFailures": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "cleanupVerified": {
+                    "type": "boolean"
+                  },
+                  "operationCounts": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "write",
+                      "update",
+                      "delete",
+                      "query"
+                    ],
+                    "properties": {
+                      "write": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "update": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "delete": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "query": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    }
+                  }
+                }
+              },
+              "evaluatorParity": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "coreReport",
+              "evaluatorParity"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "reader"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "coreReport": {
+                "type": "null"
+              },
+              "evaluatorParity": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "coreReport",
+              "evaluatorParity"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "judge"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "coreReport": {
+                "type": "null"
+              },
+              "evaluatorParity": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "file",
+                  "sha256",
+                  "candidateReportSha256",
+                  "comparable",
+                  "exactAgreement",
+                  "labelMismatches",
+                  "evaluatorRevision",
+                  "evaluatorScriptSha256"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "candidateReportSha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "comparable": {
+                    "type": "boolean"
+                  },
+                  "exactAgreement": {
+                    "type": "boolean"
+                  },
+                  "labelMismatches": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "evaluatorRevision": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evaluatorScriptSha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            },
+            "required": [
+              "coreReport",
+              "evaluatorParity"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "const": "qualified"
+          },
+          "subject": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        "required": [
+          "decision",
+          "subject"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "attestation": {
+            "type": "object",
+            "properties": {
+              "authenticationFailureObserved": {
+                "const": true
+              },
+              "lifecycleOperationsObserved": {
+                "const": true
+              },
+              "disposableIsolationObserved": {
+                "const": true
+              },
+              "cleanupVerified": {
+                "const": true
+              },
+              "apiContractObserved": {
+                "type": "null"
+              },
+              "requestPolicyVerified": {
+                "type": "null"
+              },
+              "officialEvaluatorParityVerified": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "authenticationFailureObserved",
+              "lifecycleOperationsObserved",
+              "disposableIsolationObserved",
+              "cleanupVerified",
+              "apiContractObserved",
+              "requestPolicyVerified",
+              "officialEvaluatorParityVerified"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "const": "qualified"
+          },
+          "subject": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "reader"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        "required": [
+          "decision",
+          "subject"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "attestation": {
+            "type": "object",
+            "properties": {
+              "authenticationFailureObserved": {
+                "type": "null"
+              },
+              "lifecycleOperationsObserved": {
+                "type": "null"
+              },
+              "disposableIsolationObserved": {
+                "type": "null"
+              },
+              "cleanupVerified": {
+                "type": "null"
+              },
+              "apiContractObserved": {
+                "const": true
+              },
+              "requestPolicyVerified": {
+                "const": true
+              },
+              "officialEvaluatorParityVerified": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "authenticationFailureObserved",
+              "lifecycleOperationsObserved",
+              "disposableIsolationObserved",
+              "cleanupVerified",
+              "apiContractObserved",
+              "requestPolicyVerified",
+              "officialEvaluatorParityVerified"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "const": "qualified"
+          },
+          "subject": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "const": "judge"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        "required": [
+          "decision",
+          "subject"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "attestation": {
+            "type": "object",
+            "properties": {
+              "authenticationFailureObserved": {
+                "type": "null"
+              },
+              "lifecycleOperationsObserved": {
+                "type": "null"
+              },
+              "disposableIsolationObserved": {
+                "type": "null"
+              },
+              "cleanupVerified": {
+                "type": "null"
+              },
+              "apiContractObserved": {
+                "const": true
+              },
+              "requestPolicyVerified": {
+                "const": true
+              },
+              "officialEvaluatorParityVerified": {
+                "const": true
+              }
+            },
+            "required": [
+              "authenticationFailureObserved",
+              "lifecycleOperationsObserved",
+              "disposableIsolationObserved",
+              "cleanupVerified",
+              "apiContractObserved",
+              "requestPolicyVerified",
+              "officialEvaluatorParityVerified"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "const": "pending"
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "submitter": {
+            "type": "null"
+          },
+          "reviewer": {
+            "type": "null"
+          },
+          "maintainer": {
+            "type": "null"
+          },
+          "attestation": {
+            "type": "null"
+          },
+          "decisionNote": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "enum": [
+              "qualified",
+              "rejected"
+            ]
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "submitter": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type",
+              "affiliation"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "enum": [
+                  "human",
+                  "organization",
+                  "automation"
+                ]
+              },
+              "affiliation": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "reviewer": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type",
+              "affiliation",
+              "conflicts",
+              "reviewedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "const": "human"
+              },
+              "affiliation": {
+                "type": "string",
+                "minLength": 1
+              },
+              "conflicts": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "reviewedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "maintainer": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type",
+              "verifiedAt",
+              "reviewerIdentityVerified",
+              "conflictsReviewed",
+              "disposition"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "const": "human"
+              },
+              "verifiedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reviewerIdentityVerified": {
+                "type": "boolean"
+              },
+              "conflictsReviewed": {
+                "type": "boolean"
+              },
+              "disposition": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "decisionNote": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "const": "qualified"
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "object",
+            "properties": {
+              "component": {
+                "type": "object",
+                "properties": {
+                  "classification": {
+                    "const": "candidate"
+                  }
+                },
+                "required": [
+                  "classification"
+                ]
+              }
+            },
+            "required": [
+              "component"
+            ]
+          },
+          "attestation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "evidenceAuthentic",
+              "realServiceOrImplementation",
+              "noContractOrFakeServer",
+              "configurationPinned",
+              "credentialsExcluded",
+              "evidencePublished",
+              "independentReproduction",
+              "authenticationFailureObserved",
+              "lifecycleOperationsObserved",
+              "disposableIsolationObserved",
+              "cleanupVerified",
+              "apiContractObserved",
+              "requestPolicyVerified",
+              "officialEvaluatorParityVerified"
+            ],
+            "properties": {
+              "evidenceAuthentic": {
+                "const": true
+              },
+              "realServiceOrImplementation": {
+                "const": true
+              },
+              "noContractOrFakeServer": {
+                "const": true
+              },
+              "configurationPinned": {
+                "const": true
+              },
+              "credentialsExcluded": {
+                "const": true
+              },
+              "evidencePublished": {
+                "const": true
+              },
+              "independentReproduction": {
+                "const": true
+              },
+              "authenticationFailureObserved": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lifecycleOperationsObserved": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disposableIsolationObserved": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cleanupVerified": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "apiContractObserved": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestPolicyVerified": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "officialEvaluatorParityVerified": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "agentComponentInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "mode",
+        "classification",
+        "config"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "enum": [
+            "harness",
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "qualificationSubmitter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "affiliation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "human",
+            "organization",
+            "automation"
+          ]
+        },
+        "affiliation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "qualificationReviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "affiliation",
+        "conflicts",
+        "reviewedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "human"
+        },
+        "affiliation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "reviewedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "qualificationMaintainer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "verifiedAt",
+        "reviewerIdentityVerified",
+        "conflictsReviewed",
+        "disposition"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "human"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reviewerIdentityVerified": {
+          "type": "boolean"
+        },
+        "conflictsReviewed": {
+          "type": "boolean"
+        },
+        "disposition": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "qualificationAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceAuthentic",
+        "realServiceOrImplementation",
+        "noContractOrFakeServer",
+        "configurationPinned",
+        "credentialsExcluded",
+        "evidencePublished",
+        "independentReproduction",
+        "authenticationFailureObserved",
+        "lifecycleOperationsObserved",
+        "disposableIsolationObserved",
+        "cleanupVerified",
+        "apiContractObserved",
+        "requestPolicyVerified",
+        "officialEvaluatorParityVerified"
+      ],
+      "properties": {
+        "evidenceAuthentic": {
+          "type": "boolean"
+        },
+        "realServiceOrImplementation": {
+          "type": "boolean"
+        },
+        "noContractOrFakeServer": {
+          "type": "boolean"
+        },
+        "configurationPinned": {
+          "type": "boolean"
+        },
+        "credentialsExcluded": {
+          "type": "boolean"
+        },
+        "evidencePublished": {
+          "type": "boolean"
+        },
+        "independentReproduction": {
+          "type": "boolean"
+        },
+        "authenticationFailureObserved": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lifecycleOperationsObserved": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disposableIsolationObserved": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleanupVerified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apiContractObserved": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestPolicyVerified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "officialEvaluatorParityVerified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "qualificationAgentReportEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256",
+        "runId",
+        "reportStatus",
+        "resultClass",
+        "datasetArtifactSha256",
+        "scenarios",
+        "runtimeFailures",
+        "cleanupVerificationRate"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reportStatus": {
+          "enum": [
+            "completed",
+            "completed-with-errors",
+            "failed"
+          ]
+        },
+        "resultClass": {
+          "enum": [
+            "harness",
+            "candidate",
+            "benchmark"
+          ]
+        },
+        "datasetArtifactSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "scenarios": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtimeFailures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanupVerificationRate": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "qualificationCoreReportEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256",
+        "runId",
+        "datasetName",
+        "datasetVersion",
+        "datasetPublicationStatus",
+        "adapterName",
+        "adapterVersion",
+        "adapterInfoSha256",
+        "queries",
+        "queryFailures",
+        "cleanupVerified",
+        "operationCounts"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "datasetName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "datasetVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "datasetPublicationStatus": {
+          "enum": [
+            "harness",
+            "draft",
+            "reviewed"
+          ]
+        },
+        "adapterName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterInfoSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "queries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "queryFailures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanupVerified": {
+          "type": "boolean"
+        },
+        "operationCounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "write",
+            "update",
+            "delete",
+            "query"
+          ],
+          "properties": {
+            "write": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "update": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "delete": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "query": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "qualificationParityEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "sha256",
+        "candidateReportSha256",
+        "comparable",
+        "exactAgreement",
+        "labelMismatches",
+        "evaluatorRevision",
+        "evaluatorScriptSha256"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "candidateReportSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "comparable": {
+          "type": "boolean"
+        },
+        "exactAgreement": {
+          "type": "boolean"
+        },
+        "labelMismatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evaluatorRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evaluatorScriptSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

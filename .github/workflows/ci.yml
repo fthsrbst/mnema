@@ -47,6 +47,8 @@ jobs:
           fi
       - name: Build server
         run: npm run build
+      - name: Memory Bench schemas and regression suite
+        run: npm run bench:memory:check && npm run bench:memory:smoke
       - name: Lint and build web
         run: npm --prefix web run lint && npm --prefix web run build
       - name: Hosted container manifest and image

@@ -14,6 +14,8 @@ import { createHash } from "node:crypto";
 import {
   configuredEmbeddingGeneration,
   getDb,
+  hlcAbsorb,
+  hlcStamp,
   NOW_MS,
   SYNC_TABLES,
 } from "./db.js";
@@ -137,6 +139,22 @@ export interface SyncPayload {
   machines: { name: string; host: string; lmstudio_port: number | null; ollama_port?: number | null; comfyui_port: number | null; notes: string | null; updated_at: string }[];
   /** Eski peer'lar bu alanı hiç göndermez (bkz. applyChangesUnsafe: yokluğu boş dizi sayılır). */
   assets?: { uid: string; kind: "skill" | "prompt"; name: string; content: string; created_at: string; updated_at: string }[];
+  /** Ortak MCP sunucu kayıt defteri — eski peer'lar bu alanı hiç göndermez. */
+  mcp_servers?: {
+    uid: string;
+    name: string;
+    transport: "stdio" | "http";
+    url: string | null;
+    command: string | null;
+    args: string;
+    env: string;
+    headers: string;
+    scope: string | null;
+    description: string | null;
+    enabled: number;
+    created_at: string;
+    updated_at: string;
+  }[];
   agent_presence?: {
     uid: string;
     machine: string;
@@ -365,6 +383,12 @@ function collectPayload(mode: CollectMode): SyncPayload {
       "updated_at",
       mode
     ) as SyncPayload["agent_presence"],
+    mcp_servers: rowsFor(
+      "mcp_servers",
+      "uid, name, transport, url, command, args, env, headers, scope, description, enabled, created_at, updated_at",
+      "updated_at",
+      mode
+    ) as SyncPayload["mcp_servers"],
     // Agent Intelligence Platform tables
     tasks: rowsFor(
       "tasks",
@@ -433,6 +457,7 @@ export interface ApplyResult {
   machines: number;
   assets: number;
   agent_presence: number;
+  mcp_servers?: number;
   deletions: number;
   vectors_skipped?: number;
 }
@@ -442,7 +467,7 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
   const db = getDb();
   const result: ApplyResult = {
     memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0,
-    assets: 0, agent_presence: 0, deletions: 0, vectors_skipped: 0,
+    assets: 0, agent_presence: 0, mcp_servers: 0, deletions: 0, vectors_skipped: 0,
   };
   const generationMatches = payload.embedding_generation
     ? payload.embedding_generation === configuredEmbeddingGeneration()
@@ -480,7 +505,7 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'memories' AND uid = ?").get(m.uid) as { deleted_at: string } | undefined;
     if (tomb && tomb.deleted_at >= m.updated_at) continue;
     const local = db.prepare("SELECT * FROM memories WHERE uid = ?").get(m.uid) as
-      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language: string | null; canonical_summary: string | null; normalizer_generation: string | null; importance: number; related: string | null; is_current: number }
+      | { id: number; updated_at: string; type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language: string | null; canonical_summary: string | null; normalizer_generation: string | null; importance: number; related: string | null; is_current: number; origin_machine: string | null; valid_from: string | null; valid_to: string | null; supersedes_uid: string | null; invalidated_reason: string | null; verified_at: string | null; review_after: string | null; machine_scope: string | null }
       | undefined;
     if (local) {
       const memFp = (r: { type: string; title: string; body: string; project: string | null; tags: string; source: string | null; language?: string | null; canonical_summary?: string | null; normalizer_generation?: string | null; importance?: number; related?: string | null }) =>
@@ -489,21 +514,40 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
           r.language, r.canonical_summary, r.normalizer_generation,
           r.importance ?? 1.0, r.related ?? "[]",
         ]);
+      // NOT: kapanış memFp kullanır — burada fp yok (geç tanımlı farklı döngüye ait);
+      // eşit damgada remoteWins kapanışı hemen çağırır, yanlış isim TDZ ReferenceError'du.
       if (!remoteWins(local.updated_at, m.updated_at, () => memFp(local), () => memFp(m))) continue;
+      // Yaşam döngüsü kolonlarında "anahtar yok" (eski peer) ile "anahtar var ama null"
+      // (yeni peer'ın AÇIK TEMİZLEME'si — revalidate/invalidate/memory_update clear)
+      // farklı şeylerdir. Eski COALESCE ikisini ayırt edemediği için temizlemeler hiçbir
+      // cihaza sync olmuyor, bayat valid_to/invalidated_reason/machine_scope ölümsüzleşiyordu.
+      // Artık: anahtar varsa değeri DOĞRUDAN yaz (null dahil); anahtar yoksa yereli koru.
+      const lifecycle = {
+        canonical_summary: raw.canonical_summary !== undefined ? raw.canonical_summary : local.canonical_summary,
+        normalizer_generation:
+          raw.normalizer_generation !== undefined ? raw.normalizer_generation : local.normalizer_generation,
+        valid_to: raw.valid_to !== undefined ? raw.valid_to : local.valid_to,
+        supersedes_uid: raw.supersedes_uid !== undefined ? raw.supersedes_uid : local.supersedes_uid,
+        invalidated_reason:
+          raw.invalidated_reason !== undefined ? raw.invalidated_reason : local.invalidated_reason,
+        verified_at: raw.verified_at !== undefined ? raw.verified_at : local.verified_at,
+        review_after: raw.review_after !== undefined ? raw.review_after : local.review_after,
+        machine_scope: raw.machine_scope !== undefined ? raw.machine_scope : local.machine_scope,
+      };
       db.prepare(
         `UPDATE memories SET type=@type, title=@title, body=@body, project=@project, tags=@tags,
          source=@source, language=@language, canonical_summary=@canonical_summary,
          normalizer_generation=@normalizer_generation, importance=@importance,
          related=@related, origin_machine=COALESCE(@origin_machine, origin_machine),
-         valid_from=COALESCE(@valid_from, valid_from), valid_to=COALESCE(@valid_to, valid_to),
+         valid_from=COALESCE(@valid_from, valid_from), valid_to=@valid_to,
          is_current=COALESCE(@is_current, is_current),
-         supersedes_uid=COALESCE(@supersedes_uid, supersedes_uid),
-         invalidated_reason=COALESCE(@invalidated_reason, invalidated_reason),
-         verified_at=COALESCE(@verified_at, verified_at),
-         review_after=COALESCE(@review_after, review_after),
-         machine_scope=COALESCE(@machine_scope, machine_scope),
+         supersedes_uid=@supersedes_uid,
+         invalidated_reason=@invalidated_reason,
+         verified_at=@verified_at,
+         review_after=@review_after,
+         machine_scope=@machine_scope,
          updated_at=@updated_at WHERE uid=@uid`
-      ).run(m);
+      ).run({ ...m, ...lifecycle });
       const resolvedIsCurrent = m.is_current ?? local.is_current;
       if (acceptVectors) insertMemoryVec(local.id, m.project, resolvedIsCurrent, m.embedding);
       else if (m.embedding) result.vectors_skipped!++;
@@ -732,12 +776,40 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
   }
 
   for (const raw of payload.agent_presence ?? []) {
+    // Saat kayması koruması: uzak damgaları ne olursa olsun özümse — bu düğümün sonraki
+    // presence yazımı (purge/auto-abandon/checkout) ileride damgalanmış satırı geçebilsin.
+    hlcAbsorb(raw.updated_at);
+    hlcAbsorb(raw.heartbeat_at);
     const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'agent_presence' AND uid = ?").get(raw.uid) as
       | { deleted_at: string }
       | undefined;
     if (tomb && tomb.deleted_at >= raw.updated_at) continue;
+    // Partial UNIQUE index (agent,machine,project WHERE active) çakışma çözümü: gelen
+    // 'active' satır, aynı üçlüde yaşayan BAŞKA bir canlı satırla çakışıyorsa yalnız
+    // daha yeni olan kalır; kaybeden 'abandoned' kapanır (tombstone yok — geçmişi korur,
+    // sahibi cihazda LWW ile yayılır).
+    if (raw.status === "active") {
+      const clash = db
+        .prepare(
+          `SELECT uid, updated_at FROM agent_presence
+           WHERE status = 'active' AND agent = @agent AND machine IS @machine AND project = @project AND uid != @uid
+           LIMIT 1`
+        )
+        .get({ uid: raw.uid, agent: raw.agent, machine: raw.machine, project: raw.project }) as
+        | { uid: string; updated_at: string }
+        | undefined;
+      if (clash && clash.updated_at > raw.updated_at) continue;
+      if (clash) {
+        // hlcAbsorb zaten yapıldı: damga, gelen satırın gelecek damgasından bile ileride olur.
+        const s = hlcStamp();
+        db.prepare("UPDATE agent_presence SET status = 'abandoned', finished_at = @s, updated_at = @s WHERE uid = @uid").run({
+          uid: clash.uid,
+          s,
+        });
+      }
+    }
     const local = db.prepare("SELECT * FROM agent_presence WHERE uid = ?").get(raw.uid) as
-      | { id: number; updated_at: string; machine: string; agent: string; project: string; branch: string | null; task: string; status: string; started_at: string; heartbeat_at: string; finished_at: string | null }
+      | { id: number; updated_at: string; machine: string; agent: string; project: string; branch: string | null; task: string; status: string; heartbeat_at: string; finished_at: string | null }
       | undefined;
     const fp = (r: { machine: string; agent: string; project: string; branch: string | null; task: string; status: string; heartbeat_at: string; finished_at: string | null }) =>
       contentFingerprint([r.machine, r.agent, r.project, r.branch, r.task, r.status, r.heartbeat_at, r.finished_at]);
@@ -844,6 +916,36 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
     }
   }
 
+  // Ortak MCP sunucu kayıt defteri: ad bazlı deterministic uid — iki cihaz aynı adı
+  // bağımsız kaydetse bile aynı satırda LWW ile birleşir (assets fallback deseni).
+  for (const raw of payload.mcp_servers ?? []) {
+    const tomb = db.prepare("SELECT deleted_at FROM deletions WHERE tbl = 'mcp_servers' AND uid = ?").get(raw.uid) as
+      | { deleted_at: string }
+      | undefined;
+    if (tomb && tomb.deleted_at >= raw.updated_at) continue;
+    const local = db
+      .prepare("SELECT * FROM mcp_servers WHERE uid = ? OR name = ? ORDER BY uid = ? DESC LIMIT 1")
+      .get(raw.uid, raw.name, raw.uid) as { id: number; updated_at: string } | undefined;
+    const fp = (r: {
+      transport: string; url: string | null; command: string | null; args: string;
+      env: string; headers: string; scope: string | null; description: string | null; enabled: number;
+    }) => contentFingerprint([r.transport, r.url, r.command, r.args, r.env, r.headers, r.scope, r.description, r.enabled]);
+    if (local) {
+      if (!remoteWins(local.updated_at, raw.updated_at, () => fp(local as never), () => fp(raw))) continue;
+      db.prepare(
+        `UPDATE mcp_servers SET name=@name, transport=@transport, url=@url, command=@command, args=@args,
+         env=@env, headers=@headers, scope=@scope, description=@description, enabled=@enabled, updated_at=@updated_at
+         WHERE id=@id`
+      ).run({ ...raw, id: local.id });
+    } else {
+      db.prepare(
+        `INSERT INTO mcp_servers(uid, name, transport, url, command, args, env, headers, scope, description, enabled, created_at, updated_at)
+         VALUES (@uid, @name, @transport, @url, @command, @args, @env, @headers, @scope, @description, @enabled, @created_at, @updated_at)`
+      ).run(raw);
+    }
+    result.mcp_servers!++;
+  }
+
   for (const del of payload.deletions ?? []) {
     // deleted_at donmasın: geç gelen silme daha yeni ise tombstone'u ilerlet (LWW)
     db.prepare(
@@ -905,6 +1007,14 @@ function applyChangesUnsafe(payload: SyncPayload): ApplyResult {
       const row = db.prepare("SELECT updated_at FROM memory_machine_state WHERE uid = ?").get(del.uid) as { updated_at: string } | undefined;
       if (row && row.updated_at <= del.deleted_at) {
         db.prepare("DELETE FROM memory_machine_state WHERE uid = ?").run(del.uid);
+        result.deletions++;
+      }
+    } else if (del.tbl === "mcp_servers") {
+      const row = db.prepare("SELECT id, updated_at FROM mcp_servers WHERE uid = ?").get(del.uid) as
+        | { id: number; updated_at: string }
+        | undefined;
+      if (row && row.updated_at <= del.deleted_at) {
+        db.prepare("DELETE FROM mcp_servers WHERE id = ?").run(row.id);
         result.deletions++;
       }
     }
@@ -1083,7 +1193,7 @@ async function syncOnce(primaryUrl: string, token: string): Promise<SyncRunResul
     if (typeof remote.max_seq === "number") pullPatch.last_pull_seq = remote.max_seq;
     setSyncState(pullPatch);
 
-    let pushed: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, assets: 0, agent_presence: 0, deletions: 0 };
+    let pushed: ApplyResult = { memories: 0, documents: 0, relations: 0, projects: 0, sessions: 0, machines: 0, assets: 0, agent_presence: 0, mcp_servers: 0, deletions: 0 };
     const hasLocal = Object.entries(local).some(([k, v]) => k !== "now" && Array.isArray(v) && v.length > 0);
     if (hasLocal) {
       const pushRes = await fetch(`${primaryUrl}/api/sync/apply`, {

@@ -112,6 +112,7 @@ export async function transferableKnowledge(project: string, limit = 5): Promise
       `SELECT DISTINCT m.id, m.uid, m.title, m.body, m.project, m.importance, m.type, m.tags
        FROM memories m, json_each(m.tags) AS jt
        WHERE m.project IS NOT NULL AND m.project != ?
+         AND m.is_current = 1
          AND m.importance >= 1.2
          AND jt.value IN (${placeholders})
        ORDER BY m.importance DESC

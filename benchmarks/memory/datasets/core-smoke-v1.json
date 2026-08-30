@@ -1,0 +1,345 @@
+{
+  "schemaVersion": 1,
+  "name": "memory-bench-core-smoke",
+  "version": "1.0.0",
+  "license": "CC-BY-4.0",
+  "track": "core",
+  "publicationStatus": "harness",
+  "description": "Small public harness-validation suite. It is not a leaderboard corpus.",
+  "scenarios": [
+    {
+      "id": "single-fact-recall",
+      "description": "Retrieve one preference among same-scope distractors.",
+      "language": "en",
+      "difficulty": "basic",
+      "provenance": {
+        "origin": "synthetic",
+        "author": "mnema-project",
+        "authorType": "ai",
+        "templateId": "harness/single-fact-recall"
+      },
+      "review": {
+        "status": "harness",
+        "entries": []
+      },
+      "operations": [
+        {
+          "op": "write",
+          "record": {
+            "id": "alice-notebook-v1",
+            "scope": "user:alice",
+            "content": "Alice uses a cerulean notebook for her weekly planning.",
+            "observedAt": "2026-01-08T09:00:00Z"
+          }
+        },
+        {
+          "op": "write",
+          "record": {
+            "id": "alice-receipts-v1",
+            "scope": "user:alice",
+            "content": "Alice keeps travel receipts in an amber envelope.",
+            "observedAt": "2026-01-09T09:00:00Z"
+          }
+        },
+        {
+          "op": "query",
+          "id": "alice-notebook-query",
+          "scope": "user:alice",
+          "query": "Which notebook color does Alice use for weekly planning?",
+          "ability": "single-memory-recall",
+          "topK": 3,
+          "relevantIds": ["alice-notebook-v1"],
+          "mustContain": ["cerulean"]
+        }
+      ]
+    },
+    {
+      "id": "multi-memory-recall",
+      "description": "Retrieve complementary facts written in separate turns.",
+      "language": "en",
+      "difficulty": "intermediate",
+      "provenance": {
+        "origin": "synthetic",
+        "author": "mnema-project",
+        "authorType": "ai",
+        "templateId": "harness/multi-memory-recall"
+      },
+      "review": {
+        "status": "harness",
+        "entries": []
+      },
+      "operations": [
+        {
+          "op": "write",
+          "record": {
+            "id": "devon-conference-v1",
+            "scope": "user:devon",
+            "content": "Devon's launch review uses conference code ZX-418.",
+            "observedAt": "2026-02-01T10:00:00Z"
+          }
+        },
+        {
+          "op": "write",
+          "record": {
+            "id": "devon-locker-v1",
+            "scope": "user:devon",
+            "content": "After the launch review, Devon stores the prototype in locker 27.",
+            "observedAt": "2026-02-03T10:00:00Z"
+          }
+        },
+        {
+          "op": "write",
+          "record": {
+            "id": "devon-lunch-v1",
+            "scope": "user:devon",
+            "content": "Devon orders lentil soup for lunch on Fridays.",
+            "observedAt": "2026-02-04T10:00:00Z"
+          }
+        },
+        {
+          "op": "query",
+          "id": "devon-launch-query",
+          "scope": "user:devon",
+          "query": "What conference code and prototype locker should Devon use for the launch review?",
+          "ability": "multi-memory-recall",
+          "topK": 3,
+          "relevantIds": ["devon-conference-v1", "devon-locker-v1"],
+          "mustContain": ["ZX-418", "locker 27"]
+        }
+      ]
+    },
+    {
+      "id": "knowledge-update",
+      "description": "Return the current value without leaking the superseded value.",
+      "language": "en",
+      "difficulty": "intermediate",
+      "provenance": {
+        "origin": "synthetic",
+        "author": "mnema-project",
+        "authorType": "ai",
+        "templateId": "harness/knowledge-update"
+      },
+      "review": {
+        "status": "harness",
+        "entries": []
+      },
+      "operations": [
+        {
+          "op": "write",
+          "record": {
+            "id": "incident-room-v1",
+            "scope": "team:orion",
+            "content": "The weekly incident review meets in Room Atlas on floor 2.",
+            "observedAt": "2026-03-01T08:00:00Z"
+          }
+        },
+        {
+          "op": "update",
+          "targetId": "incident-room-v1",
+          "record": {
+            "id": "incident-room-v2",
+            "scope": "team:orion",
+            "content": "The weekly incident review now meets in Room Orion on floor 5.",
+            "observedAt": "2026-03-18T08:00:00Z"
+          }
+        },
+        {
+          "op": "query",
+          "id": "incident-room-query",
+          "scope": "team:orion",
+          "query": "Where does the weekly incident review meet now?",
+          "ability": "knowledge-update",
+          "topK": 3,
+          "relevantIds": ["incident-room-v2"],
+          "forbiddenIds": ["incident-room-v1"],
+          "mustContain": ["Room Orion", "floor 5"],
+          "mustNotContain": ["Room Atlas", "floor 2"]
+        }
+      ]
+    },
+    {
+      "id": "temporal-recall",
+      "description": "Retrieve the event tied to the requested action and time.",
+      "language": "en",
+      "difficulty": "intermediate",
+      "provenance": {
+        "origin": "synthetic",
+        "author": "mnema-project",
+        "authorType": "ai",
+        "templateId": "harness/temporal-recall"
+      },
+      "review": {
+        "status": "harness",
+        "entries": []
+      },
+      "operations": [
+        {
+          "op": "write",
+          "record": {
+            "id": "apollo-beta-v1",
+            "scope": "project:apollo",
+            "content": "Apollo signed the beta release on 2026-03-04.",
+            "observedAt": "2026-03-04T14:00:00Z"
+          }
+        },
+        {
+          "op": "write",
+          "record": {
+            "id": "apollo-key-v1",
+            "scope": "project:apollo",
+            "content": "Apollo rotated the API signing key on 2026-04-17.",
+            "observedAt": "2026-04-17T16:30:00Z"
+          }
+        },
+        {
+          "op": "query",
+          "id": "apollo-key-query",
+          "scope": "project:apollo",
+          "query": "On what date did Apollo rotate the API signing key?",
+          "ability": "temporal-recall",
+          "topK": 2,
+          "relevantIds": ["apollo-key-v1"],
+          "mustContain": ["2026-04-17"]
+        }
+      ]
+    },
+    {
+      "id": "deletion-abstention",
+      "description": "Deleted information must not be returned.",
+      "language": "en",
+      "difficulty": "basic",
+      "provenance": {
+        "origin": "synthetic",
+        "author": "mnema-project",
+        "authorType": "ai",
+        "templateId": "harness/deletion-abstention"
+      },
+      "review": {
+        "status": "harness",
+        "entries": []
+      },
+      "operations": [
+        {
+          "op": "write",
+          "record": {
+            "id": "mira-recovery-v1",
+            "scope": "user:mira",
+            "content": "Mira's one-time recovery phrase is opal-river-19.",
+            "observedAt": "2026-05-02T12:00:00Z"
+          }
+        },
+        {
+          "op": "delete",
+          "targetId": "mira-recovery-v1",
+          "scope": "user:mira"
+        },
+        {
+          "op": "query",
+          "id": "mira-recovery-query",
+          "scope": "user:mira",
+          "query": "What is Mira's one-time recovery phrase?",
+          "ability": "abstention",
+          "topK": 3,
+          "relevantIds": [],
+          "forbiddenIds": ["mira-recovery-v1"],
+          "mustNotContain": ["opal-river-19"],
+          "expectEmpty": true
+        }
+      ]
+    },
+    {
+      "id": "scope-isolation",
+      "description": "Semantically equivalent records in another scope must not leak.",
+      "language": "en",
+      "difficulty": "advanced",
+      "provenance": {
+        "origin": "synthetic",
+        "author": "mnema-project",
+        "authorType": "ai",
+        "templateId": "harness/scope-isolation"
+      },
+      "review": {
+        "status": "harness",
+        "entries": []
+      },
+      "operations": [
+        {
+          "op": "write",
+          "record": {
+            "id": "acme-billing-code-v1",
+            "scope": "tenant:acme",
+            "content": "The billing escalation code is ALPHA-73.",
+            "observedAt": "2026-06-01T10:00:00Z"
+          }
+        },
+        {
+          "op": "write",
+          "record": {
+            "id": "globex-billing-code-v1",
+            "scope": "tenant:globex",
+            "content": "The billing escalation code is BETA-91.",
+            "observedAt": "2026-06-01T10:00:00Z"
+          }
+        },
+        {
+          "op": "query",
+          "id": "acme-billing-query",
+          "scope": "tenant:acme",
+          "query": "What is the billing escalation code?",
+          "ability": "scope-isolation",
+          "topK": 2,
+          "relevantIds": ["acme-billing-code-v1"],
+          "forbiddenIds": ["globex-billing-code-v1"],
+          "mustContain": ["ALPHA-73"],
+          "mustNotContain": ["BETA-91"]
+        }
+      ]
+    },
+    {
+      "id": "multilingual-turkish-recall",
+      "description": "Preserve and retrieve non-ASCII text without an English alias.",
+      "language": "tr",
+      "difficulty": "basic",
+      "provenance": {
+        "origin": "synthetic",
+        "author": "mnema-project",
+        "authorType": "ai",
+        "templateId": "harness/multilingual-turkish-recall"
+      },
+      "review": {
+        "status": "harness",
+        "entries": []
+      },
+      "operations": [
+        {
+          "op": "write",
+          "record": {
+            "id": "deniz-morning-drink-v1",
+            "scope": "user:deniz",
+            "content": "Deniz sabah toplantılarında adaçayı içmeyi tercih ediyor.",
+            "observedAt": "2026-06-12T08:00:00Z"
+          }
+        },
+        {
+          "op": "write",
+          "record": {
+            "id": "deniz-afternoon-drink-v1",
+            "scope": "user:deniz",
+            "content": "Deniz öğleden sonra filtre kahve içiyor.",
+            "observedAt": "2026-06-12T15:00:00Z"
+          }
+        },
+        {
+          "op": "query",
+          "id": "deniz-morning-drink-query",
+          "scope": "user:deniz",
+          "query": "Deniz sabah toplantılarında hangi içeceği tercih ediyor?",
+          "ability": "single-memory-recall",
+          "topK": 2,
+          "relevantIds": ["deniz-morning-drink-v1"],
+          "mustContain": ["adaçayı"]
+        }
+      ]
+    }
+  ]
+}
